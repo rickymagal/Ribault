@@ -1,0 +1,84 @@
+(* ---------- Programa ---------- *)
+Program        = Decl { ";" Decl } ;
+
+(* ---------- Declarações ---------- *)
+Decl           = FunDecl ;
+
+FunDecl        = Ident { Ident } "=" Expr ;
+
+(* ---------- Expressões ---------- *)
+Expr           = Lambda
+               | IfExpr
+               | CaseExpr
+               | LetExpr
+               | BinOpExpr
+               | UnOpExpr
+               | AppExpr ;
+
+Lambda         = "\" Ident { Ident } "->" Expr ;
+
+IfExpr         = "if" Expr "then" Expr "else" Expr ;
+
+CaseExpr       = "case" Expr "of" { Alt } ;
+
+Alt            = Pattern "->" Expr ;
+
+LetExpr        = "let" Decl { ";" Decl } "in" Expr ;
+
+AppExpr        = AppExpr Atom
+               | Atom ;
+
+BinOpExpr      = Expr BinOp Expr ;
+
+UnOpExpr       = UnOp Expr ;
+
+Atom           = Literal
+               | Ident
+               | "(" Expr ")"
+               | List
+               | Tuple ;
+
+(* ---------- Operadores ---------- *)
+
+BinOp          = "+" | "-" | "*" | "/" | "%"
+               | "==" | "/=" | "<" | "<=" | ">" | ">="
+               | "&&" | "||" ;
+
+UnOp           = "-" | "not" ;
+
+(* ---------- Agregados ---------- *)
+List           = "[" [ Expr { "," Expr } ] "]" ;
+
+Tuple          = "(" Expr "," Expr { "," Expr } ")" ;
+
+(* ---------- Padrões ---------- *)
+Pattern        = "_" 
+               | Ident 
+               | Literal 
+               | ListPattern 
+               | TuplePattern ;
+
+ListPattern    = "[" [ Pattern { "," Pattern } ] "]" ;
+
+TuplePattern   = "(" Pattern "," Pattern { "," Pattern } ")" ;
+
+(* ---------- Literais ---------- *)
+Literal        = Int | Float | Char | String | Bool ;
+
+Bool           = "True" | "False" ;
+
+Ident          = Letter { Letter | Digit | "_" | "'" } ;
+
+Int            = Digit { Digit } ;
+
+Float          = Digit { Digit } "." Digit { Digit } ;
+
+Char           = "'" AnyChar "'" ;
+
+String         = '"' { AnyChar } '"' ;
+
+(* ---------- Léxico ---------- *)
+
+Letter         = "A" | ... | "Z" | "a" | ... | "z" ;
+Digit          = "0" | ... | "9" ;
+AnyChar        = ? any Unicode character ? ;

@@ -1,0 +1,6 @@
+-- List pattern matching (enumerated pattern)
+headList = \lst -> case lst of
+  []      -> 0;
+  [x]     -> x;
+  [x, _]  -> x;
+  

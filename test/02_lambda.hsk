@@ -1,0 +1,4 @@
+-- Lambda expressions
+identity  = \x -> x;
+const     = \x y -> x;
+add       = \x y -> x + y
