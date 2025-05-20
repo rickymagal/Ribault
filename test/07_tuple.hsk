@@ -1,0 +1,2 @@
+-- Tuple literal and pattern
+swap = \(x, y) -> (y, x)
