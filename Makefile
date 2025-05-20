@@ -7,7 +7,7 @@ DOT            := dot
 SRC_DIR        := src
 TEST_DIR       := test
 OUT_DIR        := $(TEST_DIR)/output
-AST_IMG_DIR    := $(TEST_DIR)/ast-images
+DF_IMG_DIR:= $(TEST_DIR)/df-images
 
 SYNTAX_HS      := $(SRC_DIR)/Syntax.hs
 SEMANTIC_HS    := $(SRC_DIR)/Semantic.hs
@@ -16,11 +16,12 @@ LEXER_HS       := $(SRC_DIR)/Lexer.hs
 MAIN_HS        := $(SRC_DIR)/Main.hs
 PARSER_SRC     := $(SRC_DIR)/Parser.y
 PARSER_HS      := $(SRC_DIR)/Parser.hs
+GRAPHGEN_HS      := $(SRC_DIR)/Graph-gen.hs
 EXE            := analysis
 
 TESTS          := $(wildcard $(TEST_DIR)/*.hsk)
 DOTS           := $(patsubst $(TEST_DIR)/%.hsk, $(OUT_DIR)/%.dot, $(TESTS))
-IMAGES         := $(patsubst $(OUT_DIR)/%.dot, $(AST_IMG_DIR)/%.png, $(DOTS))
+IMAGES         := $(patsubst $(OUT_DIR)/%.dot, $(DF_IMG_DIR)/%.png, $(DOTS))
 
 .PHONY: all tokens images clean run
 
@@ -31,7 +32,7 @@ all: tokens images
 $(OUT_DIR):
 	@mkdir -p $@
 
-$(AST_IMG_DIR):
+$(DF_IMG_DIR):
 	@mkdir -p $@
 
 # Gera Lexer.hs a partir de Lexer.x
@@ -45,9 +46,9 @@ $(PARSER_HS): $(PARSER_SRC)
 	happy --ghc -o $@ $<
 
 # Compila o binário principal
-$(EXE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(MAIN_HS)
+$(EXE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(GRAPHGEN_HS) $(MAIN_HS)
 	@echo [GHC ] $@
-	$(GHC) -o $(EXE) $(MAIN_HS) $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS)
+	$(GHC) -o $(EXE) $(MAIN_HS) $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(GRAPHGEN_HS)
 
 # Para cada .hsk, gera um .dot correspondente
 $(OUT_DIR)/%.dot: $(TEST_DIR)/%.hsk | $(EXE) $(OUT_DIR)
@@ -55,7 +56,7 @@ $(OUT_DIR)/%.dot: $(TEST_DIR)/%.hsk | $(EXE) $(OUT_DIR)
 	./$(EXE) $< > $@
 
 # Para cada .dot, gera uma .png em ast-images
-$(AST_IMG_DIR)/%.png: $(OUT_DIR)/%.dot | $(AST_IMG_DIR)
+$(DF_IMG_DIR)/%.png: $(OUT_DIR)/%.dot | $(DF_IMG_DIR)
 	@echo [IMG ] $< → $@
 	$(DOT) -Tpng $< -o $@
 
