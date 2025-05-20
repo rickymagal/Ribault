@@ -1,0 +1,2 @@
+-- Function declaration with currying
+addThree x y z = x + y + z
