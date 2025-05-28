@@ -1,80 +1,126 @@
-# lambdaflow — Makefile básico do projeto
+# ------------------------------------------------------------
+# HTC – Makefile com dois modos: df (padrão) e ast
+# ------------------------------------------------------------
+GHC   := ghc
+ALEX  := alex
+HAPPY := happy
+DOT   := dot
 
-GHC            := ghc
-ALEX           := alex
-DOT            := dot
+# -------- pastas ------------------------------------------------
+SRC_DIR  := src
+TEST_DIR := test
 
-SRC_DIR        := src
-TEST_DIR       := test
-OUT_DIR        := $(TEST_DIR)/output
-DF_IMG_DIR:= $(TEST_DIR)/df-images
+# -------- fontes fixas -----------------------------------------
+LEXER_SRC   := $(SRC_DIR)/Lexer.x
+PARSER_SRC  := $(SRC_DIR)/Parser.y
+LEXER_HS    := $(SRC_DIR)/Lexer.hs
+PARSER_HS   := $(SRC_DIR)/Parser.hs
+SYNTAX_HS   := $(SRC_DIR)/Syntax.hs
+SEMANTIC_HS := $(SRC_DIR)/Semantic.hs
+GRAPHGEN_HS := $(SRC_DIR)/Graph-gen.hs
+ASTGEN_HS   := $(SRC_DIR)/AST-gen.hs
+MAIN_DF_HS  := $(SRC_DIR)/Main.hs       # usa GraphGen → data-flow
+MAIN_AST_HS := $(SRC_DIR)/MainAST.hs    # usa ASTGen  → AST
 
-SYNTAX_HS      := $(SRC_DIR)/Syntax.hs
-SEMANTIC_HS    := $(SRC_DIR)/Semantic.hs
-LEXER_SRC      := $(SRC_DIR)/Lexer.x
-LEXER_HS       := $(SRC_DIR)/Lexer.hs
-MAIN_HS        := $(SRC_DIR)/Main.hs
-PARSER_SRC     := $(SRC_DIR)/Parser.y
-PARSER_HS      := $(SRC_DIR)/Parser.hs
-GRAPHGEN_HS      := $(SRC_DIR)/Graph-gen.hs
-EXE            := analysis
+# -------- executáveis ------------------------------------------
+EXE_DF  := analysis         # gera grafo data-flow  (.df)
+EXE_AST := analysis-ast     # gera grafo AST        (.ast)
 
-TESTS          := $(wildcard $(TEST_DIR)/*.hsk)
-DOTS           := $(patsubst $(TEST_DIR)/%.hsk, $(OUT_DIR)/%.dot, $(TESTS))
-IMAGES         := $(patsubst $(OUT_DIR)/%.dot, $(DF_IMG_DIR)/%.png, $(DOTS))
+# ------------------------------------------------------------
+# Escolha de modo: df (default) ou ast
+# ------------------------------------------------------------
+MODE ?= df      # use: make MODE=ast
 
+ifeq ($(MODE),ast)
+  OUT_DIR := $(TEST_DIR)/ast-output
+  IMG_DIR := $(TEST_DIR)/ast-images
+  TARGET_EXE  := $(EXE_AST)
+  TARGET_MAIN := $(MAIN_AST_HS)
+  EXTRA_SRCS  := $(ASTGEN_HS)
+else
+  OUT_DIR := $(TEST_DIR)/output
+  IMG_DIR := $(TEST_DIR)/df-images
+  TARGET_EXE  := $(EXE_DF)
+  TARGET_MAIN := $(MAIN_DF_HS)
+  EXTRA_SRCS  := $(GRAPHGEN_HS)
+endif
+
+# ============================================================
+# CASOS DE TESTE e artefatos gerados
+# ============================================================
+TESTS   := $(wildcard $(TEST_DIR)/*.hsk)
+DOTS    := $(patsubst $(TEST_DIR)/%.hsk,$(OUT_DIR)/%.dot,$(TESTS))
+IMAGES  := $(patsubst $(OUT_DIR)/%.dot,$(IMG_DIR)/%.png,$(DOTS))
+
+# ------------------------------------------------------------
+# Alvos de alto nível
+# ------------------------------------------------------------
 .PHONY: all tokens images clean run
 
-# Regra principal: gera todos os .dot e as imagens
-all: tokens images
+all: tokens images          ## gera todos os .dot e PNGs
 
-# Cria diretórios de saída
-$(OUT_DIR):
-	@mkdir -p $@
+tokens: $(DOTS)             ## gera todos os .dot
+images: $(IMAGES)           ## renderiza todos os PNGs
 
-$(DF_IMG_DIR):
-	@mkdir -p $@
-
-# Gera Lexer.hs a partir de Lexer.x
+# ------------------------------------------------------------
+# Geração de Lexer / Parser
+# ------------------------------------------------------------
 $(LEXER_HS): $(LEXER_SRC)
-	@echo [ALEX] $<
+	@echo "[ALEX ] $<"
 	$(ALEX) $<
 
-# Gera Parser.hs a partir de Parser.y
 $(PARSER_HS): $(PARSER_SRC)
-	@echo [HAPPY] $<
-	happy --ghc -o $@ $<
+	@echo "[HAPPY] $<"
+	$(HAPPY) --ghc -o $@ $<
 
-# Compila o binário principal
-$(EXE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(GRAPHGEN_HS) $(MAIN_HS)
-	@echo [GHC ] $@
-	$(GHC) -o $(EXE) $(MAIN_HS) $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(GRAPHGEN_HS)
+# ------------------------------------------------------------
+# Compilação do executável de acordo com MODE
+# ------------------------------------------------------------
+$(EXE_DF):  $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) \
+            $(SEMANTIC_HS) $(GRAPHGEN_HS) $(MAIN_DF_HS)
+	@echo "[GHC  ] $@"
+	$(GHC) -O2 -o $@ $(MAIN_DF_HS) $(LEXER_HS) $(PARSER_HS) \
+                       $(SYNTAX_HS) $(SEMANTIC_HS) $(GRAPHGEN_HS)
 
-# Para cada .hsk, gera um .dot correspondente
-$(OUT_DIR)/%.dot: $(TEST_DIR)/%.hsk | $(EXE) $(OUT_DIR)
-	@echo [DOT ] $< → $@
-	./$(EXE) $< > $@
+$(EXE_AST): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) \
+            $(SEMANTIC_HS) $(ASTGEN_HS) $(MAIN_AST_HS)
+	@echo "[GHC  ] $@"
+	$(GHC) -O2 -o $@ $(MAIN_AST_HS) $(LEXER_HS) $(PARSER_HS) \
+                       $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS)
 
-# Para cada .dot, gera uma .png em ast-images
-$(DF_IMG_DIR)/%.png: $(OUT_DIR)/%.dot | $(DF_IMG_DIR)
-	@echo [IMG ] $< → $@
+# ------------------------------------------------------------
+# Geração dos .dot a partir dos .hsk
+# ------------------------------------------------------------
+$(OUT_DIR)/%.dot: $(TEST_DIR)/%.hsk | $(TARGET_EXE) $(OUT_DIR)
+	@echo "[DOT  ] $< → $@"
+	./$(TARGET_EXE) $< > $@
+
+# ------------------------------------------------------------
+# Renderização PNG
+# ------------------------------------------------------------
+$(IMG_DIR)/%.png: $(OUT_DIR)/%.dot | $(IMG_DIR)
+	@echo "[IMG  ] $< → $@"
 	$(DOT) -Tpng $< -o $@
 
-# Target geral para gerar todos os .dot
-tokens: $(DOTS)
+# ------------------------------------------------------------
+# Diretórios intermediários
+# ------------------------------------------------------------
+$(OUT_DIR) $(IMG_DIR):
+	@mkdir -p $@
 
-# Target geral para gerar todas as imagens
-images: $(IMAGES)
-
-# Execução manual via stdin
-run: $(EXE)
+# ------------------------------------------------------------
+# Execução manual via stdin (respeita MODE)
+# ------------------------------------------------------------
+run: $(TARGET_EXE)
 	@echo "Digite código e pressione Ctrl-D:"
-	./$(EXE)
+	./$(TARGET_EXE)
 
-# Limpeza de artefatos
+# ------------------------------------------------------------
+# Limpeza
+# ------------------------------------------------------------
 clean:
-	@rm -f $(SRC_DIR)/*.hi $(SRC_DIR)/*.o $(EXE)
-	@rm -f $(LEXER_HS)
-	@rm -f $(PARSER_HS)
-	@rm -rf $(OUT_DIR)
 	@echo "Limpeza completa."
+	@rm -f $(SRC_DIR)/*.hi $(SRC_DIR)/*.o $(EXE_DF) $(EXE_AST)
+	@rm -f $(LEXER_HS) $(PARSER_HS)
+	@rm -rf $(TEST_DIR)/output $(TEST_DIR)/ast-output
+	@echo
