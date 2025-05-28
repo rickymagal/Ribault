@@ -9,39 +9,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Checkout --------------------------------------------------
+    # 1) checkout
     - uses: actions/checkout@v4
 
-    # 2. Haskell tool-chain ---------------------------------------
-    # Opção A: action oficial mantido em github.com/actions/setup-haskell
-    - name: Set up GHC + cabal
-      uses: actions/setup-haskell@v2    # ←  **v2**, não v3
+    # 2) instala GHC e cabal
+    - name: Set up Haskell
+      uses: haskell/actions/setup@v2        # ←  repositório e tag existentes
       with:
-        ghc-version: '9.4'
+        ghc-version: '9.4'                  # ajuste a versão que você usa
         cabal-version: 'latest'
 
-    # Se preferir o repositório da Haskell org, use:
-    # uses: haskell/actions/setup@v2
-    # (mas o efeito é o mesmo)
-
-    # 3. Dependências de sistema ----------------------------------
+    # 3) dependências de sistema
     - name: Install alex, happy, graphviz, pytest
       run: |
         sudo apt-get update
         sudo apt-get install -y alex happy graphviz python3 python3-pytest
 
-    # 4. Build executáveis ----------------------------------------
+    # 4) build data-flow
     - name: Build analysis (data-flow)
-      run: make MODE=df          # gera ./analysis
+      run: make MODE=df            # gera ./analysis
 
+    # 5) build AST
     - name: Build analysis-ast
-      run: make MODE=ast         # gera ./analysis-ast
+      run: make MODE=ast           # gera ./analysis-ast
 
-    # 5. Testes ----------------------------------------------------
+    # 6) pytest
     - name: Run pytest suite
       run: pytest -q
 
-    # 6. Artefatos DOT --------------------------------------------
+    # 7) salva artefatos DOT
     - name: Upload DOTs
       if: always()
       uses: actions/upload-artifact@v4
