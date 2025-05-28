@@ -1,0 +1,20 @@
+digraph AST {
+  node [shape=box, fontname="Courier"];
+  decl0 [label="FunDecl
+addThree(z,y,x)"];
+  decl0_body [label="BinOp
+Add"];
+  decl0 -> decl0_body;
+  decl0_body_l [label="BinOp
+Add"];
+  decl0_body -> decl0_body_l;
+  decl0_body_l_l [label="Var
+x"];
+  decl0_body_l -> decl0_body_l_l;
+  decl0_body_l_r [label="Var
+y"];
+  decl0_body_l -> decl0_body_l_r;
+  decl0_body_r [label="Var
+z"];
+  decl0_body -> decl0_body_r;
+}

@@ -290,12 +290,15 @@ inferExpr fenv tenv expr = case expr of
       Lt  -> compBin op tl tr; Le  -> compBin op tl tr
       Gt  -> compBin op tl tr; Ge  -> compBin op tl tr
 
-  UnOp op x -> do
-    tx <- inferExpr fenv tenv x
+  UnOp op e -> do
+    te <- inferExpr fenv tenv e
     case op of
-      Neg -> if tx `elem` [TInt,TFloat] then return tx else throwError (UnOpTypeErr op tx)
-      Not -> if tx == TBool            then return TBool else throwError (UnOpTypeErr op tx)
-
+      Neg | te `elem` [TInt,TFloat] -> return te
+          | isPoly te              -> return TInt   -- assume int, unifica depois
+          | otherwise              -> throwError (UnOpTypeErr op te)
+      Not | te == TBool            -> return TBool
+          | isPoly te              -> return TBool
+          | otherwise              -> throwError (UnOpTypeErr op te)
   List xs -> do
     ts <- mapM (inferExpr fenv tenv) xs
     case ts of
@@ -311,20 +314,32 @@ match (TVar _) _ = True
 match _ (TVar _) = True
 match a b        = a == b
 
+resolve :: Type -> Type -> Type
+resolve (TVar _) t = t
+resolve t       _  = t
+
 -- | Infer types for pattern variables and return pattern type.
 inferPattern :: Pattern -> Infer ([(Ident,Type)],Type)
 inferPattern = \case
   PVar x    -> do tv <- freshTypeVar; return ([(x,tv)],tv)
   PWildcard -> return ([], TVar "_")
   PLit l    -> return ([], literalType l)
-  PList ps  -> do
-    xs <- mapM inferPattern ps
-    let (vs,ts)   = unzip xs
-        nonWildTs = [ t | (p,t) <- zip ps ts, case p of PWildcard -> False; _ -> True ]
-    case nonWildTs of
-      (t:ts') | all (==t) ts' -> return (concat vs, TList t)
-      []                      -> do tv <- freshTypeVar; return (concat vs, TList tv)
-      (t:_)                   -> throwError (Mismatch (Lit (LString "pattern")) (TList t) (TList t))
+    -- padrão de lista
+  PList ps -> do
+    xs <- mapM inferPattern ps              -- xs :: [(vars,ty)]
+    let (vs,ts) = unzip xs                  -- vs = variáveis, ts = tipos
+    elemTy <- case ts of
+                []      -> freshTypeVar     -- lista vazia → polimórfica
+                (t:ts') -> foldM unify t ts'
+    return (concat vs, TList elemTy)
+    where
+      -- une dois tipos, permitindo variáveis
+      unify acc t
+        | match acc t = return (resolve acc t)
+        | otherwise   = throwError
+                           (Mismatch (Lit (LString "pattern"))
+                                     (TList acc)
+                                     (TList t))
   PTuple ps -> do
     xs <- mapM inferPattern ps
     let (vs,ts) = unzip xs

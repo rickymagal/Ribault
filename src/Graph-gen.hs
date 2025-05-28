@@ -173,6 +173,7 @@ binOpToInstr op =
     Add -> "add"
     Sub -> "sub"
     Mul -> "mul"
+    Mod -> "mod"
     Div -> "div"
     Eq  -> "eq"
     Neq -> "neq"
@@ -182,7 +183,7 @@ binOpToInstr op =
     Ge  -> "geq"
     And -> "and"
     Or  -> "or"
-
+    
 -- | Mapeia UnOperator em instrução TALM
 unOpToInstr :: UnOperator -> Text
 unOpToInstr op =
