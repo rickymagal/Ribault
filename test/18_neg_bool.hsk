@@ -1,0 +1,2 @@
+negBool b = not b;
+main = negBool True
