@@ -1,0 +1,3 @@
+-- Lambda expression and direct application
+double = \x -> x * 2;
+value = (\y -> y + 3) 7

@@ -19,7 +19,10 @@ This work proposes the translation of programs written in a Haskell subset into 
 | `src/`            | Compiler source code.                                                                                                     |
 | `test/`           | Unit and integration test cases.                                                                                          |
 | `test/ast-images` | Generated AST images.                                                                                                     |
-| `test/output`     | Generated `.dot` files.                                                                                                   |
+| `test/df-images`  | Generated Dataflow graph images.                                                                                          |
+| `test/golden-df`  | Standard for Dataflow graphs .dot.                                                                                          |
+| `test/golden-ast`  | Standard for AST .dot.                                                                                          |
+| `test/test_unified.py`  | Correctness testing script (Python).                                                                                          |
 
 ## Execution
 
@@ -36,6 +39,8 @@ make
 GHC (Glasgow Haskell Compiler)
 
 Cabal (Haskell Package Manager)
+
+Pytest (Unit testing tool for Python)
 
 Alex (Lexer generator)
 

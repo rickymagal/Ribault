@@ -1,4 +1,4 @@
--- Main.hs
+-- MainAST.hs
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main where
@@ -9,11 +9,11 @@ import System.Exit        (exitFailure)
 import Prelude hiding (putStr)
 import qualified Data.Text.Lazy.IO as TLIO
 
-import Lexer       (alexScanTokens)
-import Parser      (parse)
-import Syntax      (Program)
-import Semantic    (checkAll)
-import GraphGen    (programToDataflowDot)
+import Lexer    (alexScanTokens)
+import Parser   (parse)
+import Syntax   (Program)
+import Semantic (checkAll)
+import ASTGen   (programToDot)          -- ← usa ASTGen
 
 main :: IO ()
 main = do
@@ -21,10 +21,10 @@ main = do
   input <- case args of
     [file] -> readFile file
     []     -> getContents
-    _      -> putStrLn "Uso: lambdaflow [arquivo]" >> exitFailure
+    _      -> putStrLn "Uso: lambdaflow-ast [arquivo]" >> exitFailure
 
   let ast = parse (alexScanTokens input)
 
   case checkAll ast of
-    []   -> TLIO.putStr $ programToDataflowDot ast
+    []   -> TLIO.putStr $ programToDot ast   -- ← gera DOT da AST
     errs -> mapM_ print errs >> exitFailure
