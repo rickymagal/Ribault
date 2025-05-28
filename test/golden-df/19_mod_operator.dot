@@ -1,0 +1,38 @@
+digraph Dataflow {
+  node [shape=record, fontname="Courier"];
+  f0_inctag [label="inctag"];
+  f0_inctag [label="inctag"];
+  f0_f_out [label="var:rem7"];
+  f0_f_in_rem7 -> f0_f_out;
+  f0_x_out [label="const:15"];
+  f0_x -> f0_x_out;
+  f0_cg [label="callgroup"];
+  f0_inctag -> f0_cg;
+  f0_cg_snd1 [label="callsnd"];
+  f0_f_out -> f0_cg_snd1;
+  f0_cg_snd1 -> f0_cg;
+  f0_cg_snd2 [label="callsnd"];
+  f0_x_out -> f0_cg_snd2;
+  f0_cg_snd2 -> f0_cg;
+  f0_cg_retsnd [label="retsnd"];
+  f0_cg -> f0_cg_retsnd;
+  f0_out [label="tagop"];
+  f0_cg_retsnd -> f0_out;
+  f0_retsnd [label="retsnd"];
+  f0_out -> f0_retsnd;
+  f0_ret [label="ret"];
+  f0_retsnd -> f0_ret;
+  f1_inctag [label="inctag"];
+  f1_in_x [label="in:x"];
+  f1_l_out [label="var:x"];
+  f1_l_in_x -> f1_l_out;
+  f1_r_out [label="const:7"];
+  f1_r -> f1_r_out;
+  f1_out [label="mod"];
+  f1_l_out -> f1_out;
+  f1_r_out -> f1_out;
+  f1_retsnd [label="retsnd"];
+  f1_out -> f1_retsnd;
+  f1_ret [label="ret"];
+  f1_retsnd -> f1_ret;
+}
