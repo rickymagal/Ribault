@@ -161,6 +161,31 @@ run: $(EXE_DF)
 	./$(EXE_DF)
 
 # ------------------------------------------------------------
+# Generate Haddock documentation
+# ------------------------------------------------------------
+
+DOCS_DIR := docs/html
+
+.PHONY: docs
+docs: $(DOCS_DIR)
+	haddock \
+	  --html \
+	  --hoogle \
+	  --hyperlinked-source \
+	  --title="HTC API Documentation" \
+	  --odir=$(DOCS_DIR) \
+	  src/Lexer.hs \
+	  src/Parser.hs \
+	  src/Syntax.hs \
+	  src/Semantic.hs \
+	  src/AST-gen.hs \
+	  src/Graph-gen.hs \
+	  src/Codegen.hs
+
+$(DOCS_DIR):
+	mkdir -p $(DOCS_DIR)
+
+# ------------------------------------------------------------
 # Limpeza
 # ------------------------------------------------------------
 clean:
