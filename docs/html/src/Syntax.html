@@ -1,0 +1,167 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE LambdaCase, FlexibleContexts #-}</span><span>
+</span><span id="line-2"></span><span>
+</span><span id="line-3"></span><span class="hs-comment">-- | Abstract Syntax Tree (AST) definitions for the simple functional language.</span><span>
+</span><span id="line-4"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Syntax</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-5"></span><span>
+</span><span id="line-6"></span><span class="hs-comment">-- | Identifier type, representing variable and function names.</span><span>
+</span><span id="line-7"></span><span class="hs-keyword">type</span><span> </span><span id="Ident"><span class="annot"><a href="Syntax.html#Ident"><span class="hs-identifier hs-var">Ident</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>
+</span><span id="line-8"></span><span>
+</span><span id="line-9"></span><span class="hs-comment">-- | A program is simply a list of declarations (functions).</span><span>
+</span><span id="line-10"></span><span class="hs-keyword">data</span><span> </span><span id="Program"><span class="annot"><a href="Syntax.html#Program"><span class="hs-identifier hs-var">Program</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="Program"><span class="annot"><a href="Syntax.html#Program"><span class="hs-identifier hs-var">Program</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Syntax.html#Decl"><span class="hs-identifier hs-type">Decl</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-11"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679098832"><span id="local-6989586621679098834"><span id="local-6989586621679098841"><span class="annot"><span class="annottext">Int -&gt; Program -&gt; ShowS
+[Program] -&gt; ShowS
+Program -&gt; String
+(Int -&gt; Program -&gt; ShowS)
+-&gt; (Program -&gt; String) -&gt; ([Program] -&gt; ShowS) -&gt; Show Program
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+showList :: [Program] -&gt; ShowS
+$cshowList :: [Program] -&gt; ShowS
+show :: Program -&gt; String
+$cshow :: Program -&gt; String
+showsPrec :: Int -&gt; Program -&gt; ShowS
+$cshowsPrec :: Int -&gt; Program -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-12"></span><span>
+</span><span id="line-13"></span><span class="hs-comment">-- | A top-level declaration consists of a function name, its parameters, and its body expression.</span><span>
+</span><span id="line-14"></span><span class="hs-keyword">data</span><span> </span><span id="Decl"><span class="annot"><a href="Syntax.html#Decl"><span class="hs-identifier hs-var">Decl</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="FunDecl"><span class="annot"><a href="Syntax.html#FunDecl"><span class="hs-identifier hs-var">FunDecl</span></a></span></span><span> </span><span class="annot"><a href="Syntax.html#Ident"><span class="hs-identifier hs-type">Ident</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Syntax.html#Ident"><span class="hs-identifier hs-type">Ident</span></a></span><span class="hs-special">]</span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span>
+</span><span id="line-15"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679098819"><span id="local-6989586621679098821"><span id="local-6989586621679098828"><span class="annot"><span class="annottext">Int -&gt; Decl -&gt; ShowS
+[Decl] -&gt; ShowS
+Decl -&gt; String
+(Int -&gt; Decl -&gt; ShowS)
+-&gt; (Decl -&gt; String) -&gt; ([Decl] -&gt; ShowS) -&gt; Show Decl
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+showList :: [Decl] -&gt; ShowS
+$cshowList :: [Decl] -&gt; ShowS
+show :: Decl -&gt; String
+$cshow :: Decl -&gt; String
+showsPrec :: Int -&gt; Decl -&gt; ShowS
+$cshowsPrec :: Int -&gt; Decl -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-16"></span><span>
+</span><span id="line-17"></span><span class="hs-comment">-- | Expressions in the language.</span><span>
+</span><span id="line-18"></span><span class="hs-keyword">data</span><span> </span><span id="Expr"><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-var">Expr</span></a></span></span><span>
+</span><span id="line-19"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span id="Var"><span class="annot"><a href="Syntax.html#Var"><span class="hs-identifier hs-var">Var</span></a></span></span><span> </span><span class="annot"><a href="Syntax.html#Ident"><span class="hs-identifier hs-type">Ident</span></a></span><span>                </span><span class="hs-comment">-- ^ Variable reference</span><span>
+</span><span id="line-20"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Lit"><span class="annot"><a href="Syntax.html#Lit"><span class="hs-identifier hs-var">Lit</span></a></span></span><span> </span><span class="annot"><a href="Syntax.html#Literal"><span class="hs-identifier hs-type">Literal</span></a></span><span>              </span><span class="hs-comment">-- ^ Literal constant</span><span>
+</span><span id="line-21"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Lambda"><span class="annot"><a href="Syntax.html#Lambda"><span class="hs-identifier hs-var">Lambda</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Syntax.html#Ident"><span class="hs-identifier hs-type">Ident</span></a></span><span class="hs-special">]</span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span>      </span><span class="hs-comment">-- ^ Lambda abstraction with parameters and body</span><span>
+</span><span id="line-22"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="If"><span class="annot"><a href="Syntax.html#If"><span class="hs-identifier hs-var">If</span></a></span></span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span>        </span><span class="hs-comment">-- ^ Conditional: if &lt;cond&gt; then &lt;then&gt; else &lt;else&gt;</span><span>
+</span><span id="line-23"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Case"><span class="annot"><a href="Syntax.html#Case"><span class="hs-identifier hs-var">Case</span></a></span></span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span> </span><span class="hs-special">[</span><span class="hs-special">(</span><span class="annot"><a href="Syntax.html#Pattern"><span class="hs-identifier hs-type">Pattern</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span class="hs-special">)</span><span class="hs-special">]</span><span> </span><span class="hs-comment">-- ^ Pattern matching: case &lt;expr&gt; of &lt;alternatives&gt;</span><span>
+</span><span id="line-24"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Let"><span class="annot"><a href="Syntax.html#Let"><span class="hs-identifier hs-var">Let</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Syntax.html#Decl"><span class="hs-identifier hs-type">Decl</span></a></span><span class="hs-special">]</span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span>          </span><span class="hs-comment">-- ^ Local declarations and body expression</span><span>
+</span><span id="line-25"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="App"><span class="annot"><a href="Syntax.html#App"><span class="hs-identifier hs-var">App</span></a></span></span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span>            </span><span class="hs-comment">-- ^ Function application</span><span>
+</span><span id="line-26"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="BinOp"><span class="annot"><a href="Syntax.html#BinOp"><span class="hs-identifier hs-var">BinOp</span></a></span></span><span> </span><span class="annot"><a href="Syntax.html#BinOperator"><span class="hs-identifier hs-type">BinOperator</span></a></span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span> </span><span class="hs-comment">-- ^ Binary operator application</span><span>
+</span><span id="line-27"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="UnOp"><span class="annot"><a href="Syntax.html#UnOp"><span class="hs-identifier hs-var">UnOp</span></a></span></span><span> </span><span class="annot"><a href="Syntax.html#UnOperator"><span class="hs-identifier hs-type">UnOperator</span></a></span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span>     </span><span class="hs-comment">-- ^ Unary operator application</span><span>
+</span><span id="line-28"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="List"><span class="annot"><a href="Syntax.html#List"><span class="hs-identifier hs-var">List</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span class="hs-special">]</span><span>              </span><span class="hs-comment">-- ^ List literal</span><span>
+</span><span id="line-29"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Tuple"><span class="annot"><a href="Syntax.html#Tuple"><span class="hs-identifier hs-var">Tuple</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span class="hs-special">]</span><span>             </span><span class="hs-comment">-- ^ Tuple literal</span><span>
+</span><span id="line-30"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679098767"><span id="local-6989586621679098769"><span id="local-6989586621679098805"><span class="annot"><span class="annottext">Int -&gt; Expr -&gt; ShowS
+[Expr] -&gt; ShowS
+Expr -&gt; String
+(Int -&gt; Expr -&gt; ShowS)
+-&gt; (Expr -&gt; String) -&gt; ([Expr] -&gt; ShowS) -&gt; Show Expr
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+showList :: [Expr] -&gt; ShowS
+$cshowList :: [Expr] -&gt; ShowS
+show :: Expr -&gt; String
+$cshow :: Expr -&gt; String
+showsPrec :: Int -&gt; Expr -&gt; ShowS
+$cshowsPrec :: Int -&gt; Expr -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-31"></span><span>
+</span><span id="line-32"></span><span class="hs-comment">-- | Patterns used in case alternatives.</span><span>
+</span><span id="line-33"></span><span class="hs-keyword">data</span><span> </span><span id="Pattern"><span class="annot"><a href="Syntax.html#Pattern"><span class="hs-identifier hs-var">Pattern</span></a></span></span><span>
+</span><span id="line-34"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span id="PWildcard"><span class="annot"><a href="Syntax.html#PWildcard"><span class="hs-identifier hs-var">PWildcard</span></a></span></span><span>                </span><span class="hs-comment">-- ^ Matches anything (&quot;_&quot; pattern)</span><span>
+</span><span id="line-35"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="PVar"><span class="annot"><a href="Syntax.html#PVar"><span class="hs-identifier hs-var">PVar</span></a></span></span><span> </span><span class="annot"><a href="Syntax.html#Ident"><span class="hs-identifier hs-type">Ident</span></a></span><span>               </span><span class="hs-comment">-- ^ Variable pattern, binds the identifier</span><span>
+</span><span id="line-36"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="PLit"><span class="annot"><a href="Syntax.html#PLit"><span class="hs-identifier hs-var">PLit</span></a></span></span><span> </span><span class="annot"><a href="Syntax.html#Literal"><span class="hs-identifier hs-type">Literal</span></a></span><span>             </span><span class="hs-comment">-- ^ Literal pattern</span><span>
+</span><span id="line-37"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="PList"><span class="annot"><a href="Syntax.html#PList"><span class="hs-identifier hs-var">PList</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Syntax.html#Pattern"><span class="hs-identifier hs-type">Pattern</span></a></span><span class="hs-special">]</span><span>          </span><span class="hs-comment">-- ^ List pattern</span><span>
+</span><span id="line-38"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="PTuple"><span class="annot"><a href="Syntax.html#PTuple"><span class="hs-identifier hs-var">PTuple</span></a></span></span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Syntax.html#Pattern"><span class="hs-identifier hs-type">Pattern</span></a></span><span class="hs-special">]</span><span>         </span><span class="hs-comment">-- ^ Tuple pattern</span><span>
+</span><span id="line-39"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679098744"><span id="local-6989586621679098746"><span id="local-6989586621679098758"><span class="annot"><span class="annottext">Int -&gt; Pattern -&gt; ShowS
+[Pattern] -&gt; ShowS
+Pattern -&gt; String
+(Int -&gt; Pattern -&gt; ShowS)
+-&gt; (Pattern -&gt; String) -&gt; ([Pattern] -&gt; ShowS) -&gt; Show Pattern
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+showList :: [Pattern] -&gt; ShowS
+$cshowList :: [Pattern] -&gt; ShowS
+show :: Pattern -&gt; String
+$cshow :: Pattern -&gt; String
+showsPrec :: Int -&gt; Pattern -&gt; ShowS
+$cshowsPrec :: Int -&gt; Pattern -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-40"></span><span>
+</span><span id="line-41"></span><span class="hs-comment">-- | Literal values supported by the language.</span><span>
+</span><span id="line-42"></span><span class="hs-keyword">data</span><span> </span><span id="Literal"><span class="annot"><a href="Syntax.html#Literal"><span class="hs-identifier hs-var">Literal</span></a></span></span><span>
+</span><span id="line-43"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span id="LInt"><span class="annot"><a href="Syntax.html#LInt"><span class="hs-identifier hs-var">LInt</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>                 </span><span class="hs-comment">-- ^ Integer literal</span><span>
+</span><span id="line-44"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="LFloat"><span class="annot"><a href="Syntax.html#LFloat"><span class="hs-identifier hs-var">LFloat</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Double</span></span><span>            </span><span class="hs-comment">-- ^ Floating-point literal</span><span>
+</span><span id="line-45"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="LChar"><span class="annot"><a href="Syntax.html#LChar"><span class="hs-identifier hs-var">LChar</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Char</span></span><span>               </span><span class="hs-comment">-- ^ Character literal</span><span>
+</span><span id="line-46"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="LString"><span class="annot"><a href="Syntax.html#LString"><span class="hs-identifier hs-var">LString</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>           </span><span class="hs-comment">-- ^ String literal</span><span>
+</span><span id="line-47"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="LBool"><span class="annot"><a href="Syntax.html#LBool"><span class="hs-identifier hs-var">LBool</span></a></span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Bool</span></span><span>               </span><span class="hs-comment">-- ^ Boolean literal</span><span>
+</span><span id="line-48"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679098720"><span id="local-6989586621679098722"><span id="local-6989586621679098737"><span class="annot"><span class="annottext">Int -&gt; Literal -&gt; ShowS
+[Literal] -&gt; ShowS
+Literal -&gt; String
+(Int -&gt; Literal -&gt; ShowS)
+-&gt; (Literal -&gt; String) -&gt; ([Literal] -&gt; ShowS) -&gt; Show Literal
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+showList :: [Literal] -&gt; ShowS
+$cshowList :: [Literal] -&gt; ShowS
+show :: Literal -&gt; String
+$cshow :: Literal -&gt; String
+showsPrec :: Int -&gt; Literal -&gt; ShowS
+$cshowsPrec :: Int -&gt; Literal -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-49"></span><span>
+</span><span id="line-50"></span><span class="hs-comment">-- | Binary operators.</span><span>
+</span><span id="line-51"></span><span class="hs-keyword">data</span><span> </span><span id="BinOperator"><span class="annot"><a href="Syntax.html#BinOperator"><span class="hs-identifier hs-var">BinOperator</span></a></span></span><span>
+</span><span id="line-52"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span id="Add"><span class="annot"><a href="Syntax.html#Add"><span class="hs-identifier hs-var">Add</span></a></span></span><span>  </span><span class="hs-comment">-- ^ Addition (+)</span><span>
+</span><span id="line-53"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Sub"><span class="annot"><a href="Syntax.html#Sub"><span class="hs-identifier hs-var">Sub</span></a></span></span><span>  </span><span class="hs-comment">-- ^ Subtraction (-)</span><span>
+</span><span id="line-54"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Mul"><span class="annot"><a href="Syntax.html#Mul"><span class="hs-identifier hs-var">Mul</span></a></span></span><span>  </span><span class="hs-comment">-- ^ Multiplication (*)</span><span>
+</span><span id="line-55"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Div"><span class="annot"><a href="Syntax.html#Div"><span class="hs-identifier hs-var">Div</span></a></span></span><span>  </span><span class="hs-comment">-- ^ Division (/)</span><span>
+</span><span id="line-56"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Mod"><span class="annot"><a href="Syntax.html#Mod"><span class="hs-identifier hs-var">Mod</span></a></span></span><span>  </span><span class="hs-comment">-- ^ Modulus (mod)</span><span>
+</span><span id="line-57"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Eq"><span class="annot"><a href="Syntax.html#Eq"><span class="hs-identifier hs-var">Eq</span></a></span></span><span>   </span><span class="hs-comment">-- ^ Equality (==)</span><span>
+</span><span id="line-58"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Neq"><span class="annot"><a href="Syntax.html#Neq"><span class="hs-identifier hs-var">Neq</span></a></span></span><span>  </span><span class="hs-comment">-- ^ Inequality (/=)</span><span>
+</span><span id="line-59"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Lt"><span class="annot"><a href="Syntax.html#Lt"><span class="hs-identifier hs-var">Lt</span></a></span></span><span>   </span><span class="hs-comment">-- ^ Less than (&lt;)</span><span>
+</span><span id="line-60"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Le"><span class="annot"><a href="Syntax.html#Le"><span class="hs-identifier hs-var">Le</span></a></span></span><span>   </span><span class="hs-comment">-- ^ Less than or equal (&lt;=)</span><span>
+</span><span id="line-61"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Gt"><span class="annot"><a href="Syntax.html#Gt"><span class="hs-identifier hs-var">Gt</span></a></span></span><span>   </span><span class="hs-comment">-- ^ Greater than (&gt;)</span><span>
+</span><span id="line-62"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Ge"><span class="annot"><a href="Syntax.html#Ge"><span class="hs-identifier hs-var">Ge</span></a></span></span><span>   </span><span class="hs-comment">-- ^ Greater than or equal (&gt;=)</span><span>
+</span><span id="line-63"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="And"><span class="annot"><a href="Syntax.html#And"><span class="hs-identifier hs-var">And</span></a></span></span><span>  </span><span class="hs-comment">-- ^ Logical and (&amp;&amp;)</span><span>
+</span><span id="line-64"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Or"><span class="annot"><a href="Syntax.html#Or"><span class="hs-identifier hs-var">Or</span></a></span></span><span>   </span><span class="hs-comment">-- ^ Logical or (||)</span><span>
+</span><span id="line-65"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679098701"><span id="local-6989586621679098703"><span id="local-6989586621679098705"><span class="annot"><span class="annottext">Int -&gt; BinOperator -&gt; ShowS
+[BinOperator] -&gt; ShowS
+BinOperator -&gt; String
+(Int -&gt; BinOperator -&gt; ShowS)
+-&gt; (BinOperator -&gt; String)
+-&gt; ([BinOperator] -&gt; ShowS)
+-&gt; Show BinOperator
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+showList :: [BinOperator] -&gt; ShowS
+$cshowList :: [BinOperator] -&gt; ShowS
+show :: BinOperator -&gt; String
+$cshow :: BinOperator -&gt; String
+showsPrec :: Int -&gt; BinOperator -&gt; ShowS
+$cshowsPrec :: Int -&gt; BinOperator -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-66"></span><span>
+</span><span id="line-67"></span><span class="hs-comment">-- | Unary operators.</span><span>
+</span><span id="line-68"></span><span class="hs-keyword">data</span><span> </span><span id="UnOperator"><span class="annot"><a href="Syntax.html#UnOperator"><span class="hs-identifier hs-var">UnOperator</span></a></span></span><span>
+</span><span id="line-69"></span><span>  </span><span class="hs-glyph">=</span><span> </span><span id="Neg"><span class="annot"><a href="Syntax.html#Neg"><span class="hs-identifier hs-var">Neg</span></a></span></span><span>  </span><span class="hs-comment">-- ^ Numeric negation (\n -&gt; -n)</span><span>
+</span><span id="line-70"></span><span>  </span><span class="hs-glyph">|</span><span> </span><span id="Not"><span class="annot"><a href="Syntax.html#Not"><span class="hs-identifier hs-var">Not</span></a></span></span><span>  </span><span class="hs-comment">-- ^ Logical negation (not)</span><span>
+</span><span id="line-71"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679098693"><span id="local-6989586621679098695"><span id="local-6989586621679098697"><span class="annot"><span class="annottext">Int -&gt; UnOperator -&gt; ShowS
+[UnOperator] -&gt; ShowS
+UnOperator -&gt; String
+(Int -&gt; UnOperator -&gt; ShowS)
+-&gt; (UnOperator -&gt; String)
+-&gt; ([UnOperator] -&gt; ShowS)
+-&gt; Show UnOperator
+forall a.
+(Int -&gt; a -&gt; ShowS) -&gt; (a -&gt; String) -&gt; ([a] -&gt; ShowS) -&gt; Show a
+showList :: [UnOperator] -&gt; ShowS
+$cshowList :: [UnOperator] -&gt; ShowS
+show :: UnOperator -&gt; String
+$cshow :: UnOperator -&gt; String
+showsPrec :: Int -&gt; UnOperator -&gt; ShowS
+$cshowsPrec :: Int -&gt; UnOperator -&gt; ShowS
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Show</span></span></span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-72"></span></pre></body></html>

@@ -1,0 +1,17 @@
+inctag 0 0 : 
+inctag 0 0 : 
+split 1 1 negBool : f0_cg_snd1 <- f0_f_in_negBool
+const 1 1 true : f0_cg_snd2 <- f0_x
+callgroup 0 3 :  <- f0_inctag,f0_cg_snd1,f0_cg_snd2
+callsnd 0 1 :  <- f0_f_out
+callsnd 0 1 :  <- f0_x_out
+retsnd 0 1 :  <- f0_cg
+tagop 1 1 : f0_retsnd <- f0_cg_retsnd
+retsnd 0 1 :  <- f0_out
+ret 0 1 :  <- f0_retsnd
+inctag 0 0 : 
+split 1 0 b : 
+split 1 1 b : f1_out <- f1_v_in_b
+not 1 1 : f1_retsnd <- f1_v_out
+retsnd 0 1 :  <- f1_out
+ret 0 1 :  <- f1_retsnd
