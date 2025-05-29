@@ -139,5 +139,5 @@ clean:
 	@echo "Limpeza completa."
 	@rm -f $(SRC_DIR)/*.hi $(SRC_DIR)/*.o $(EXE_DF) $(EXE_AST) $(EXE_CG)
 	@rm -f $(LEXER_HS) $(PARSER_HS)
-	@rm -rf $(TEST_DIR)/output $(TEST_DIR)/ast-output $(TALM_DIR)
+	@rm -rf $(TEST_DIR)/output $(TEST_DIR)/ast-output
 	@echo
