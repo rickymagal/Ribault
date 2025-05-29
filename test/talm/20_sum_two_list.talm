@@ -1,0 +1,24 @@
+inctag 0 0 : 
+inctag 0 0 : 
+split 1 1 sumTwo : f0_cg_snd1 <- f0_f_in_sumTwo
+const 1 1 10 : f0_x_out <- f0_x_e0
+const 1 1 15 : f0_x_out <- f0_x_e1
+split 1 2 : f0_cg_snd2 <- f0_x_e0_out,f0_x_e1_out
+callgroup 0 3 :  <- f0_inctag,f0_cg_snd1,f0_cg_snd2
+callsnd 0 1 :  <- f0_f_out
+callsnd 0 1 :  <- f0_x_out
+retsnd 0 1 :  <- f0_cg
+tagop 1 1 : f0_retsnd <- f0_cg_retsnd
+retsnd 0 1 :  <- f0_out
+ret 0 1 :  <- f0_retsnd
+inctag 0 0 : 
+split 1 0 lst : 
+split 1 1 lst : f1_steer0 <- f1_scrut_in_lst
+split 1 1 x : f1_bd0_out <- f1_bd0_l_in_x
+split 1 1 y : f1_bd0_out <- f1_bd0_r_in_y
+add 1 2 : f1_steer0 <- f1_bd0_l_out,f1_bd0_r_out
+steer 2 2 :  <- f1_scrut_out,f1_bd0_out
+const 1 1 0 : f1_steer1 <- f1_bd1
+steer 2 2 :  <- f1_scrut_out,f1_bd1_out
+retsnd 0 1 :  <- f1_out
+ret 0 1 :  <- f1_retsnd
