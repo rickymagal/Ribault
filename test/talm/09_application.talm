@@ -1,0 +1,31 @@
+inctag 0 0 : 
+inctag 0 0 : 
+inctag 0 0 : 
+super 1 1 : f0_f_f_tagop <- f0_f_f_body_out
+tagop 1 1 :  <- f0_f_f
+inctag 0 0 : 
+split 1 1 f : f0_f_f_body_cg_snd1 <- f0_f_f_body_f_in_f
+split 1 1 x : f0_f_f_body_cg_snd2 <- f0_f_f_body_x_in_x
+callgroup 0 3 :  <- f0_f_f_body_inctag,f0_f_f_body_cg_snd1,f0_f_f_body_cg_snd2
+callsnd 0 1 :  <- f0_f_f_body_f_out
+callsnd 0 1 :  <- f0_f_f_body_x_out
+retsnd 0 1 :  <- f0_f_f_body_cg
+tagop 1 1 : f0_f_f <- f0_f_f_body_cg_retsnd
+super 1 1 : f0_f_x_tagop <- f0_f_x_body_out
+tagop 1 1 :  <- f0_f_x
+split 1 1 n : f0_f_x_body_out <- f0_f_x_body_l_in_n
+const 1 1 2 : f0_f_x_body_out <- f0_f_x_body_r
+mul 1 2 : f0_f_x <- f0_f_x_body_l_out,f0_f_x_body_r_out
+callgroup 0 3 :  <- f0_f_inctag,f0_f_cg_snd1,f0_f_cg_snd2
+callsnd 0 1 :  <- f0_f_f_out
+callsnd 0 1 :  <- f0_f_x_out
+retsnd 0 1 :  <- f0_f_cg
+tagop 1 1 : f0_cg_snd1 <- f0_f_cg_retsnd
+const 1 1 21 : f0_cg_snd2 <- f0_x
+callgroup 0 3 :  <- f0_inctag,f0_cg_snd1,f0_cg_snd2
+callsnd 0 1 :  <- f0_f_out
+callsnd 0 1 :  <- f0_x_out
+retsnd 0 1 :  <- f0_cg
+tagop 1 1 : f0_retsnd <- f0_cg_retsnd
+retsnd 0 1 :  <- f0_out
+ret 0 1 :  <- f0_retsnd

@@ -1,0 +1,8 @@
+inctag 0 0 : 
+const 1 1 2 : f0_out <- f0_l
+const 1 1 3 : f0_r_out <- f0_r_l
+const 1 1 4 : f0_r_out <- f0_r_r
+mul 1 2 : f0_out <- f0_r_l_out,f0_r_r_out
+add 1 2 : f0_retsnd <- f0_l_out,f0_r_out
+retsnd 0 1 :  <- f0_out
+ret 0 1 :  <- f0_retsnd

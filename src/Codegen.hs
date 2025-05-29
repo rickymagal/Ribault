@@ -8,8 +8,8 @@ module Codegen
   , generateInstructions
   ) where
 
-import Data.Char       (isSpace)
-import Data.Text.Lazy  (Text)
+import Data.Char      (isSpace)
+import Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as T
 
 -- | Parse node definitions in DOT: lines containing "[label=".
@@ -43,19 +43,19 @@ generateInstructions nodes edges = map (genNode edges) nodes
 -- | Generate a single TALM instruction from a node and its edges
 genNode :: [(Text, Text)] -> (Text, Text) -> Text
 genNode edges (name, label) =
-  let ins       = [ s | (s,d) <- edges, d == name ]
-      outs      = [ d | (s,d) <- edges, s == name ]
-      (op,immo) = case T.splitOn ":" label of
-                     [x,y] -> (x, Just y)
-                     [x]   -> (x, Nothing)
-                     xs    -> (head xs, Just (last xs))
-      opcode    = mapOpcode op
-      immTxt    = maybe T.empty (T.cons ' ') immo
-      nRes      = calcResults op outs
-      nSrc      = length ins
-      dsts      = T.intercalate "," (take nRes outs)
-      srcs      = T.intercalate "," ins
-      arrowTxt  = if nSrc > 0 then " <- " <> srcs else ""
+  let ins      = [ s | (s,d) <- edges, d == name ]
+      outs     = [ d | (s,d) <- edges, s == name ]
+      (op,mi)  = case T.splitOn ":" label of
+                    [x,y] -> (x, Just y)
+                    [x]   -> (x, Nothing)
+                    xs    -> (head xs, Just (last xs))
+      opcode   = mapOpcode op
+      immTxt   = maybe T.empty (T.cons ' ') mi
+      nRes     = calcResults op outs
+      nSrc     = length ins
+      dsts     = T.intercalate "," (take nRes outs)
+      srcs     = T.intercalate "," ins
+      arrowTxt = if nSrc > 0 then " <- " <> srcs else ""
   in T.concat [ opcode
               , " " , T.pack (show nRes)
               , " " , T.pack (show nSrc)
@@ -64,26 +64,21 @@ genNode edges (name, label) =
               , arrowTxt
               ]
 
--- | Map operation name to TALM opcode
-mapOpcode :: Text -> Text
-mapOpcode "var" = "split"
-mapOpcode "in"  = "split"
+-- | Map operation name to TALM opcode\mapOpcode :: Text -> Text
 mapOpcode op
-  | op `elem` [ "const","add","sub","mul","div"
-              ,"andi","ori","xori","and","or","xor"
-              ,"not","eq","neq","lt","leq","gt","geq"
-              ,"addi","subi","muli","divi"
-              ,"steer","merge","split"
-              ,"callgroup","callsnd","retsnd","ret"
-              ,"inctag","tagop"
-              ,"super","specsuper","superinstmacro" ] = op
-  | otherwise = error $ "Unknown label opcode: " ++ T.unpack op
+  | op == "var"   = "split"
+  | op == "in"    = "split"
+  | op `elem` [ "const", "add", "sub", "mul", "div", "mod"
+              , "andi","ori","xori","and","or","xor"
+              , "not", "eq","neq","lt","leq","gt","geq"
+              , "addi","subi","muli","divi"
+              , "steer","merge","split"
+              , "callgroup","callsnd","retsnd","ret"
+              , "inctag","tagop"
+              , "super","specsuper","superinstmacro" ] = op
+  | otherwise      = error $ "Unknown label opcode: " ++ T.unpack op
 
--- | Determine number of results for an op
-typeResults :: [(Text,Text)] -> Text -> [Text] -> Int
-typeResults _ = calcResults
-
--- | Calculate results count by op and outgoing edges
+-- | Calculate number of results based on op and outgoing edges
 calcResults :: Text -> [Text] -> Int
 calcResults "steer" _    = 2
 calcResults "split" outs = length outs
