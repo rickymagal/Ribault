@@ -167,4 +167,4 @@ clean:
 	@echo "Limpeza completa."
 	@rm -f $(SRC_DIR)/*.hi $(SRC_DIR)/*.o $(EXE_DF) $(EXE_AST) $(EXE_CG)
 	@rm -f $(LEXER_HS) $(PARSER_HS)
-	@rm -rf $(DF_OUT_DIR) $(DF_IMG_DIR) $(AST_OUT_DIR) $(AST_IMG_DIR) $(TALM_DIR)
+	@rm -rf $(DF_OUT_DIR)  $(AST_OUT_DIR) 

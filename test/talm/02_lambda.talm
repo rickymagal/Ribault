@@ -1,0 +1,20 @@
+inctag 0 0 : 
+super 1 1 : f0_tagop <- f0_body_out
+tagop 1 1 :  <- f0
+split 1 1 x : f0_body_out <- f0_body_l_in_x
+split 1 1 y : f0_body_out <- f0_body_r_in_y
+add 1 2 : f0 <- f0_body_l_out,f0_body_r_out
+retsnd 0 1 :  <- f0_out
+ret 0 1 :  <- f0_retsnd
+inctag 0 0 : 
+super 1 1 : f1_tagop <- f1_body_out
+tagop 1 1 :  <- f1
+split 1 1 x : f1 <- f1_body_in_x
+retsnd 0 1 :  <- f1_out
+ret 0 1 :  <- f1_retsnd
+inctag 0 0 : 
+super 1 1 : f2_tagop <- f2_body_out
+tagop 1 1 :  <- f2
+split 1 1 x : f2 <- f2_body_in_x
+retsnd 0 1 :  <- f2_out
+ret 0 1 :  <- f2_retsnd
