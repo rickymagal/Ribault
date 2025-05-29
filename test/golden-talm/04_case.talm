@@ -1,0 +1,8 @@
+inctag 0 0 : 
+super 1 1 : f0_tagop <- f0_body_out
+tagop 1 1 :  <- f0
+split 1 1 p : f0_body_steer0 <- f0_body_scrut_in_p
+split 1 1 x : f0_body_steer0 <- f0_body_bd0_in_x
+steer 2 2 :  <- f0_body_scrut_out,f0_body_bd0_out
+retsnd 0 1 :  <- f0_out
+ret 0 1 :  <- f0_retsnd
