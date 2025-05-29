@@ -5,7 +5,7 @@ Repository for the final undergraduate project presented at the Department of Co
 **Advisor**: Prof. Dr. Alberto Ferreira de Souza  
 **Co-advisor**: Prof. Dr. Tiago Assumpção de Oliveira Alves
 
-Code documents: https://rickymagal.github.io/HTC/
+Code documents: https://rickymagal.github.io/HTC
 
 ## Introduction
 
@@ -15,7 +15,7 @@ This work proposes the translation of programs written in a Haskell subset into 
 
 | Directory         | Content                                                                                                                   |
 |-------------------|---------------------------------------------------------------------------------------------------------------------------|
-| `docs/`           | Project proposal (`anteprojeto.pdf`)) and formal language definition (`haskell-subset.ebnf`).                             |
+| `docs/`           | Project proposal (`anteprojeto.pdf`) and formal language definition (`haskell-subset.ebnf`).                             |
 | `docs/html`           | Haddock documents.                             |
 | `src/`            | Compiler source code.                                                                                                     |
 | `test/`           | Unit and integration test cases.                                                                                          |
@@ -28,9 +28,6 @@ This work proposes the translation of programs written in a Haskell subset into 
 | `scripts/test_unified.py`  | Correctness testing script (Python).                                                                                          |
 
 ## Execution
-
-### Analysis step (generates AST images on test/ast-images and .dot files on test/output)
-
 
 ```bash
 # From the root of the project, run:
