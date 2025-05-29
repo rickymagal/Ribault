@@ -1,0 +1,30 @@
+name: Publish Haddock to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup GHC and tools
+        uses: haskell/actions/setup@v3
+        with:
+          ghc-version: 9.4
+        # instala também alex, happy e graphviz:
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y alex happy graphviz
+
+      - name: Generate Haddock docs
+        run: make docs
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/html   # ou './docs' se você seguiu a opção 1
