@@ -9,7 +9,7 @@ Code documents: https://rickymagal.github.io/HTC/
 
 ## Introduction
 
-This work proposes the translation of programs written in a Haskell subset into Dataflow executable code, bridging the functional paradigm—based on pure expressions—with a data-driven parallel execution model. The compiler automatically generates graphs compatible with distributed execution environments, with additional support to generating TALM assembly code.
+This work proposes the translation of programs written in a Haskell subset into Dataflow executable code, bridging the functional paradigm—based on pure expressions—with a data-driven parallel execution model. The compiler automatically generates graphs compatible with distributed execution environments, with additional support for generating TALM assembly code.
 
 ## Repository Structure
 
