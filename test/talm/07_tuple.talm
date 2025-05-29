@@ -1,0 +1,8 @@
+inctag 0 0 : 
+super 1 1 : f0_tagop <- f0_body_out
+tagop 1 1 :  <- f0
+split 1 1 y : f0_body_out <- f0_body_e0_in_y
+split 1 1 x : f0_body_out <- f0_body_e1_in_x
+split 1 2 : f0 <- f0_body_e0_out,f0_body_e1_out
+retsnd 0 1 :  <- f0_out
+ret 0 1 :  <- f0_retsnd
