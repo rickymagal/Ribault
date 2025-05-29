@@ -21,7 +21,7 @@ This work proposes the translation of programs written in a Haskell subset into 
 | `test/`           | Unit and integration test cases.                                                                                          |
 | `test/ast-images` | Generated AST images.                                                                                                     |
 | `test/df-images`  | Generated Dataflow graph images.                                                                                          |
-| `test/talm`       | Generated TALM image.                                                                                                     |
+| `test/talm`       | Generated TALM code.                                                                                                     |
 | `test/golden-df`  | Standard for Dataflow graphs .dot.                                                                                          |
 | `test/golden-ast`  | Standard for AST .dot.                                                                                          |
 | `test/golden-talm`  | Standard for TALM code.                                                                                          |
