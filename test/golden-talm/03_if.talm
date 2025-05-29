@@ -1,0 +1,12 @@
+inctag 0 0 : 
+super 1 1 : f0_tagop <- f0_body_out
+tagop 1 1 :  <- f0
+split 1 1 a : f0_body_c_out <- f0_body_c_l_in_a
+split 1 1 b : f0_body_c_out <- f0_body_c_r_in_b
+gt 1 2 : f0_body_steer <- f0_body_c_l_out,f0_body_c_r_out
+steer 2 1 : f0_body_merge <- f0_body_c_out
+split 1 1 a : f0_body_merge <- f0_body_t_in_a
+split 1 1 b : f0_body_merge <- f0_body_e_in_b
+merge 1 3 :  <- f0_body_t_out,f0_body_e_out,f0_body_steer
+retsnd 0 1 :  <- f0_out
+ret 0 1 :  <- f0_retsnd

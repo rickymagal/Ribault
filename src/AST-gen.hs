@@ -1,16 +1,19 @@
--- AST-gen.hs
 {-# LANGUAGE LambdaCase, OverloadedStrings #-}
 
--- | Módulo com função para geração de grafo AST em DOT.
+-- | ASTGen provides a function to render the program’s Abstract Syntax Tree
+--   as a Graphviz DOT graph.
 module ASTGen
   ( programToDot
   ) where
 
-import Data.Text.Lazy     (Text)
-import qualified Data.Text.Lazy    as T
+import Data.Text.Lazy (Text)
+import qualified Data.Text.Lazy as T
 import Syntax (Program(..), Decl(..), Expr(..), Pattern(..))
 
--- | Gera um grafo AST em formato DOT a partir de um AST de Programa.
+-- | Convert an entire 'Program' AST into a DOT-formatted graph.
+--
+-- Each top-level function declaration is numbered sequentially and rendered
+-- as a subgraph.  The output is a valid Graphviz DOT description of the AST.
 programToDot :: Program -> Text
 programToDot (Program decls) =
      "digraph AST {\n"
@@ -18,20 +21,27 @@ programToDot (Program decls) =
   <> T.concat (zipWith (\i d -> declToDot ("decl" <> T.pack (show i)) d) [0..] decls)
   <> "}\n"
 
--- | Renderiza uma declaração como subgrafo DOT.
+-- | Render a single function declaration as a DOT subgraph.
+--
+-- The root node is labeled "FunDecl\n<name>(<params>)", and connected
+-- to its body node, which recursively expands the expression tree.
 declToDot :: Text -> Decl -> Text
 declToDot name (FunDecl f ps b) =
-    let lbl   = "FunDecl\n" <> T.pack f <> "(" <> T.intercalate "," (map T.pack ps) <> ")"
+    let lbl   = "FunDecl\n" <> T.pack f
+             <> "(" <> T.intercalate "," (map T.pack ps) <> ")"
         bodyN = name <> "_body"
     in  node name lbl
      <> node bodyN (exprLabel b)
      <> edge name bodyN
      <> exprToDot bodyN b
 
--- | Rótulo legível para cada expressão.
+-- | Generate a human-readable label for an expression node.
+--
+-- For example, a variable becomes "Var\nx", a lambda becomes "Lambda(x,y)"
+-- showing its parameters, and binary operators are annotated with their name.
 exprLabel :: Expr -> Text
 exprLabel = \case
-  Var x        -> "Var\n"   <> T.pack x
+  Var x        -> "Var\n" <> T.pack x
   Lit _        -> "Lit"
   Lambda ps _  -> "Lambda(" <> T.intercalate "," (map T.pack ps) <> ")"
   If{}         -> "If"
@@ -43,47 +53,59 @@ exprLabel = \case
   List{}       -> "List"
   Tuple{}      -> "Tuple"
 
--- | Desenha recursivamente crianças de uma expressão.
+-- | Recursively render the children of an expression node.
+--
+-- Each child is given a name based on the parent prefix plus role,
+-- connected by an edge, and then its subtree is expanded.
 exprToDot :: Text -> Expr -> Text
-exprToDot prefix expr =
-  case expr of
-    Var{}    -> ""
-    Lit{}    -> ""
-    Lambda _ b -> child prefix "body" b
+exprToDot prefix expr = case expr of
+  Var{}    -> ""
+  Lit{}    -> ""
+  Lambda _ b ->
+      child prefix "body" b
 
-    If c t e -> children prefix ["cond","then","else"] [c,t,e]
+  If c t e ->
+      children prefix ["cond","then","else"] [c,t,e]
 
-    Case s alts ->
-         child prefix "scrut" s
-      <> T.concat [ altToDot prefix i pat bd
-                  | (i,(pat,bd)) <- zip [0..] alts ]
+  Case s alts ->
+      child prefix "scrut" s
+    <> T.concat [ altToDot prefix i pat bd
+                | (i,(pat,bd)) <- zip [0..] alts ]
 
-    Let ds e ->
-         T.concat [ declToDot (prefix <> "_let" <> T.pack (show i)) d
-                  | (i,d) <- zip [0..] ds ]
-      <> child prefix "in" e
+  Let ds e ->
+      T.concat [ declToDot (prefix <> "_let" <> T.pack (show i)) d
+               | (i,d) <- zip [0..] ds ]
+    <> child prefix "in" e
 
-    App f x -> children prefix ["fun","arg"] [f,x]
+  App f x ->
+      children prefix ["fun","arg"] [f,x]
 
-    BinOp _ l r -> children prefix ["l","r"] [l,r]
+  BinOp _ l r ->
+      children prefix ["l","r"] [l,r]
 
-    UnOp _ x -> child prefix "arg" x
+  UnOp _ x ->
+      child prefix "arg" x
 
-    List xs -> T.concat [ child prefix (T.pack $ "e"++show i) x
-                         | (i,x) <- zip [0..] xs ]
+  List xs ->
+      T.concat [ child prefix (T.pack $ "e" ++ show i) x
+               | (i,x) <- zip [0..] xs ]
 
-    Tuple xs -> T.concat [ child prefix (T.pack $ "e"++show i) x
-                          | (i,x) <- zip [0..] xs ]
+  Tuple xs ->
+      T.concat [ child prefix (T.pack $ "e" ++ show i) x
+               | (i,x) <- zip [0..] xs ]
+
   where
+    -- | Render a single child node and connect it.
     child p role e =
       let n = p <> "_" <> role
       in  node n (exprLabel e)
        <> edge p n
        <> exprToDot n e
 
+    -- | Render multiple children with given roles.
     children p rs es = T.concat $ zipWith (\r e -> child p r e) rs es
 
--- | Renderiza alternativa de case.
+-- | Render a case alternative (pattern and corresponding body) as DOT.
 altToDot :: Text -> Int -> Pattern -> Expr -> Text
 altToDot prefix i pat bd =
   let pn = prefix <> "_pat" <> T.pack (show i)
@@ -94,7 +116,7 @@ altToDot prefix i pat bd =
    <> edge pn bn
    <> exprToDot bn bd
 
--- | Rótulo de padrão.
+-- | Generate a label for a pattern node.
 patternLabel :: Pattern -> Text
 patternLabel = \case
   PWildcard   -> "_"
@@ -103,12 +125,12 @@ patternLabel = \case
   PList _     -> "ListPat"
   PTuple _    -> "TuplePat"
 
--- | Define um nó DOT.
+-- | Define a DOT node with the given name and label.
 node :: Text -> Text -> Text
 node name label =
   "  " <> name <> " [label=\"" <> label <> "\"];\n"
 
--- | Define uma aresta DOT.
+-- | Define a DOT edge between two nodes.
 edge :: Text -> Text -> Text
 edge from to =
   "  " <> from <> " -> " <> to <> ";\n"
