@@ -15,14 +15,17 @@ This work proposes the translation of programs written in a Haskell subset into 
 
 | Directory         | Content                                                                                                                   |
 |-------------------|---------------------------------------------------------------------------------------------------------------------------|
-| `docs/`           | Project proposal (`anteprojeto.pdf`), monograph (`monografia.pdf`), and formal language definition (`haskell-subset.ebnf`). |
+| `docs/`           | Project proposal (`anteprojeto.pdf`)) and formal language definition (`haskell-subset.ebnf`).                             |
+| `docs/html`           | Haddock documents.                             |
 | `src/`            | Compiler source code.                                                                                                     |
 | `test/`           | Unit and integration test cases.                                                                                          |
 | `test/ast-images` | Generated AST images.                                                                                                     |
 | `test/df-images`  | Generated Dataflow graph images.                                                                                          |
+| `test/talm`       | Generated TALM image.                                                                                                     |
 | `test/golden-df`  | Standard for Dataflow graphs .dot.                                                                                          |
 | `test/golden-ast`  | Standard for AST .dot.                                                                                          |
-| `test/test_unified.py`  | Correctness testing script (Python).                                                                                          |
+| `test/golden-talm`  | Standard for TALM code.                                                                                          |
+| `scripts/test_unified.py`  | Correctness testing script (Python).                                                                                          |
 
 ## Execution
 
@@ -32,6 +35,8 @@ This work proposes the translation of programs written in a Haskell subset into 
 ```bash
 # From the root of the project, run:
 make
+# For pytest testing
+pytest -q
 ```
 
 ## Dependencies
