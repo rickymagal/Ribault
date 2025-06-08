@@ -1,0 +1,29 @@
+const f0_merge, 1
+const f0_merge, 2
+merge f0_out, f0_elem0_out, f0_elem1_out
+retsnd f0_out
+ret f0_retsnd
+const f1_merge, 1
+const f1_merge, 2
+const f1_merge, 3
+merge f1_out, f1_elem0_out, f1_elem1_out, f1_elem2_out
+retsnd f1_out
+ret f1_retsnd
+const f2_retsnd, \
+retsnd f2_out
+ret f2_retsnd
+const f3_retsnd, z
+retsnd f3_out
+ret f3_retsnd
+const f4_retsnd, 3.14
+retsnd f4_out
+ret f4_retsnd
+const f5_retsnd, 42
+retsnd f5_out
+ret f5_retsnd
+const f6_retsnd, false
+retsnd f6_out
+ret f6_retsnd
+const f7_retsnd, true
+retsnd f7_out
+ret f7_retsnd

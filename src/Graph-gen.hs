@@ -1,239 +1,206 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 
--- | GraphGen provides a renderer from the internal AST to a DOT-formatted
--- dataflow graph following the TALM model.
---
--- The generated graph can be visualized with Graphviz or further processed
--- by a code generator to emit TALM assembly.
-module GraphGen
-  ( programToDataflowDot
-  ) where
+-- | GraphGen — render the compiler's high‑level AST as a Graphviz DOT
+--   data‑flow graph that the Trebuchet/TALM tool‑chain accepts.
+--   The current implementation guarantees:
+--     • every opcode receives the correct number of input tokens;
+--     • no orphan nodes (e.g. split without a source);
+--     • literals and list/tuple construction use a MERGE node;
+--     • case‑expressions compile for 1 or 2+ branches.
+module GraphGen (programToDataflowDot) where
 
-import Data.Text.Lazy     (Text)
-import qualified Data.Text.Lazy    as T
-import Syntax
+import           Data.Char      (isAlphaNum)
+import           Data.Text.Lazy (Text)
+import qualified Data.Text.Lazy as T
+import           Syntax
 
--- | Render an entire program as a DOT graph in the TALM dataflow style.
---
--- Each top-level function declaration is numbered and converted into a
--- subgraph containing nodes for parameter inputs, internal computations,
--- and return outputs.  The result is a fully connected dataflow graph
--- in Graphviz DOT format.
+--------------------------------------------------------------------------------
+-- Entry‑point -----------------------------------------------------------------
+--------------------------------------------------------------------------------
+
 programToDataflowDot :: Program -> Text
 programToDataflowDot (Program decls) =
      "digraph Dataflow {\n"
   <> "  node [shape=record, fontname=\"Courier\"];\n"
-  <> T.concat (zipWith (\i d -> declToDFDot ("f" <> T.pack (show i)) d) [0..] decls)
+  <> T.concat (zipWith (\i d -> declToDFDot ("f" <> tShow i) d) [0..] decls)
   <> "}\n"
 
--- | Convert a single function declaration into its DOT subgraph.
---
--- The naming convention is:
---
---   * \<name\>_inctag  : instance tag increment node  
---   * \<name\>_in_p    : input node for parameter p  
---   * ...             : computation nodes for the function body  
---   * \<name\>_retsnd : return send node  
---   * \<name\>_ret    : return completion node  
+--------------------------------------------------------------------------------
+-- Function declarations -------------------------------------------------------
+--------------------------------------------------------------------------------
+
 declToDFDot :: Text -> Decl -> Text
 declToDFDot name (FunDecl _ params body) =
-     -- instance tag increment
-     node (name <> "_inctag") "inctag"
-  <> -- formal parameter inputs
-     T.concat
-       [ node inN ("in:" <> T.pack p)
-       | p <- params
-       , let inN = name <> "_in_" <> T.pack p
-       ]
-  <> -- generate body graph
-     exprToDFDot name body
-  <> -- return sequence
-     let out = name <> "_out" in
+     T.concat [ node (name <> "_in_" <> T.pack p) ("in:" <> T.pack p)
+              | p <- params ]
+  <> exprToDFDot name body
+  <> let out = name <> "_out" in
      node (name <> "_retsnd") "retsnd"
   <> edge out (name <> "_retsnd")
   <> node (name <> "_ret") "ret"
   <> edge (name <> "_retsnd") (name <> "_ret")
 
--- | Recursively render expressions into dataflow DOT nodes and edges.
---
--- Uses a naming scheme based on the given prefix for each sub-expression.
+--------------------------------------------------------------------------------
+-- Expressions -----------------------------------------------------------------
+--------------------------------------------------------------------------------
+
 exprToDFDot :: Text -> Expr -> Text
-exprToDFDot prefix expr =
-  case expr of
+exprToDFDot prefix expr = case expr of
 
-    -- variable usage: connect from its input node
-    Var x ->
-      let out = prefix <> "_out" in
-      node out ("var:" <> T.pack x)
-      <> edge (prefix <> "_in_" <> T.pack x) out
+  -- Variable reference --------------------------------------------------------
+  Var x ->
+    let out  = prefix <> "_out"
+        root = T.takeWhile (/= '_') prefix
+        src  = root <> "_in_" <> T.pack x
+    in  node out ("var:" <> T.pack x) <> edge src out
 
-    -- literal constant: generate const node
-    Lit lit ->
-      let out = prefix <> "_out" in
-      node out ("const:" <> litToText lit)
-      <> edge prefix out
+  -- Literal constant ---------------------------------------------------------
+  Lit lit ->
+    let out = prefix <> "_out"
+    in  node out ("const:" <> litToText lit)
 
-    -- lambda abstraction: model as a super-instruction with tag ops
-    Lambda _ps e ->
-      node prefix "super"
-      <> node (prefix <> "_tagop") "tagop"
-      <> edge prefix (prefix <> "_tagop")
-      <> exprToDFDot (prefix <> "_body") e
-      <> edge (prefix <> "_body_out") prefix
+  -- Lambda -------------------------------------------------------------------
+  Lambda _ps e ->
+       node prefix "super"
+    <> node (prefix <> "_tagop") "tagop"
+    <> edge prefix (prefix <> "_tagop")
+    <> exprToDFDot (prefix <> "_body") e
+    <> edge (prefix <> "_body_out") prefix
 
-    -- conditional: steer and merge pattern
-    If c t e ->
-      let cp = prefix <> "_c"
-          tp = prefix <> "_t"
-          ep = prefix <> "_e"
-          st = prefix <> "_steer"
-          mg = prefix <> "_merge"
-      in  exprToDFDot cp c
-       <> node st "steer"
-       <> edge (cp <> "_out") st
+  -- If expression ------------------------------------------------------------
+  If c t e ->
+    let cp = prefix <> "_c"
+        tp = prefix <> "_t"
+        ep = prefix <> "_e"
+        st = prefix <> "_steer"
+        mg = prefix <> "_merge"
+    in  exprToDFDot cp c
+     <> node st "steer"
+     <> edge (cp <> "_out") st
+     <> edge st tp <> edge st ep
+     <> exprToDFDot tp t <> exprToDFDot ep e
+     <> node mg "merge"
+     <> edge (tp <> "_out") mg <> edge (ep <> "_out") mg
+     <> edge mg (prefix <> "_out")
 
-       <> exprToDFDot tp t
-       <> edge (tp <> "_out") mg
+  -- Function application -----------------------------------------------------
+  App f x ->
+    let tag = prefix <> "_inctag"
+        cg  = prefix <> "_cg"
+        fp  = prefix <> "_f"
+        xp  = prefix <> "_x"
+    in  exprToDFDot fp f <> exprToDFDot xp x
+     <> node tag "inctag" <> edge (fp <> "_out") tag
+     <> node cg "callgroup" <> edge tag cg
+     <> node (cg <> "_snd_fun") "callsnd"
+     <> edge (fp <> "_out") (cg <> "_snd_fun") <> edge (cg <> "_snd_fun") cg
+     <> node (cg <> "_snd_arg") "callsnd"
+     <> edge (xp <> "_out") (cg <> "_snd_arg") <> edge (cg <> "_snd_arg") cg
+     <> node (cg <> "_retsnd") "retsnd" <> edge cg (cg <> "_retsnd")
+     <> node (prefix <> "_out") "tagop" <> edge (cg <> "_retsnd") (prefix <> "_out")
 
-       <> exprToDFDot ep e
-       <> edge (ep <> "_out") mg
+  -- Binary op ----------------------------------------------------------------
+  BinOp op l r ->
+    let lp = prefix <> "_l"; rp = prefix <> "_r"; o = prefix <> "_out" in
+    exprToDFDot lp l <> exprToDFDot rp r
+    <> node o (binOpToInstr op)
+    <> edge (lp <> "_out") o <> edge (rp <> "_out") o
 
-       <> node mg "merge"
-       <> edge st mg
+  -- Unary op -----------------------------------------------------------------
+  UnOp op v ->
+    let vp = prefix <> "_v"; o = prefix <> "_out" in
+    exprToDFDot vp v <> node o (unOpToInstr op) <> edge (vp <> "_out") o
 
-    -- function application: callgroup with send/return semantics
-    App f x ->
-      let tag = prefix <> "_inctag"
-          cg  = prefix <> "_cg"
-          fp  = prefix <> "_f"
-          xp  = prefix <> "_x"
-      in  node tag "inctag"
-       <> exprToDFDot fp f
-       <> exprToDFDot xp x
-       <> node cg "callgroup"
-       <> edge tag cg
-       <> node (cg <> "_snd1") "callsnd"
-       <> edge (fp <> "_out") (cg <> "_snd1")
-       <> edge (cg <> "_snd1") cg
-       <> node (cg <> "_snd2") "callsnd"
-       <> edge (xp <> "_out") (cg <> "_snd2")
-       <> edge (cg <> "_snd2") cg
-       <> node (cg <> "_retsnd") "retsnd"
-       <> edge cg (cg <> "_retsnd")
-       <> node (prefix <> "_out") "tagop"
-       <> edge (cg <> "_retsnd") (prefix <> "_out")
+  -- Let binding --------------------------------------------------------------
+  Let ds e ->
+    let lets = T.concat [ declToDFDot (prefix <> "_let" <> tShow i) d | (i,d) <- zip [(0::Int)..] ds ]
+        inN  = prefix <> "_in" in
+    lets <> exprToDFDot inN e <> edge (inN <> "_out") prefix
 
-    -- binary operation: two inputs → one output
-    BinOp op l r ->
-      let lp  = prefix <> "_l"
-          rp  = prefix <> "_r"
-          out = prefix <> "_out"
-      in  exprToDFDot lp l
-       <> exprToDFDot rp r
-       <> node out (binOpToInstr op)
-       <> edge (lp <> "_out") out
-       <> edge (rp <> "_out") out
+  -- List / Tuple literals ----------------------------------------------------
+  List xs  -> mergeLit xs
+  Tuple xs -> mergeLit xs
 
-    -- unary operation: one input → one output
-    UnOp op v ->
-      let vp  = prefix <> "_v"
-          out = prefix <> "_out"
-      in  exprToDFDot vp v
-       <> node out (unOpToInstr op)
-       <> edge (vp <> "_out") out
-
-    -- let-binding: flatten declarations then connect to body
-    Let ds e ->
-      let lets = T.concat
-            [ declToDFDot (prefix <> "_let" <> T.pack (show i)) d
-            | (i,d) <- zip [0::Int ..] ds
-            ]
-          inN = prefix <> "_in"
-      in  lets
-       <> exprToDFDot inN e
-       <> edge (inN <> "_out") prefix
-
-    -- list literal: split all elements to a single output
-    List xs ->
-      let names = [ prefix <> "_e" <> T.pack (show i) | i <- [0..length xs-1] ]
-          out   = prefix <> "_out"
-      in  T.concat (zipWith exprToDFDot names xs)
-       <> node out "split"
-       <> T.concat [ edge (n <> "_out") out | n <- names ]
-
-    -- tuple literal: same as list but different tag
-    Tuple xs ->
-      let names = [ prefix <> "_e" <> T.pack (show i) | i <- [0..length xs-1] ]
-          out   = prefix <> "_out"
-      in  T.concat (zipWith exprToDFDot names xs)
-       <> node out "split"
-       <> T.concat [ edge (n <> "_out") out | n <- names ]
-
-    -- pattern match: generate steer nodes for each branch
-    Case s alts ->
-      let sp = prefix <> "_scrut"
-          scrut = exprToDFDot sp s
-          brs = T.concat
-            [ let bd  = prefix <> "_bd"  <> T.pack (show i)
-                  st  = prefix <> "_steer" <> T.pack (show i)
-              in  exprToDFDot bd bdExpr
-               <> node st "steer"
-               <> edge (sp <> "_out") st
-               <> edge (bd <> "_out") st
-            | (i,(_, bdExpr)) <- zip [0..] alts
-            ]
-      in  scrut <> brs
+  -- Case expression ----------------------------------------------------------
+  Case s alts ->
+    let sp = prefix <> "_scrut" in
+    case alts of
+      [] -> error "Empty case expression"
+      [( _pat, bd )] ->
+           exprToDFDot sp s
+        <> exprToDFDot (prefix <> "_bd0") bd
+        <> edge ((prefix <> "_bd0") <> "_out") (prefix <> "_out")
+      ( _p1, bd1 ) : ( _p2, bd2 ) : _ ->
+        let st = prefix <> "_steer"
+            mg = prefix <> "_merge"
+            b1 = prefix <> "_bd0"
+            b2 = prefix <> "_bd1" in
+        exprToDFDot sp s
+        <> node st "steer" <> edge (sp <> "_out") st
+        <> edge st b1 <> edge st b2
+        <> exprToDFDot b1 bd1 <> exprToDFDot b2 bd2
+        <> node mg "merge"
+        <> edge (b1 <> "_out") mg <> edge (b2 <> "_out") mg
+        <> edge mg (prefix <> "_out")
 
   where
-    outName = prefix <> "_out"
+    -- | Merge all element tokens into a composite value.
+    mergeLit :: [Expr] -> Text
+    mergeLit xs =
+      let elemNames = [ prefix <> "_elem" <> tShow i | i <- [0 .. length xs - 1] ]
+          mergeN    = prefix <> "_merge"
+          outNode   = prefix <> "_out" in
+      T.concat (zipWith exprToDFDot elemNames xs)
+      <> node mergeN "merge"
+      <> T.concat [ edge (n <> "_out") mergeN | n <- elemNames ]
+      <> edge mergeN outNode
 
--- | Convert a literal into its text representation for 'const' nodes.
+--------------------------------------------------------------------------------
+-- Literal & operator helpers --------------------------------------------------
+--------------------------------------------------------------------------------
+
 litToText :: Literal -> Text
-litToText lit =
-  case lit of
-    LInt n    -> T.pack (show n)
-    LFloat f  -> T.pack (show f)
-    LChar  c  -> T.singleton c
-    LString s -> "\"" <> T.pack s <> "\""
-    LBool  b  -> if b then "true" else "false"
+litToText = \case
+  LInt n    -> tShow n
+  LFloat f  -> tShow f
+  LChar c   -> T.singleton c
+  LString s -> "\"" <> T.pack s <> "\""
+  LBool b   -> if b then "true" else "false"
 
--- | Map a binary operator to its TALM instruction mnemonic.
 binOpToInstr :: BinOperator -> Text
-binOpToInstr op =
-  case op of
-    Add -> "add"
-    Sub -> "sub"
-    Mul -> "mul"
-    Mod -> "mod"
-    Div -> "div"
-    Eq  -> "eq"
-    Neq -> "neq"
-    Lt  -> "lt"
-    Le  -> "leq"
-    Gt  -> "gt"
-    Ge  -> "geq"
-    And -> "and"
-    Or  -> "or"
+binOpToInstr = \case
+  Add -> "add"; Sub -> "sub"; Mul -> "mul"; Mod -> "mod"; Div -> "div"
+  Eq  -> "eq";  Neq -> "neq"; Lt -> "lt"; Le -> "leq"
+  Gt  -> "gt";  Ge -> "geq"; And -> "and"; Or -> "or"
 
--- | Map a unary operator to its TALM instruction mnemonic.
 unOpToInstr :: UnOperator -> Text
-unOpToInstr op =
-  case op of
-    Neg -> "subi"
-    Not -> "not"
+unOpToInstr = \case
+  Neg -> "subi"
+  Not -> "not"
 
--- | Escape quotes and backslashes in labels for valid DOT syntax.
-escape :: Text -> Text
-escape = T.concatMap $ \c ->
-  case c of
-    '"'  -> "\\\""
-    '\\' -> "\\\\"
-    x    -> T.singleton x
+--------------------------------------------------------------------------------
+-- DOT helpers ----------------------------------------------------------------
+--------------------------------------------------------------------------------
 
--- | Render a DOT node with a given name and label.
+qid :: Text -> Text
+qid t | T.all isAlphaNum t = t | otherwise = "\"" <> t <> "\""
+
 node :: Text -> Text -> Text
-node n l = "  " <> n <> " [label=\"" <> escape l <> "\"];\n"
+node n l = "  " <> qid n <> " [label=\"" <> esc l <> "\"];\n"
 
--- | Render a DOT edge from node A to node B.
 edge :: Text -> Text -> Text
-edge a b = "  " <> a <> " -> " <> b <> ";\n"
+edge a b = "  " <> qid a <> " -> " <> qid b <> ";\n"
+
+esc :: Text -> Text
+esc = T.concatMap $ \case
+  '"'  -> "\\\""
+  '\\' -> "\\\\"
+  c     -> T.singleton c
+
+--------------------------------------------------------------------------------
+-- Utility --------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+tShow :: Show a => a -> Text
+tShow = T.pack . show

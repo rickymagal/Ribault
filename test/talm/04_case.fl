@@ -1,0 +1,6 @@
+super f0_tagop, f0_body_out
+tagop f0
+split f0_in_p, p
+split f0_body_out, f0_in_x, x
+retsnd f0_out
+ret f0_retsnd
