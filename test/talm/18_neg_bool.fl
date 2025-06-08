@@ -1,0 +1,15 @@
+split f0_inctag, f0_cg_snd_fun, f0_in_negBool, negBool
+const f0_cg_snd_arg, true
+inctag f0_cg, [f0_f_out]
+callgroup f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
+callsnd f0_f_out
+callsnd f0_x_out
+retsnd f0_cg
+tagop f0_retsnd, f0_cg_retsnd
+retsnd f0_out
+ret f0_retsnd
+split f1_v_out, b
+split f1_out, f1_in_b, b
+not f1_retsnd, f1_v_out
+retsnd f1_out
+ret f1_retsnd

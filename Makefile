@@ -45,7 +45,7 @@ TESTS       := $(wildcard $(TEST_DIR)/*.hsk)
 # Dataflow artifacts
 DF_DOTS     := $(patsubst $(TEST_DIR)/%.hsk,$(DF_OUT_DIR)/%.dot,$(TESTS))
 DF_IMGS     := $(patsubst $(DF_OUT_DIR)/%.dot,$(DF_IMG_DIR)/%.png,$(DF_DOTS))
-DF_TALMS    := $(patsubst $(DF_OUT_DIR)/%.dot,$(TALM_DIR)/%.talm,$(DF_DOTS))
+DF_TALMS    := $(patsubst $(DF_OUT_DIR)/%.dot,$(TALM_DIR)/%.fl,$(DF_DOTS))
 
 # AST artifacts
 AST_DOTS    := $(patsubst $(TEST_DIR)/%.hsk,$(AST_OUT_DIR)/%.dot,$(TESTS))
@@ -139,7 +139,7 @@ $(AST_IMG_DIR)/%.png: $(AST_OUT_DIR)/%.dot | $(AST_IMG_DIR)
 # ------------------------------------------------------------
 # ------------------------------------------------------------
 # TALM via codegen
-$(TALM_DIR)/%.talm: $(DF_OUT_DIR)/%.dot | $(EXE_CG) $(TALM_DIR)
+$(TALM_DIR)/%.fl: $(DF_OUT_DIR)/%.dot | $(EXE_CG) $(TALM_DIR)
 	@mkdir -p $(TALM_DIR)
 	@echo "[TALM ] $< → $@"
 	./$(EXE_CG) < $< > $@  # generate TALM file $< > $@

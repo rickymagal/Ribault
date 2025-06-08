@@ -1,0 +1,12 @@
+super f0_tagop, f0_body_out
+tagop f0
+split f0_body_let0_out, f0_in_n, n
+split f0_body_let0_out, f0_in_n, n
+mul f0_body_let0_retsnd, f0_body_let0_l_out, f0_body_let0_r_out
+retsnd f0_body_let0_out
+ret f0_body_let0_retsnd
+split f0_body_in_out, f0_in_sq, sq
+const f0_body_in_out, 1
+add f0_body, f0_body_in_l_out, f0_body_in_r_out
+retsnd f0_out
+ret f0_retsnd
