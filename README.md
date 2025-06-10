@@ -5,7 +5,7 @@ Repository for the final undergraduate project presented at the Department of Co
 **Advisor**: Prof. Dr. Alberto Ferreira de Souza  
 **Co-advisor**: Prof. Dr. Tiago Assumpção de Oliveira Alves
 
-Code documents: https://rickymagal.github.io/HTC
+Code documents: https://rickymagal.github.io/Ribault
 
 ## Introduction
 
