@@ -1,10 +1,10 @@
-super f0_tagop, f0_body_out
-tagop f0
-split f0_body_c_out, f0_in_a, a
-split f0_body_c_out, f0_in_b, b
-gt f0_body_steer, f0_body_c_l_out, f0_body_c_r_out
-steer f0_body_t, f0_body_e, f0_body_c_out
-split f0_body_phi, f0_in_a, a
-split f0_body_phi, f0_in_b, b
-super f0_body_out, f0_body_t_out, f0_body_e_out, 2
+super f0, 0, 1, 1, f0_body_out
+tagop f0_tagop, f0
+split f0_body_c_l_out, f0_in_a
+split f0_body_c_r_out, f0_in_b
+gt f0_body_c_out, f0_body_c_l_out, f0_body_c_r_out
+steer f0_body_steer, f0_body_c_out
+split f0_body_t_out, f0_in_a
+split f0_body_e_out, f0_in_b
+super f0_body_phi, 2, 1, 2, f0_body_t_out, f0_body_e_out
 retsnd f0_retsnd, f0_out

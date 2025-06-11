@@ -1,14 +1,14 @@
-super f0_tagop, f0_body_out
-tagop f0
-split f0_body_out, f0_in_x, x
-split f0_body_out, f0_in_y, y
-add f0, f0_body_l_out, f0_body_r_out
+super f0, 0, 1, 1, f0_body_out
+tagop f0_tagop, f0
+split f0_body_l_out, f0_in_x
+split f0_body_r_out, f0_in_y
+add f0_body_out, f0_body_l_out, f0_body_r_out
 retsnd f0_retsnd, f0_out
-super f1_tagop, f1_body_out
-tagop f1
-split f1, f1_in_x, x
+super f1, 0, 1, 1, f1_body_out
+tagop f1_tagop, f1
+split f1_body_out, f1_in_x
 retsnd f1_retsnd, f1_out
-super f2_tagop, f2_body_out
-tagop f2
-split f2, f2_in_x, x
+super f2, 0, 1, 1, f2_body_out
+tagop f2_tagop, f2
+split f2_body_out, f2_in_x
 retsnd f2_retsnd, f2_out

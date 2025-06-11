@@ -1,23 +1,23 @@
-super f0_f_f_tagop, f0_f_f_body_out
-tagop f0_f_f
-split f0_f_f_body_inctag, f0_f_f_body_cg_snd_fun, f0_in_f, f
-split f0_f_f_body_cg_snd_arg, f0_in_x, x
-inctag f0_f_f_body_cg, f0_f_f_body_f_out
-callgroup f0_f_f_body_out, f0_f_f_body_inctag, f0_f_f_body_cg_snd_fun, f0_f_f_body_cg_snd_arg
-callsnd f0_f_f_body_cg, f0_f_f_body_f_out
-callsnd f0_f_f_body_cg, f0_f_f_body_x_out
-super f0_f_x_tagop, f0_f_x_body_out
-tagop f0_f_x
-split f0_f_x_body_out, f0_in_n, n
+super f0_f_f, 0, 1, 1, f0_f_f_body_out
+tagop f0_f_f_tagop, f0_f_f
+split f0_f_f_body_f_out, f0_in_f
+split f0_f_f_body_x_out, f0_in_x
+inctag f0_f_f_body_inctag, f0_f_f_body_f_out
+callgroup f0_f_f_body_cg, f0_f_f_body_inctag, f0_f_f_body_cg_snd_fun, f0_f_f_body_cg_snd_arg
+callsnd f0_f_f_body_cg_snd_fun, f0_f_f_body_f_out
+callsnd f0_f_f_body_cg_snd_arg, f0_f_f_body_x_out
+super f0_f_x, 0, 1, 1, f0_f_x_body_out
+tagop f0_f_x_tagop, f0_f_x
+split f0_f_x_body_l_out, f0_in_n
 const f0_f_x_body_r_out, 2
-mul f0_f_x, f0_f_x_body_l_out, f0_f_x_body_r_out
-inctag f0_f_cg, f0_f_f_out
-callgroup f0_f_out, f0_f_inctag, f0_f_cg_snd_fun, f0_f_cg_snd_arg
-callsnd f0_f_cg, f0_f_f_out
-callsnd f0_f_cg, f0_f_x_out
+mul f0_f_x_body_out, f0_f_x_body_l_out, f0_f_x_body_r_out
+inctag f0_f_inctag, f0_f_f_out
+callgroup f0_f_cg, f0_f_inctag, f0_f_cg_snd_fun, f0_f_cg_snd_arg
+callsnd f0_f_cg_snd_fun, f0_f_f_out
+callsnd f0_f_cg_snd_arg, f0_f_x_out
 const f0_x_out, 21
-inctag f0_cg, f0_f_out
-callgroup f0_out, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
-callsnd f0_cg, f0_f_out
-callsnd f0_cg, f0_x_out
+inctag f0_inctag, f0_f_out
+callgroup f0_cg, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
+callsnd f0_cg_snd_fun, f0_f_out
+callsnd f0_cg_snd_arg, f0_x_out
 retsnd f0_retsnd, f0_out
