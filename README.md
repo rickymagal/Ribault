@@ -17,7 +17,9 @@ This work proposes the translation of programs written in a Haskell subset into 
 |-------------------|---------------------------------------------------------------------------------------------------------------------------|
 | `docs/`           | Project proposal (`anteprojeto.pdf`) and formal language definition (`haskell-subset.ebnf`).                             |
 | `docs/html`           | Haddock documents.                             |
-| `src/`            | Compiler source code.                                                                                                     |
+| `src/Analysis`    | Compiler's analysis step source code.                                                                                       |
+| `src/Synthesis`   | Compiler's synthesis step source code.                                                                                                     |
+| `src/Lib`         | Compiler's Super Instructions implementation                                                                                                     |
 | `test/`           | Unit and integration test cases.                                                                                          |
 | `test/ast-images` | Generated AST images.                                                                                                     |
 | `test/df-images`  | Generated Dataflow graph images.                                                                                          |
