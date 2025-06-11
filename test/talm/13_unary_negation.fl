@@ -1,6 +1,6 @@
 split f0_inctag, f0_cg_snd_fun, f0_in_neg, neg
-const f0_cg_snd_arg, 7
-inctag f0_cg, [f0_f_out]
+const f0_x_out, 7
+inctag f0_cg, f0_f_out
 callgroup f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
 callsnd f0_f_out
 callsnd f0_x_out

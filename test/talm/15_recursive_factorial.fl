@@ -1,6 +1,6 @@
 split f0_inctag, f0_cg_snd_fun, f0_in_fact, fact
-const f0_cg_snd_arg, 5
-inctag f0_cg, [f0_f_out]
+const f0_x_out, 5
+inctag f0_cg, f0_f_out
 callgroup f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
 callsnd f0_f_out
 callsnd f0_x_out
@@ -10,16 +10,16 @@ retsnd f0_out
 ret f0_retsnd
 split f1_c_l_out, f1_e_l_out, f1_e_r_x_l_out, n
 split f1_c_out, f1_in_n, n
-const f1_c_out, 1
+const f1_c_r_out, 1
 leq f1_steer, f1_c_l_out, f1_c_r_out
 steer f1_t, f1_e, f1_c_out
-const f1_merge, 1
+const f1_t_out, 1
 split f1_e_out, f1_in_n, n
 split f1_e_r_inctag, f1_e_r_cg_snd_fun, f1_in_fact, fact
 split f1_e_r_x_out, f1_in_n, n
-const f1_e_r_x_out, 1
+const f1_e_r_x_r_out, 1
 sub f1_e_r_cg_snd_arg, f1_e_r_x_l_out, f1_e_r_x_r_out
-inctag f1_e_r_cg, [f1_e_r_f_out]
+inctag f1_e_r_cg, f1_e_r_f_out
 callgroup f1_e_r_inctag, f1_e_r_cg_snd_fun, f1_e_r_cg_snd_arg
 callsnd f1_e_r_f_out
 callsnd f1_e_r_x_out
