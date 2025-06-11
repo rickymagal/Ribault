@@ -1,10 +1,8 @@
-const f0_let0_val, 2
-const f0_let1_val, 1
-split f0_in_let0_out, f0_in_x, x
-split f0_in_let0_out, f0_in_y, y
-add f0_in_let0_retsnd, f0_in_let0_l_out, f0_in_let0_r_out, 0
-retsnd f0_in_let0_retsnd, f0_in_let0_out
-split f0_in_in_out, f0_in_z, z
-split f0_in_in_out, f0_in_z, z
-mul f0_in, f0_in_in_l_out, f0_in_in_r_out, 0
-retsnd f0_retsnd, f0_out
+const f0_let0_out, 2
+const f0_let1_out, 1
+split f0_in_let0_out, f0_in_x
+split f0_in_let0_out, f0_in_y
+add , f0_in_let0_l_out, f0_in_let0_r_out
+split f0_in_in_out, f0_in_z
+split f0_in_in_out, f0_in_z
+mul f0_in, f0_in_in_l_out, f0_in_in_r_out
