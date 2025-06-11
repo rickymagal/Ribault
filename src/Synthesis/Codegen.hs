@@ -1,12 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 
+-- | Codegen — converte DOT (GraphGen) em FlowASM texto.
 module Codegen (parseNodes,parseEdges,generateInstructions) where
 
 import           Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as T
 
 -------------------------------------------------------------------------------
+-- DOT helpers
 stripQuotes :: Text -> Text
 stripQuotes t
   | T.length t >= 2 && T.head t == '"' && T.last t == '"' = T.init (T.tail t)
@@ -31,12 +33,14 @@ parseEdges txt =
   ]
 
 -------------------------------------------------------------------------------
+-- geração
 generateInstructions :: [(Text,Text)] -> [(Text,Text)] -> [Text]
 generateInstructions ns es = map (emit es) ns
 
 emit :: [(Text,Text)] -> (Text,Text) -> Text
 emit es (name,label) =
   let srcs = [s | (s,d) <- es, d == name]
+      outs = [d | (s,d) <- es, s == name]
 
       (rawOp,immM) = case T.splitOn ":" label of
                        [x,y] -> (x,Just y)
@@ -45,42 +49,45 @@ emit es (name,label) =
 
       opcode = mapOp rawOp
       immTxt = maybe "0" id immM
-      nDst   = superDst immM
       nSrc   = length srcs
       srcTxt = T.intercalate ", " srcs
+      dstTxt = T.intercalate ", " (take (arity opcode outs) outs)
       comma  t = if T.null t then "" else ", " <> t
 
-      line
-        -- super instName, imm, nDst, nSrc, src0[,src1…]
-        | opcode == "super" =
-            T.concat
-              [ "super "
-              , name, ", "
-              , immTxt, ", "
-              , T.pack (show nDst), ", "
-              , T.pack (show nSrc)
-              , comma srcTxt
-              ]
+  in case opcode of
+       -- formato solicitado
+       "super"  ->
+         "super " <> name <> ", " <> immTxt
+               <> ", " <> T.pack (show nSrc)
+               <> comma srcTxt
 
-        | opcode == "retsnd" = "retsnd " <> name <> comma srcTxt
-        | opcode == "ret"    = "ret "    <> name
-        | opcode == "const"  = "const "  <> name <> ", " <> immTxt
-        | otherwise          = opcode <> " " <> name <> comma srcTxt
-  in line
+       "retsnd" -> "retsnd " <> name <> comma srcTxt
+       "ret"    -> "ret "    <> name
+       "const"  -> "const "  <> name <> ", " <> immTxt
+       _        -> opcode <> " " <> dstTxt <> comma srcTxt <> comma immTxt
 
 -------------------------------------------------------------------------------
-superDst :: Maybe Text -> Int
-superDst (Just "3") = 2   -- split2
-superDst _          = 1   -- builder / phi
-
+-- opcode map & aridade
 mapOp :: Text -> Text
-mapOp t | t `elem` ["var","in"]        = "split"
-        | "super" `T.isPrefixOf` t     = "super"
-        | t `elem`
-          [ "const","add","sub","mul","div","mod","andi","ori","xori"
-          , "and","or","xor","not","eq","neq","lt","leq","gt","geq"
-          , "addi","subi","muli","divi"
-          , "steer","merge","split"
-          , "callgroup","callsnd","retsnd","ret"
-          , "inctag","tagop" ]         = t
-        | otherwise = error ("opcode desconhecido: " ++ T.unpack t)
+mapOp t
+  | t `elem` ["var","in"]       = "split"
+  | "super" `T.isPrefixOf` t    = "super"
+  | t `elem` base               = t
+  | otherwise = error ("opcode desconhecido: " ++ T.unpack t)
+  where
+    base =
+      [ "const","add","sub","mul","div","mod","andi","ori","xori"
+      , "and","or","xor","not","eq","neq","lt","leq","gt","geq"
+      , "addi","subi","muli","divi"
+      , "steer","merge","split"
+      , "callgroup","callsnd","retsnd","ret"
+      , "inctag","tagop","specsuper","superinstmacro"
+      ]
+
+arity :: Text -> [Text] -> Int
+arity "steer" _   = 2
+arity "split" xs  = length xs
+arity "inctag" _  = 1
+arity "retsnd" _  = 2
+arity "merge"  _  = 1
+arity _ _         = 1
