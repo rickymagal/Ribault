@@ -1,7 +1,7 @@
-super f0_tagop, f0_body_out
-tagop f0
-split f0_body_steer, f0_in_p, p
-steer f0_body_alt0, f0_body_scr_out
-split f0_body_phi, f0_in_x, x
-super f0_body_out, f0_body_alt0_out, 2
+super f0, 0, 1, 1, f0_body_out
+tagop f0_tagop, f0
+split f0_body_scr_out, f0_in_p
+steer f0_body_steer, f0_body_scr_out
+split f0_body_alt0_out, f0_in_x
+super f0_body_phi, 2, 1, 1, f0_body_alt0_out
 retsnd f0_retsnd, f0_out
