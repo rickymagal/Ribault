@@ -1,25 +1,23 @@
-split f0_f_f_inctag, f0_f_f_cg_snd_fun, f0_in_addThree, addThree
+split f0_f_f_inctag, f0_f_f_cg_snd_fun, f0_in_addThree
 const f0_f_f_x_out, 1
-inctag f0_f_f_cg, f0_f_f_f_out, 0
-callgroup f0_f_f_out, f0_f_f_inctag, f0_f_f_cg_snd_fun, f0_f_f_cg_snd_arg, 0
-callsnd f0_f_f_cg, f0_f_f_f_out, 0
-callsnd f0_f_f_cg, f0_f_f_x_out, 0
+inctag f0_f_f_cg, f0_f_f_f_out
+callgroup f0_f_f_out, f0_f_f_inctag, f0_f_f_cg_snd_fun, f0_f_f_cg_snd_arg
+callsnd f0_f_f_cg, f0_f_f_f_out
+callsnd f0_f_f_cg, f0_f_f_x_out
 const f0_f_x_out, 2
-inctag f0_f_cg, f0_f_f_out, 0
-callgroup f0_f_out, f0_f_inctag, f0_f_cg_snd_fun, f0_f_cg_snd_arg, 0
-callsnd f0_f_cg, f0_f_f_out, 0
-callsnd f0_f_cg, f0_f_x_out, 0
+inctag f0_f_cg, f0_f_f_out
+callgroup f0_f_out, f0_f_inctag, f0_f_cg_snd_fun, f0_f_cg_snd_arg
+callsnd f0_f_cg, f0_f_f_out
+callsnd f0_f_cg, f0_f_x_out
 const f0_x_out, 3
-inctag f0_cg, f0_f_out, 0
-callgroup f0_out, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg, 0
-callsnd f0_cg, f0_f_out, 0
-callsnd f0_cg, f0_x_out, 0
-retsnd f0_retsnd, f0_out
+inctag f0_cg, f0_f_out
+callgroup f0_out, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
+callsnd f0_cg, f0_f_out
+callsnd f0_cg, f0_x_out
 super f1, 0, 1, f1_body_out
-tagop , f1, 0
-split f1_body_l_out, f1_in_x, x
-split f1_body_l_out, f1_in_y, y
-add f1_body_out, f1_body_l_l_out, f1_body_l_r_out, 0
-split f1_body_out, f1_in_z, z
-add f1, f1_body_l_out, f1_body_r_out, 0
-retsnd f1_retsnd, f1_out
+tagop , f1
+split f1_body_l_out, f1_in_x
+split f1_body_l_out, f1_in_y
+add f1_body_out, f1_body_l_l_out, f1_body_l_r_out
+split f1_body_out, f1_in_z
+add f1, f1_body_l_out, f1_body_r_out
