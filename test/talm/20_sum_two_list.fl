@@ -1,19 +1,19 @@
-split f0_f_out, f0_in_sumTwo
+split f0_inctag, f0_cg_snd_fun, f0_in_sumTwo, sumTwo
 const f0_x_el0_out, 10
 const f0_x_el1_out, 15
-super f0_x_build, 1, 1, 2, f0_x_el0_out, f0_x_el1_out
-inctag f0_inctag, f0_f_out
-callgroup f0_cg, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
-callsnd f0_cg_snd_fun, f0_f_out
-callsnd f0_cg_snd_arg, f0_x_out
+super f0_x_build, 1, 2, f0_x_el0_out, f0_x_el1_out
+inctag f0_cg, f0_f_out, 0
+callgroup f0_out, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg, 0
+callsnd f0_cg, f0_f_out, 0
+callsnd f0_cg, f0_x_out, 0
 retsnd f0_retsnd, f0_out
-split f1_in_lst
-split f1_scr_out, f1_in_lst
-steer f1_steer, f1_scr_out
-super f1_split, 3, 2, 1, f1_okTok
-split f1_vx, f1_split
-split f1_vy, f1_split
-add f1_add, f1_vx, f1_vy
+split f1_scr_out, lst
+split f1_steer, f1_in_lst, lst
+steer f1_okTok, f1_bad, f1_scr_out, 0
+super f1_split, 3, 1, f1_okTok
+split f1_add, f1_split, x
+split f1_add, f1_split, y
+add f1_phi, f1_vx, f1_vy, 0
 const f1_bad_out, 0
-super f1_phi, 2, 1, 2, f1_add, f1_bad_out
+super f1_phi, 2, 2, f1_add, f1_bad_out
 retsnd f1_retsnd, f1_out
