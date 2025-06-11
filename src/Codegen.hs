@@ -1,120 +1,75 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 
--- | Codegen – convert a DOT data-flow graph (from GraphGen) into
---   TALM FlowASM text.
-module Codegen
-  ( parseNodes
-  , parseEdges
-  , generateInstructions
-  ) where
+-- | Codegen — converts DOT (from GraphGen) into FlowASM text.
+module Codegen (parseNodes,parseEdges,generateInstructions) where
 
-import           Data.Char      (isDigit)
 import           Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as T
 
-----------------------------------------------------------------------
--- Simple DOT parsing ------------------------------------------------
-----------------------------------------------------------------------
-
+-------------------------------------------------------------------------------
 stripQuotes :: Text -> Text
-stripQuotes t
-  | T.length t >= 2 && T.head t == '"' && T.last t == '"' =
-      T.init (T.tail t)
-  | otherwise = t
+stripQuotes t | T.length t>=2 && T.head t=='"' && T.last t=='"' = T.init (T.tail t)
+              | otherwise = t
 
-parseNodes :: Text -> [(Text, Text)]
-parseNodes input =
-  [ ( stripQuotes $ T.strip (head parts)
-    , label )
-  | line <- T.lines input
-  , "[label=" `T.isInfixOf` line
-  , let parts   = T.splitOn "[" line
-        lblPart = T.dropWhile (/= '\"') (parts !! 1)
-        label   = T.takeWhile (/= '\"') (T.drop 1 lblPart)
-  ]
+parseNodes :: Text -> [(Text,Text)]
+parseNodes txt =
+  [ ( stripQuotes (T.strip (head parts))
+    , T.takeWhile (/='"') (T.drop 1 (T.dropWhile (/='"') (parts!!1))) )
+  | line <- T.lines txt, "[label=" `T.isInfixOf` line
+  , let parts = T.splitOn "[" line ]
 
-parseEdges :: Text -> [(Text, Text)]
-parseEdges input =
+parseEdges :: Text -> [(Text,Text)]
+parseEdges txt =
   [ ( stripQuotes (T.strip l)
-    , stripQuotes (T.strip (T.takeWhile (/= ';') r')) )
-  | line <- T.lines input
-  , "->" `T.isInfixOf` line
-  , let (l,r) = T.breakOn "->" line
-        r'    = T.drop 2 r
-  ]
+    , stripQuotes (T.strip (T.takeWhile (/=';') r')) )
+  | line <- T.lines txt, "->" `T.isInfixOf` line
+  , let (l,r) = T.breakOn "->" line; r' = T.drop 2 r ]
 
-----------------------------------------------------------------------
--- Assembly generation ----------------------------------------------
-----------------------------------------------------------------------
+-------------------------------------------------------------------------------
+generateInstructions :: [(Text,Text)] -> [(Text,Text)] -> [Text]
+generateInstructions ns es = map (gen es) ns
 
-generateInstructions
-  :: [(Text, Text)]  -- ^ nodes
-  -> [(Text, Text)]  -- ^ edges
-  -> [Text]
-generateInstructions nodes edges = map (genNode edges) nodes
-
-genNode :: [(Text, Text)] -> (Text, Text) -> Text
-genNode edges (name,label) =
-  let ins      = [ s | (s,d) <- edges, d == name ]
-      outs     = [ d | (s,d) <- edges, s == name ]
+gen :: [(Text,Text)] -> (Text,Text) -> Text
+gen es (name,label) =
+  let ins  = [s | (s,d)<-es, d==name]
+      outs = [d | (s,d)<-es, s==name]
       (op,imm) = case T.splitOn ":" label of
-                   [x,y] -> (x,Just y)
-                   [x]   -> (x,Nothing)
-                   _     -> error "malformed label"
+                   [x,y] -> (x,Just y); [x] -> (x,Nothing); _ -> error "lbl"
+      opcode = mapOp op
 
-      opcode   = mapOpcode op
-      nRes     = calcResults opcode outs
+      dst | opcode=="const" = name
+          | opcode=="retsnd" = name                      -- dst part
+          | opcode=="merge" = name
+          | otherwise       = T.intercalate ", " (take (arity opcode outs) outs)
 
-      -- destination handling
-      dstTxt   | opcode == "const" = name
-               | otherwise         = T.intercalate ", " (take nRes outs)
+      src = T.intercalate ", " ins
+      immTxt = maybe T.empty id imm
+      ops = filter (not . T.null) [dst,src,immTxt]
 
-      -- immediate handling
-      immRaw   = maybe T.empty id imm
-      immTxt   | opcode == "const" && needsQuotes immRaw
-               = "\"" <> immRaw <> "\""
-               | otherwise = immRaw
+      line | opcode=="ret"    = opcode <> " " <> dst
+           | opcode=="retsnd" = opcode <> " " <> dst <> ", " <> src
+           | null ops         = opcode
+           | otherwise        = opcode <> " " <> T.intercalate ", " ops
+  in line
 
-      srcTxt   = T.intercalate ", " ins
-      operands = filter (not . T.null) [dstTxt, srcTxt, immTxt]
-  in if null operands
-        then opcode
-        else opcode <> " " <> T.intercalate ", " operands
-
--- | Heuristic: quote immediates that are non-numeric strings
-needsQuotes :: Text -> Bool
-needsQuotes t =
-  let s = T.unpack t
-  in  length s > 1
-      && (not (all isDigit s))
-      && s /= "true" && s /= "false"
-
-----------------------------------------------------------------------
--- Opcode map & arities ---------------------------------------------
-----------------------------------------------------------------------
-
-mapOpcode :: Text -> Text
-mapOpcode op
-  | op == "var" || op == "in" = "split"
-  | op `elem` allowed         = op
-  | otherwise                 = error ("unknown opcode " ++ T.unpack op)
+-------------------------------------------------------------------------------
+mapOp :: Text -> Text
+mapOp t | t `elem` ["var","in"] = "split"
+        | t `elem` valid        = t
+        | otherwise             = error ("unknown opcode " ++ T.unpack t)
   where
-    allowed =
-      [ "const","add","sub","mul","div","mod"
-      , "andi","ori","xori","and","or","xor"
-      , "not","eq","neq","lt","leq","gt","geq"
-      , "addi","subi","muli","divi"
-      , "steer","merge","split"
+    valid =
+      [ "const","add","sub","mul","div","mod","andi","ori","xori"
+      , "and","or","xor","not","eq","neq","lt","leq","gt","geq"
+      , "addi","subi","muli","divi","steer","merge","split"
       , "callgroup","callsnd","retsnd","ret"
-      , "inctag","tagop"
-      , "super","specsuper","superinstmacro"
-      ]
+      , "inctag","tagop","super","specsuper","superinstmacro" ]
 
-calcResults :: Text -> [Text] -> Int
-calcResults "steer" _    = 2
-calcResults "split" outs = length outs
-calcResults "inctag" _   = 1
-calcResults op _
-  | op `elem` [ "callgroup","callsnd","retsnd","ret" ] = 0
-  | otherwise = 1
+arity :: Text -> [Text] -> Int
+arity "steer" _ = 2
+arity "split" xs = length xs
+arity "inctag" _ = 1
+arity "retsnd" _ = 2  -- dst , src
+arity "merge"  _ = 1
+arity _ _ = 1
