@@ -1,0 +1,27 @@
+digraph Dataflow {
+  node [shape=record, fontname="Courier"];
+  "f0_el0_out" [label="const:1"];
+  "f0_el1_out" [label="const:2"];
+  "f0_build" [label="super:1"];
+  "f0_el0_out" -> "f0_build";
+  "f0_el1_out" -> "f0_build";
+  "f0_build" -> "f0_out";
+  "f0_retsnd" [label="retsnd"];
+  "f0_out" -> "f0_retsnd";
+  "f1_el0_out" [label="const:1"];
+  "f1_el1_out" [label="const:2"];
+  "f1_el2_out" [label="const:3"];
+  "f1_build" [label="super:1"];
+  "f1_el0_out" -> "f1_build";
+  "f1_el1_out" -> "f1_build";
+  "f1_el2_out" -> "f1_build";
+  "f1_build" -> "f1_out";
+  "f1_retsnd" [label="retsnd"];
+  "f1_out" -> "f1_retsnd";
+  "f2_val" [label="const:lambda"];
+  "f3_val" [label="const:z"];
+  "f4_val" [label="const:3.14"];
+  "f5_val" [label="const:42"];
+  "f6_val" [label="const:false"];
+  "f7_val" [label="const:true"];
+}
