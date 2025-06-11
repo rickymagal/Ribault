@@ -6,5 +6,4 @@ split f0_l_out, f0_in_y, y
 add f0_out, f0_l_l_out, f0_l_r_out
 split f0_out, f0_in_z, z
 add f0_retsnd, f0_l_out, f0_r_out
-retsnd f0_out
-ret f0_retsnd
+retsnd f0_retsnd, f0_out

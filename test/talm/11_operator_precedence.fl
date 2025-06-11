@@ -3,5 +3,4 @@ const f0_r_l_out, 3
 const f0_r_r_out, 4
 mul f0_out, f0_r_l_out, f0_r_r_out
 add f0_retsnd, f0_l_out, f0_r_out
-retsnd f0_out
-ret f0_retsnd
+retsnd f0_retsnd, f0_out
