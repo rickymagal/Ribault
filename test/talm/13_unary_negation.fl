@@ -4,6 +4,7 @@ inctag f0_cg, f0_f_out
 callgroup f0_out, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
 callsnd f0_cg, f0_f_out
 callsnd f0_cg, f0_x_out
+retsnd f0_retsnd, f0_out
 split f1_v_out
 split f1_out, f1_in_x
 subi f1_retsnd, f1_v_out

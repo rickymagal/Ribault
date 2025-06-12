@@ -6,12 +6,14 @@ inctag f0_cg, f0_f_out
 callgroup f0_out, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
 callsnd f0_cg, f0_f_out
 callsnd f0_cg, f0_x_out
+retsnd f0_retsnd, f0_out
 split f1_scr_out
 split f1_steer, f1_in_lst
-steer f1_alt0, f1_alt1, f1_scr_out
-split f1_alt0_out, f1_in_x
-split f1_alt0_out, f1_in_y
-add f1_phi, f1_alt0_l_out, f1_alt0_r_out
-const f1_alt1_out, 0
-super f1_phi, 2, 2, f1_alt0_out, f1_alt1_out
+steer f1_okTok, f1_bad, f1_scr_out
+super f1_split, 3, 1, f1_okTok
+split f1_add, f1_split
+split f1_add, f1_split
+add f1_phi, f1_vx, f1_vy
+const f1_bad_out, 0
+super f1_phi, 2, 2, f1_add, f1_bad_out
 retsnd f1_retsnd, f1_out
