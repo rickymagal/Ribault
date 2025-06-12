@@ -1,10 +1,9 @@
-super f0, 0, 1, f0_body_out
-tagop , f0
-split f0_body_let0_out, f0_in_n
-split f0_body_let0_out, f0_in_n
-mul f0_body_let0_retsnd, f0_body_let0_l_out, f0_body_let0_r_out
-retsnd f0_body_let0_retsnd, f0_body_let0_out
-split f0_body_in_out, f0_in_sq
-const f0_body_in_r_out, 1
-add f0_body, f0_body_in_l_out, f0_body_in_r_out
+super f0_in_n, 3, 0
+super f0_let0_l_out, 3, 1, f0_in_n
+super f0_let0_r_out, 3, 1, f0_in_n
+mul f0_let0_out, f0_let0_l_out, f0_let0_r_out
+retsnd f0_let0_retsnd, f0_let0_out
+super f0_in_l_out, 3, 1, f0_in_sq
+const f0_in_r_out, 1
+add f0_in_out, f0_in_l_out, f0_in_r_out
 retsnd f0_retsnd, f0_out

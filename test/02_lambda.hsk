@@ -1,4 +1,8 @@
 -- Lambda expressions
 identity  = \x -> x;
 const     = \x y -> x;
-add       = \x y -> x + y
+add       = \x y -> x + y;
+
+res1 = identity 10;
+res2 = const 10 4;
+res3 = add 10 4
