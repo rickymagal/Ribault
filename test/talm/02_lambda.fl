@@ -3,9 +3,12 @@ tagop , f0
 split f0_body_out, f0_in_x
 split f0_body_out, f0_in_y
 add f0, f0_body_l_out, f0_body_r_out
+retsnd f0_retsnd, f0_out
 super f1, 0, 1, f1_body_out
 tagop , f1
 split f1, f1_in_x
+retsnd f1_retsnd, f1_out
 super f2, 0, 1, f2_body_out
 tagop , f2
 split f2, f2_in_x
+retsnd f2_retsnd, f2_out

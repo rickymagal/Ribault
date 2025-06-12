@@ -14,6 +14,7 @@ inctag f0_cg, f0_f_out
 callgroup f0_out, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
 callsnd f0_cg, f0_f_out
 callsnd f0_cg, f0_x_out
+retsnd f0_retsnd, f0_out
 super f1, 0, 1, f1_body_out
 tagop , f1
 split f1_body_l_out, f1_in_x
@@ -21,3 +22,4 @@ split f1_body_l_out, f1_in_y
 add f1_body_out, f1_body_l_l_out, f1_body_l_r_out
 split f1_body_out, f1_in_z
 add f1, f1_body_l_out, f1_body_r_out
+retsnd f1_retsnd, f1_out
