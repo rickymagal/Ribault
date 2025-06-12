@@ -1,0 +1,7 @@
+super f0, 0, 1, f0_body_out
+tagop , f0
+split f0_body_steer, f0_in_p
+steer f0_body_alt0, f0_body_scr_out
+split f0_body_phi, f0_in_x
+super f0_body_phi, 2, 1, f0_body_alt0_out
+retsnd f0_retsnd, f0_out
