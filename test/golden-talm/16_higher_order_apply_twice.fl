@@ -1,0 +1,31 @@
+split f0_f_inctag, f0_f_cg_snd_fun, f0_in_applyTwice
+split f0_f_cg_snd_arg, f0_in_inc
+inctag f0_f_cg, f0_f_f_out
+callgroup f0_f_out, f0_f_inctag, f0_f_cg_snd_fun, f0_f_cg_snd_arg
+callsnd f0_f_cg, f0_f_f_out
+callsnd f0_f_cg, f0_f_x_out
+const f0_x_out, 10
+inctag f0_cg, f0_f_out
+callgroup f0_out, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
+callsnd f0_cg, f0_f_out
+callsnd f0_cg, f0_x_out
+retsnd f0_retsnd, f0_out
+split f1_l_out
+split f1_out, f1_in_n
+const f1_r_out, 1
+add f1_retsnd, f1_l_out, f1_r_out
+retsnd f1_retsnd, f1_out
+split f2_x_x_out
+split f2_f_out, f2_x_f_out
+split f2_inctag, f2_cg_snd_fun, f2_in_f
+split f2_x_inctag, f2_x_cg_snd_fun, f2_in_f
+split f2_x_cg_snd_arg, f2_in_x
+inctag f2_x_cg, f2_x_f_out
+callgroup f2_x_out, f2_x_inctag, f2_x_cg_snd_fun, f2_x_cg_snd_arg
+callsnd f2_x_cg, f2_x_f_out
+callsnd f2_x_cg, f2_x_x_out
+inctag f2_cg, f2_f_out
+callgroup f2_out, f2_inctag, f2_cg_snd_fun, f2_cg_snd_arg
+callsnd f2_cg, f2_f_out
+callsnd f2_cg, f2_x_out
+retsnd f2_retsnd, f2_out

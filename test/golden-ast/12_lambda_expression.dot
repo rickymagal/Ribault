@@ -1,0 +1,31 @@
+digraph AST {
+  node [shape=box, fontname="Courier"];
+  decl0 [label="FunDecl
+value()"];
+  decl0_body [label="App"];
+  decl0 -> decl0_body;
+  decl0_body_fun [label="Lambda(y)"];
+  decl0_body -> decl0_body_fun;
+  decl0_body_fun_body [label="BinOp
+Add"];
+  decl0_body_fun -> decl0_body_fun_body;
+  decl0_body_fun_body_l [label="Var
+y"];
+  decl0_body_fun_body -> decl0_body_fun_body_l;
+  decl0_body_fun_body_r [label="Lit"];
+  decl0_body_fun_body -> decl0_body_fun_body_r;
+  decl0_body_arg [label="Lit"];
+  decl0_body -> decl0_body_arg;
+  decl1 [label="FunDecl
+double()"];
+  decl1_body [label="Lambda(x)"];
+  decl1 -> decl1_body;
+  decl1_body_body [label="BinOp
+Mul"];
+  decl1_body -> decl1_body_body;
+  decl1_body_body_l [label="Var
+x"];
+  decl1_body_body -> decl1_body_body_l;
+  decl1_body_body_r [label="Lit"];
+  decl1_body_body -> decl1_body_body_r;
+}

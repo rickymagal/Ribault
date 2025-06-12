@@ -1,0 +1,25 @@
+digraph Dataflow {
+  node [shape=record, fontname="Courier"];
+  f0 [label="super"];
+  "f0_tagop" [label="tagop"];
+  f0 -> "f0_tagop";
+  "f0_body_let0_l_out" [label="var:n"];
+  "f0_in_n" -> "f0_body_let0_l_out";
+  "f0_body_let0_r_out" [label="var:n"];
+  "f0_in_n" -> "f0_body_let0_r_out";
+  "f0_body_let0_out" [label="mul"];
+  "f0_body_let0_l_out" -> "f0_body_let0_out";
+  "f0_body_let0_r_out" -> "f0_body_let0_out";
+  "f0_body_let0_retsnd" [label="retsnd"];
+  "f0_body_let0_out" -> "f0_body_let0_retsnd";
+  "f0_body_in_l_out" [label="var:sq"];
+  "f0_in_sq" -> "f0_body_in_l_out";
+  "f0_body_in_r_out" [label="const:1"];
+  "f0_body_in_out" [label="add"];
+  "f0_body_in_l_out" -> "f0_body_in_out";
+  "f0_body_in_r_out" -> "f0_body_in_out";
+  "f0_body_in_out" -> "f0_body";
+  "f0_body_out" -> f0;
+  "f0_retsnd" [label="retsnd"];
+  "f0_out" -> "f0_retsnd";
+}

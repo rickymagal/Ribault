@@ -1,0 +1,6 @@
+super f0, 0, 1, f0_body_out
+tagop , f0
+split f0_body_build, f0_in_y
+split f0_body_build, f0_in_x
+super f0_body_build, 1, 2, f0_body_el0_out, f0_body_el1_out
+retsnd f0_retsnd, f0_out

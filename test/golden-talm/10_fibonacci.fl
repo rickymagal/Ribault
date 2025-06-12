@@ -1,0 +1,32 @@
+split f0_inctag, f0_cg_snd_fun, f0_in_fib
+const f0_x_out, 10
+inctag f0_cg, f0_f_out
+callgroup f0_out, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
+callsnd f0_cg, f0_f_out
+callsnd f0_cg, f0_x_out
+retsnd f0_retsnd, f0_out
+split f1_c_l_out, f1_t_out, f1_e_l_x_l_out, f1_e_r_x_l_out
+split f1_c_out, f1_in_n
+const f1_c_r_out, 1
+leq f1_steer, f1_c_l_out, f1_c_r_out
+steer f1_t, f1_e, f1_c_out
+split f1_phi, f1_in_n
+split f1_e_l_inctag, f1_e_l_cg_snd_fun, f1_in_fib
+split f1_e_l_x_out, f1_in_n
+const f1_e_l_x_r_out, 1
+sub f1_e_l_cg_snd_arg, f1_e_l_x_l_out, f1_e_l_x_r_out
+inctag f1_e_l_cg, f1_e_l_f_out
+callgroup f1_e_l_out, f1_e_l_inctag, f1_e_l_cg_snd_fun, f1_e_l_cg_snd_arg
+callsnd f1_e_l_cg, f1_e_l_f_out
+callsnd f1_e_l_cg, f1_e_l_x_out
+split f1_e_r_inctag, f1_e_r_cg_snd_fun, f1_in_fib
+split f1_e_r_x_out, f1_in_n
+const f1_e_r_x_r_out, 2
+sub f1_e_r_cg_snd_arg, f1_e_r_x_l_out, f1_e_r_x_r_out
+inctag f1_e_r_cg, f1_e_r_f_out
+callgroup f1_e_r_out, f1_e_r_inctag, f1_e_r_cg_snd_fun, f1_e_r_cg_snd_arg
+callsnd f1_e_r_cg, f1_e_r_f_out
+callsnd f1_e_r_cg, f1_e_r_x_out
+add f1_phi, f1_e_l_out, f1_e_r_out
+super f1_phi, 2, 2, f1_t_out, f1_e_out
+retsnd f1_retsnd, f1_out
