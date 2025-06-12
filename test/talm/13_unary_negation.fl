@@ -1,11 +1,11 @@
-split f0_inctag, f0_cg_snd_fun, f0_in_neg
+super f0_f_out, 3, 0
 const f0_x_out, 7
-inctag f0_cg, f0_f_out
-callgroup f0_out, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
-callsnd f0_cg, f0_f_out
-callsnd f0_cg, f0_x_out
+inctag f0_inctag, f0_f_out
+callgroup f0_cg, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
+callsnd f0_cg_snd_fun, f0_f_out
+callsnd f0_cg_snd_arg, f0_x_out
 retsnd f0_retsnd, f0_out
-split f1_v_out
-split f1_out, f1_in_x
-subi f1_retsnd, f1_v_out
+super f1_in_x, 3, 0
+super f1_v_out, 3, 1, f1_in_x
+subi f1_out, f1_v_out
 retsnd f1_retsnd, f1_out
