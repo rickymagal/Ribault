@@ -1,156 +1,172 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Codegen (parseNodes, parseEdges, generateInstructions) where
+-- | Codegen.hs – Gera TALM assembly a partir do AST desugarizado.
+module Codegen where
 
-import           Data.Char      (isAlphaNum, isDigit)
-import           Data.Text.Lazy (Text)
-import qualified Data.Text.Lazy as T
+import Semantic (desugarProgram)
+import Syntax
+  ( Program(..)
+  , Decl(..)
+  , Expr(..)
+  , Literal(..)
+  , Ident
+  , BinOperator(..)
+  , UnOperator(..)
+  )
+import Data.List (intercalate)
 
--------------------------------------------------------------------------------
--- DOT → listas de nós/arestas
--------------------------------------------------------------------------------
-stripQuotes :: Text -> Text
-stripQuotes t
-  | T.length t >= 2
-    && T.head t == '"'
-    && T.last t == '"' = T.init (T.tail t)
-  | otherwise = t
+-- | Contexto para mapear nomes de variáveis e gerar nomes temporários
+data Ctx = Ctx
+  { varEnv  :: [(Ident,String)]
+  , counter :: Int
+  }
 
-parseNodes :: Text -> [(Text,Text)]
-parseNodes txt =
-  [ ( stripQuotes (T.strip (head p))
-    , T.takeWhile (/='"')
-        (T.drop 1 (T.dropWhile (/='"') (p !! 1))) )
-  | line <- T.lines txt
-  , "[label=" `T.isInfixOf` line
-  , let p = T.splitOn "[" line
-  ]
+emptyCtx :: Ctx
+emptyCtx = Ctx [] 0
 
-parseEdges :: Text -> [(Text,Text)]
-parseEdges txt =
-  [ ( stripQuotes (T.strip l)
-    , stripQuotes (T.strip (T.takeWhile (/=';') r')) )
-  | line <- T.lines txt
-  , "->" `T.isInfixOf` line
-  , let (l,r) = T.breakOn "->" line
-        r'     = T.drop 2 r
-  ]
+bindVar :: Ident -> String -> Ctx -> Ctx
+bindVar v op (Ctx env n) = Ctx ((v,op):env) n
 
--------------------------------------------------------------------------------
--- Geração de assembly TALM
--------------------------------------------------------------------------------
-generateInstructions :: [(Text,Text)] -> [(Text,Text)] -> [Text]
-generateInstructions ns es =
-  [ asm
-  | n   <- ns
-  , let asm = emit es n
-  , not (T.null asm)
-  ]
+freshVar :: Ctx -> (String,Ctx)
+freshVar (Ctx env n) = ("t" ++ show n, Ctx env (n+1))
 
-emit :: [(Text,Text)] -> (Text,Text) -> Text
-emit es (name,label) =
-  let
-    -- fontes (srcs) e destinos (outs) no grafo
-    srcs = [ s | (s,d) <- es, d == name ]
-    outs = [ d | (s,d) <- es, s == name ]
+lookupVar :: Ctx -> Ident -> String
+lookupVar (Ctx env _) v = case lookup v env of
+  Just x  -> x
+  Nothing -> error $ "Unbound variable: " ++ v
 
-    -- rawOp e imediato opcional
-    (rawOp,immM) = case T.splitOn ":" label of
-                     [x,y] -> (x,Just y)
-                     [x]   -> (x,Nothing)
-                     _     -> error "label mal-formado"
+-- | Gera TALM a partir do AST desugarizado
+programToTALM :: Program -> String
+programToTALM prog =
+  let Program decls = desugarProgram prog
+      initCtx      = foldr (\(FunDecl n _ _) c -> bindVar n n c) emptyCtx decls
+      (_, blocks)  = foldl genDecl (initCtx,[]) decls
+  in unlines ("// TALM Assembly Generated" : blocks)
 
-    -- detecta splitters var/in → super id=3
-    isSplitter   = rawOp == "var" || rawOp == "in"
-    splitId      = "3"
-    opcode0
-      | isSplitter = "super"
-      | otherwise  = mapOp rawOp
-    immTxt0
-      | isSplitter = splitId
-      | otherwise  = maybe "0" id immM
+-- | Gera código para cada declaração top-level
+genDecl :: (Ctx,[String]) -> Decl -> (Ctx,[String])
+genDecl (ctx,acc) = \case
+  FunDecl name args body ->
+    let ctxArgs         = foldr (\a c -> bindVar a a c) ctx args
+        (code,out,ctx') = genExpr ctxArgs body
+        header = if null args
+                 then "// Top-level binding " ++ name
+                 else "// Function " ++ name ++ " params: " ++ show args
+        footer = if null args
+                 then "// Result in: " ++ out
+                 else "ret " ++ name ++ ", " ++ out ++ ", []"
+        block  = unlines [header, code, footer]
+        ctx''  = bindVar name out ctx'
+    in (ctx'', acc ++ [block])
+  _ -> (ctx,acc)
 
-    -- formatação do imediato
-    isBool    = immTxt0 `elem` ["true","false"]
-    isFloat   = T.any (=='.') immTxt0
-                && T.all (\c->isDigit c||c=='.') immTxt0
-    isNumeric = T.all isDigit immTxt0
-    isIdent   = T.all (\c->isAlphaNum c||c=='_') immTxt0
+-- | Gera código para expressões: (código, dest, novoCtx)
+genExpr :: Ctx -> Expr -> (String,String,Ctx)
+genExpr ctx = \case
+  Var v ->
+    ("", lookupVar ctx v, ctx)
 
-    opcode
-      | opcode0=="const" && isFloat = "fconst"
-      | otherwise                   = opcode0
+  Lit l ->
+    genLiteral l ctx
 
-    immTxt
-      | isBool || isNumeric || isFloat || isIdent = immTxt0
-      | otherwise                                 = "\"" <> immTxt0 <> "\""
+  Lambda ps body ->
+    genExpr (foldr (\a c -> bindVar a a c) ctx ps) body
 
-    -- auxiliares para montar a linha
-    srcTxt   = T.intercalate ", " srcs
-    inTxt    = if null srcs then "" else ", " <> srcTxt
-    nOutsTxt = T.pack (show (length outs))
+  App f x ->
+    let (cf,rf,c1) = genExpr ctx f
+        (cx,rx,c2) = genExpr c1 x
+        (dst,c3)   = freshVar c2
+        instr      = "// call " ++ rf ++ " " ++ rx ++ "\n"
+    in (cf ++ cx ++ instr, dst, c3)
 
-    -- omitimos **qualquer** splitter (var ou in) sem fontes
-    shouldSkip = isSplitter && null srcs
+  BinOp op l r ->
+    let (c1,r1,cx) = genExpr ctx l
+        (c2,r2,cy) = genExpr cx r
+        (dst,cz)   = freshVar cy
+        instr      = binOpInstr op dst r1 r2
+    in (c1 ++ c2 ++ instr, dst, cz)
 
-  in if shouldSkip
-       then T.empty
-       else case opcode of
-         -- super <nome>, <#saídas>, <imediato>[, <srcs>]
-         "super" ->
-           T.concat [ "super ", name
-                    , ", ", nOutsTxt
-                    , ", ", immTxt
-                    , inTxt
-                    ]
+  UnOp op e ->
+    let (c,r,c1) = genExpr ctx e
+        (dst,c2)  = freshVar c1
+        instr     = case op of
+          Not -> "not  " ++ dst ++ ", " ++ r ++ "\n"
+          Neg -> "subi " ++ dst ++ ", 0, " ++ r ++ "\n"
+    in (c ++ instr, dst, c2)
 
-         -- retsnd <nome>[, <srcs>]
-         "retsnd" ->
-           "retsnd " <> name <> inTxt
+  If cond th el ->
+    let (cc,rc,c1) = genExpr ctx cond
+        (ct,rt,c2) = genExpr c1 th
+        (ce,re,c3) = genExpr c2 el
+        (dst,c4)   = freshVar c3
+        instr      = "steer " ++ dst ++ ", " ++ rc ++ ", " ++ rt ++ ", " ++ re ++ "\n"
+    in (cc ++ ct ++ ce ++ instr, dst, c4)
 
-         -- ret <nome>
-         "ret"    ->
-           "ret " <> name
+  List xs ->
+    let
+      folder (cs, ns, c0) e =
+        let (c,n,c1) = genExpr c0 e
+        in (cs ++ c, ns ++ [n], c1)
+      (cs, ns, c1) = foldl folder ("", [], ctx) xs
+      (dst, c2)    = freshVar c1
+      -- opcode 1 = list, seguido do número de fontes e depois as fontes
+      instr        = "super " ++ dst ++ ", 1, " ++ show (length ns)
+                    ++ concatMap (", " ++) ns ++ "\n"
+    in (cs ++ instr, dst, c2)
 
-         -- const <nome>, <imediato>
-         "const"  ->
-           "const " <> name <> ", " <> immTxt
+  Tuple es ->
+    genExpr ctx (List es)
 
-         -- fconst <nome>, <imediato>
-         "fconst" ->
-           "fconst " <> name <> ", " <> immTxt
+  Let decls body ->
+    let
+      (ctx1, binds) = foldl
+        (\(c0, bs) d -> case d of
+            FunDecl v ps bd ->
+              let (cb, rv, c2) = genExpr c0 (Lambda ps bd)
+              in (bindVar v rv c2, bs ++ ["// let " ++ v, cb])
+            _ -> (c0, bs)
+        ) (ctx, []) decls
+      (ce, er, c3) = genExpr ctx1 body
+    in (unlines binds ++ ce, er, c3)
 
-         -- demais instruções
-         _        ->
-           opcode <> " " <> name <> inTxt
+  Case{} ->
+    ("// Case not implemented\n", "", ctx)
 
--------------------------------------------------------------------------------
--- Mapeamento para opcodes “finos”
--------------------------------------------------------------------------------
-mapOp :: Text -> Text
-mapOp t
-  | t == "tagop"             = "inctag"
-  | "super" `T.isPrefixOf` t = "super"
-  | t `elem` valid           = t
-  | otherwise                = error ("opcode desconhecido: " ++ T.unpack t)
-  where
-    valid =
-      [ "const","add","sub","mul","div","mod"
-      , "andi","ori","xori","and","or","xor","not"
-      , "eq","neq","lt","leq","gt","geq"
-      , "addi","subi","muli","divi"
-      , "steer","merge","split"
-      , "callgroup","callsnd","retsnd","ret"
-      , "inctag","valtotag","tagtoval","itag","itagi"
-      , "specsuper","superinstmacro"
-      ]
+-- | Gera instruções para literal
+genLiteral :: Literal -> Ctx -> (String,String,Ctx)
+genLiteral lit ctx = case lit of
+  LInt n   -> mk "const" (show n) ctx
+  LFloat f -> mk "fconst" (show f) ctx
+  LBool b  -> mk "const" (if b then "1" else "0") ctx
+  LChar c  -> mk "const" (show (fromEnum c)) ctx
+  LString s ->
+    let
+      folder (cs, ns, c0) ch =
+        let (l, n, c1) = mk "const" (show (fromEnum ch)) c0
+        in (cs ++ l, ns ++ [n], c1)
+      (cs, ns, c1) = foldl folder ("", [], ctx) s
+      (dst, c2)   = freshVar c1
+      instr       = "super " ++ dst ++ ", 1, " ++ show (length ns)
+                   ++ concatMap (", " ++) ns ++ "\n"
+    in (cs ++ instr, dst, c2)
+ where
+  mk opc val c0 =
+    let (d, c1) = freshVar c0
+    in (opc ++ " " ++ d ++ ", " ++ val ++ "\n", d, c1)
 
--------------------------------------------------------------------------------
--- Aridade auxiliar
--------------------------------------------------------------------------------
-arity :: Text -> [Text] -> Int
-arity "steer"  _  = 2
-arity "inctag" _  = 1
-arity "retsnd" _  = 2
-arity _        xs = max 1 (length xs)
+-- | Modelos para instruções binárias
+binOpInstr :: BinOperator -> String -> String -> String -> String
+binOpInstr op dst l r = case op of
+  Add  -> "add "       ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Sub  -> "sub "       ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Mul  -> "mul "       ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Div  -> "div "       ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Mod  -> "mod "       ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Eq   -> "equal "     ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Neq  -> "not_equal " ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Lt   -> "lthan "     ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Le   -> "lthani "    ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Gt   -> "gthan "     ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Ge   -> "gthani "    ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  And  -> "and "       ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"
+  Or   -> "or "        ++ dst ++ ", " ++ l ++ ", " ++ r ++ "\n"

@@ -1,6 +1,10 @@
-const f0_l_out, 2
-const f0_r_l_out, 3
-const f0_r_r_out, 4
-mul f0_r_out, f0_r_l_out, f0_r_r_out
-add f0_out, f0_l_out, f0_r_out
-retsnd f0_retsnd, f0_out
+// TALM Assembly Generated
+// Top-level binding result
+const t0, 2
+const t1, 3
+const t2, 4
+mul t3, t1, t2
+add t4, t0, t3
+
+// Result in: t4
+
