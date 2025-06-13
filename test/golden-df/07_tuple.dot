@@ -1,17 +1,15 @@
 digraph Dataflow {
-  node [shape=record, fontname="Courier"];
-  f0 [label="super"];
-  "f0_tagop" [label="tagop"];
-  f0 -> "f0_tagop";
-  "f0_body_el0_out" [label="var:y"];
-  "f0_in_y" -> "f0_body_el0_out";
-  "f0_body_el1_out" [label="var:x"];
-  "f0_in_x" -> "f0_body_el1_out";
-  "f0_body_build" [label="super:1"];
-  "f0_body_el0_out" -> "f0_body_build";
-  "f0_body_el1_out" -> "f0_body_build";
-  "f0_body_build" -> "f0_body_out";
-  "f0_body_out" -> f0;
+  node [shape=record,fontname="Courier"];
+  "f0_in_y" [label="in:y"];
+  "f0_in_x" [label="in:x"];
+  "f0_el0_out" [label="var:y"];
+  "f0_in_y" -> "f0_el0_out";
+  "f0_el1_out" [label="var:x"];
+  "f0_in_x" -> "f0_el1_out";
+  "f0_build" [label="super:1"];
+  "f0_el0_out" -> "f0_build";
+  "f0_el1_out" -> "f0_build";
+  "f0_build" -> "f0_out";
   "f0_retsnd" [label="retsnd"];
   "f0_out" -> "f0_retsnd";
 }

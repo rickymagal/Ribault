@@ -1,5 +1,5 @@
 digraph Dataflow {
-  node [shape=record, fontname="Courier"];
+  node [shape=record,fontname="Courier"];
   "f0_let0_out" [label="const:2"];
   "f0_let1_out" [label="const:1"];
   "f0_in_let0_l_out" [label="var:x"];

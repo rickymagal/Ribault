@@ -1,10 +1,19 @@
-super f0, 0, 1, f0_body_out
-tagop , f0
-split f0_body_c_out, f0_in_a
-split f0_body_c_out, f0_in_b
-gt f0_body_steer, f0_body_c_l_out, f0_body_c_r_out
-steer f0_body_t, f0_body_e, f0_body_c_out
-split f0_body_phi, f0_in_a
-split f0_body_phi, f0_in_b
-super f0_body_phi, 2, 2, f0_body_t_out, f0_body_e_out
+super f0_c_l_out, 1, 3, f0_in_a
+super f0_c_r_out, 1, 3, f0_in_b
+gt f0_c_out, f0_c_l_out, f0_c_r_out
+steer f0_steer, f0_c_out
+super f0_t_out, 1, 3, f0_in_a
+super f0_e_out, 1, 3, f0_in_b
+super f0_phi, 1, 2, f0_t_out, f0_e_out
 retsnd f0_retsnd, f0_out
+const f1_f_x_out, 3
+inctag f1_f_inctag, f1_f_f_out
+callgroup f1_f_cg, f1_f_inctag, f1_f_cg_snd_fun, f1_f_cg_snd_arg
+callsnd f1_f_cg_snd_fun, f1_f_f_out
+callsnd f1_f_cg_snd_arg, f1_f_x_out
+const f1_x_out, 2
+inctag f1_inctag, f1_f_out
+callgroup f1_cg, f1_inctag, f1_cg_snd_fun, f1_cg_snd_arg
+callsnd f1_cg_snd_fun, f1_f_out
+callsnd f1_cg_snd_arg, f1_x_out
+retsnd f1_retsnd, f1_out
