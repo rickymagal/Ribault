@@ -1,19 +1,17 @@
-super f0_f_out, 3, 0
-const f0_x_el0_out, 10
-const f0_x_el1_out, 15
-super f0_x_build, 1, 2, f0_x_el0_out, f0_x_el1_out
-inctag f0_inctag, f0_f_out
-callgroup f0_cg, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
-callsnd f0_cg_snd_fun, f0_f_out
-callsnd f0_cg_snd_arg, f0_x_out
+super f0_scr_out, 1, 3, f0_in_lst
+steer f0_steer, f0_scr_out
+super f0_split, 2, 3, f0_ok
+super f0_vx, 1, 3, f0_split
+super f0_vy, 1, 3, f0_split
+add f0_add, f0_vx, f0_vy
+const f0_bad_out, 0
+super f0_phi, 1, 2, f0_add, f0_bad_out
 retsnd f0_retsnd, f0_out
-super f1_in_lst, 3, 0
-super f1_scr_out, 3, 1, f1_in_lst
-steer f1_steer, f1_scr_out
-super f1_split, 3, 1, f1_ok
-super f1_vx, 3, 1, f1_split
-super f1_vy, 3, 1, f1_split
-add f1_add, f1_vx, f1_vy
-const f1_bad_out, 0
-super f1_phi, 2, 2, f1_add, f1_bad_out
+const f1_x_el0_out, 10
+const f1_x_el1_out, 15
+super f1_x_build, 1, 1, f1_x_el0_out, f1_x_el1_out
+inctag f1_inctag, f1_f_out
+callgroup f1_cg, f1_inctag, f1_cg_snd_fun, f1_cg_snd_arg
+callsnd f1_cg_snd_fun, f1_f_out
+callsnd f1_cg_snd_arg, f1_x_out
 retsnd f1_retsnd, f1_out

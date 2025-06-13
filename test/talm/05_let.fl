@@ -1,9 +1,8 @@
-super f0_in_n, 3, 0
-super f0_let0_l_out, 3, 1, f0_in_n
-super f0_let0_r_out, 3, 1, f0_in_n
+super f0_let0_l_out, 1, 3, f0_in_n
+super f0_let0_r_out, 1, 3, f0_in_n
 mul f0_let0_out, f0_let0_l_out, f0_let0_r_out
 retsnd f0_let0_retsnd, f0_let0_out
-super f0_in_l_out, 3, 1, f0_in_sq
+super f0_in_l_out, 1, 3, f0_in_sq
 const f0_in_r_out, 1
 add f0_in_out, f0_in_l_out, f0_in_r_out
 retsnd f0_retsnd, f0_out
