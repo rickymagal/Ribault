@@ -1,2 +1,4 @@
 -- Let expression
-squarePlusOne = \n -> let sq = n * n in sq + 1
+squarePlusOne = \n -> let sq = n * n in sq + 1;
+
+res = squarePlusOne 1
