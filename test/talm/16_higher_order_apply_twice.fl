@@ -1,20 +1,22 @@
 // TALM Assembly Generated
-// Top-level binding main
-// call applyTwice inc
-const t1, 10
-// call t0 t1
+// Function main
+main:
+const t0, 10
+callsnd t1, applyTwice, 2, inc, t0
 
-// Result in: t2
+ret main, t1, []
 
-// Function inc params: ["n"]
-const t3, 1
-add t4, n, t3
+// Function inc
+inc:
+const t2, 1
+add t3, n, t2
 
-ret inc, t4, []
+ret inc, t3, []
 
-// Function applyTwice params: ["x","f"]
-// call f x
-// call f t5
+// Function applyTwice
+applyTwice:
+callsnd t4, f, 1, x
+callsnd t5, f, 1, t4
 
-ret applyTwice, t6, []
+ret applyTwice, t5, []
 

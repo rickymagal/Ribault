@@ -1,36 +1,40 @@
 // TALM Assembly Generated
-// Top-level binding res3
+// Function res3
+res3:
 const t0, 10
-// call add t0
-const t2, 4
-// call t1 t2
+const t1, 4
+callsnd t2, add, 2, t0, t1
 
-// Result in: t3
+ret res3, t2, []
 
-// Top-level binding res2
-const t4, 10
-// call const t4
-const t6, 4
-// call t5 t6
+// Function res2
+res2:
+const t3, 10
+const t4, 4
+callsnd t5, const, 2, t3, t4
 
-// Result in: t7
+ret res2, t5, []
 
-// Top-level binding res1
-const t8, 10
-// call identity t8
+// Function res1
+res1:
+const t6, 10
+callsnd t7, identity, 1, t6
 
-// Result in: t9
+ret res1, t7, []
 
-// Function add params: ["y","x"]
-add t10, x, y
+// Function add
+add:
+add t8, x, y
 
-ret add, t10, []
+ret add, t8, []
 
-// Function const params: ["y","x"]
+// Function const
+const:
 
 ret const, x, []
 
-// Function identity params: ["x"]
+// Function identity
+identity:
 
 ret identity, x, []
 

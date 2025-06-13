@@ -1,11 +1,13 @@
 // TALM Assembly Generated
-// Top-level binding main
+// Function main
+main:
 const t0, 15
-// call rem7 t0
+callsnd t1, rem7, 1, t0
 
-// Result in: t1
+ret main, t1, []
 
-// Function rem7 params: ["x"]
+// Function rem7
+rem7:
 const t2, 7
 mod t3, x, t2
 

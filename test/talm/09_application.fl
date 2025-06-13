@@ -1,11 +1,7 @@
 // TALM Assembly Generated
-// Top-level binding result
-// call f x
-const t1, 2
-mul t2, n, t1
-// call t0 t2
-const t4, 21
-// call t3 t4
+// Function result
+result:
+callsnd t3, f, 1, t1
 
-// Result in: t5
+ret result, t3, []
 
