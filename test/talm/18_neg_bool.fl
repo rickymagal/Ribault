@@ -1,12 +1,14 @@
 // TALM Assembly Generated
-// Top-level binding main
+// Function main
+main:
 const t0, 1
-// call negBool t0
+callsnd t1, negBool, 1, t0
 
-// Result in: t1
+ret main, t1, []
 
-// Function negBool params: ["b"]
-not  t2, b
+// Function negBool
+negBool:
+not t2, b
 
 ret negBool, t2, []
 

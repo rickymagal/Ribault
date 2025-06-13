@@ -1,6 +1,21 @@
 // TALM Assembly Generated
-// Function headList params: ["lst"]
-// Case not implemented
+// Function headList
+headList:
+const t1, 0
+length t0, lst
+equal t0, t0, t1
+splitn , lst
+const t2, 0
+const t5, 1
+length t4, lst
+equal t4, t4, t5
+splitn t3, lst
+steer t10, 1, t2, t3
+const t9, 2
+length t8, lst
+equal t8, t8, t9
+splitn t6 t7, lst
+steer t10, t10, t10, t6
 
-ret headList, , []
+ret headList, t10, []
 

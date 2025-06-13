@@ -1,14 +1,22 @@
 // TALM Assembly Generated
-// Top-level binding main
+// Function main
+main:
 const t0, 10
 const t1, 15
 super t2, 1, 2, t0, t1
-// call sumTwo t2
+callsnd t3, sumTwo, 1, t2
 
-// Result in: t3
+ret main, t3, []
 
-// Function sumTwo params: ["lst"]
-// Case not implemented
+// Function sumTwo
+sumTwo:
+const t7, 2
+length t6, lst
+equal t6, t6, t7
+splitn t4 t5, lst
+add t8, t4, t5
+const t9, 0
+steer t10, 1, t8, t9
 
-ret sumTwo, , []
+ret sumTwo, t10, []
 

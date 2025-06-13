@@ -1,11 +1,13 @@
 // TALM Assembly Generated
-// Top-level binding main
+// Function main
+main:
 const t0, 7
-// call neg t0
+callsnd t1, neg, 1, t0
 
-// Result in: t1
+ret main, t1, []
 
-// Function neg params: ["x"]
+// Function neg
+neg:
 subi t2, 0, x
 
 ret neg, t2, []

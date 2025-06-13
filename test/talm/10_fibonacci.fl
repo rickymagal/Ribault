@@ -1,19 +1,21 @@
 // TALM Assembly Generated
-// Top-level binding main
+// Function main
+main:
 const t0, 10
-// call fib t0
+callsnd t1, fib, 1, t0
 
-// Result in: t1
+ret main, t1, []
 
-// Function fib params: ["n"]
+// Function fib
+fib:
 const t2, 1
 lthani t3, n, t2
 const t4, 1
 sub t5, n, t4
-// call fib t5
+callsnd t6, fib, 1, t5
 const t7, 2
 sub t8, n, t7
-// call fib t8
+callsnd t9, fib, 1, t8
 add t10, t6, t9
 steer t11, t3, n, t10
 

@@ -1,20 +1,23 @@
 // TALM Assembly Generated
-// Top-level binding tupleVal
+// Function tupleVal
+tupleVal:
 const t0, 1
 const t1, 2
 super t2, 1, 2, t0, t1
 
-// Result in: t2
+ret tupleVal, t2, []
 
-// Top-level binding listVal
+// Function listVal
+listVal:
 const t3, 1
 const t4, 2
 const t5, 3
 super t6, 1, 3, t3, t4, t5
 
-// Result in: t6
+ret listVal, t6, []
 
-// Top-level binding stringVal
+// Function stringVal
+stringVal:
 const t7, 108
 const t8, 97
 const t9, 109
@@ -23,30 +26,35 @@ const t11, 100
 const t12, 97
 super t13, 1, 6, t7, t8, t9, t10, t11, t12
 
-// Result in: t13
+ret stringVal, t13, []
 
-// Top-level binding charVal
+// Function charVal
+charVal:
 const t14, 122
 
-// Result in: t14
+ret charVal, t14, []
 
-// Top-level binding floatVal
+// Function floatVal
+floatVal:
 fconst t15, 3.14
 
-// Result in: t15
+ret floatVal, t15, []
 
-// Top-level binding intVal
+// Function intVal
+intVal:
 const t16, 42
 
-// Result in: t16
+ret intVal, t16, []
 
-// Top-level binding falseBool
+// Function falseBool
+falseBool:
 const t17, 0
 
-// Result in: t17
+ret falseBool, t17, []
 
-// Top-level binding trueBool
+// Function trueBool
+trueBool:
 const t18, 1
 
-// Result in: t18
+ret trueBool, t18, []
 

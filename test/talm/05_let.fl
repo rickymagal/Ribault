@@ -1,11 +1,13 @@
 // TALM Assembly Generated
-// Top-level binding res
+// Function res
+res:
 const t0, 1
-// call squarePlusOne t0
+callsnd t1, squarePlusOne, 1, t0
 
-// Result in: t1
+ret res, t1, []
 
-// Function squarePlusOne params: ["n"]
+// Function squarePlusOne
+squarePlusOne:
 // let sq
 mul t2, n, n
 

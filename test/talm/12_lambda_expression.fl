@@ -1,15 +1,15 @@
 // TALM Assembly Generated
-// Top-level binding value
-const t0, 3
-add t1, y, t0
-const t2, 7
-// call t1 t2
+// Function value
+value:
+const t1, 3
+add t2, t0, t1
 
-// Result in: t3
+ret value, t2, []
 
-// Function double params: ["x"]
-const t4, 2
-mul t5, x, t4
+// Function double
+double:
+const t3, 2
+mul t4, x, t3
 
-ret double, t5, []
+ret double, t4, []
 

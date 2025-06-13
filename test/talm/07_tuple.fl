@@ -1,5 +1,6 @@
 // TALM Assembly Generated
-// Function swap params: ["y","x"]
+// Function swap
+swap:
 super t0, 1, 2, y, x
 
 ret swap, t0, []

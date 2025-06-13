@@ -1,17 +1,19 @@
 // TALM Assembly Generated
-// Top-level binding main
+// Function main
+main:
 const t0, 5
-// call fact t0
+callsnd t1, fact, 1, t0
 
-// Result in: t1
+ret main, t1, []
 
-// Function fact params: ["n"]
+// Function fact
+fact:
 const t2, 1
 lthani t3, n, t2
 const t4, 1
 const t5, 1
 sub t6, n, t5
-// call fact t6
+callsnd t7, fact, 1, t6
 mul t8, n, t7
 steer t9, t3, t4, t8
 

@@ -1,5 +1,6 @@
 // TALM Assembly Generated
-// Top-level binding result
+// Function result
+result:
 // let y
 const t0, 2
 
@@ -11,5 +12,5 @@ add t2, t1, t0
 
 mul t3, t2, t2
 
-// Result in: t3
+ret result, t3, []
 
