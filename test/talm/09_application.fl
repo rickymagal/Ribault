@@ -1,23 +1,11 @@
-super f0ffLam_f_out, 2, 3, f0ffLam_in_f
-super f0ffLam_x_out, 1, 3, f0ffLam_in_x
-inctag f0ffLam_inctag, f0ffLam_f_out
-callgroup f0ffLam_cg, f0ffLam_inctag, f0ffLam_cg_snd_fun, f0ffLam_cg_snd_arg
-callsnd f0ffLam_cg_snd_fun, f0ffLam_f_out
-callsnd f0ffLam_cg_snd_arg, f0ffLam_x_out
-retsnd f0ffLam_retsnd, f0ffLam_out
-valtotag f0_f_f, f0ffLam_out
-super f0fxLam_l_out, 1, 3, f0fxLam_in_n
-const f0fxLam_r_out, 2
-mul f0fxLam_out, f0fxLam_l_out, f0fxLam_r_out
-retsnd f0fxLam_retsnd, f0fxLam_out
-valtotag f0_f_x, f0fxLam_out
-inctag f0_f_inctag, f0_f_f_out
-callgroup f0_f_cg, f0_f_inctag, f0_f_cg_snd_fun, f0_f_cg_snd_arg
-callsnd f0_f_cg_snd_fun, f0_f_f_out
-callsnd f0_f_cg_snd_arg, f0_f_x_out
-const f0_x_out, 21
-inctag f0_inctag, f0_f_out
-callgroup f0_cg, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
-callsnd f0_cg_snd_fun, f0_f_out
-callsnd f0_cg_snd_arg, f0_x_out
-retsnd f0_retsnd, f0_out
+// TALM Assembly Generated
+// Top-level binding result
+// call f x
+const t1, 2
+mul t2, n, t1
+// call t0 t2
+const t4, 21
+// call t3 t4
+
+// Result in: t5
+

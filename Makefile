@@ -103,7 +103,7 @@ $(EXE_AST): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS) $(
 
 $(EXE_CG): $(CODEGEN_HS) $(MAIN_CG_HS)
 	@echo "[GHC  ] $@"
-	$(GHC) -O2 -o $@ $(MAIN_CG_HS) $(CODEGEN_HS)
+	$(GHC) -O2 -o $@ $(MAIN_CG_HS) $(CODEGEN_HS) $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS)
 
 # ------------------------------------------------------------
 # Dataflow .dot
@@ -135,10 +135,11 @@ $(AST_IMG_DIR)/%.png: $(AST_OUT_DIR)/%.dot
 
 # ------------------------------------------------------------
 # TALM
-$(TALM_DIR)/%.fl: $(DF_OUT_DIR)/%.dot | $(EXE_CG)
+$(TALM_DIR)/%.fl: $(TEST_DIR)/%.hsk  $(EXE_CG)
 	@mkdir -p $(TALM_DIR)
 	@echo "[TALM ] $< → $@"
-	./$(EXE_CG) < $< > $@
+	./$(EXE_CG) $< > $@
+
 
 # ------------------------------------------------------------
 # Diretórios auxiliares

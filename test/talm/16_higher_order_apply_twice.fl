@@ -1,26 +1,20 @@
-super f0_f_out, 2, 3, f0_in_f
-super f0_x_f_out, 2, 3, f0_in_f
-super f0_x_x_out, 1, 3, f0_in_x
-inctag f0_x_inctag, f0_x_f_out
-callgroup f0_x_cg, f0_x_inctag, f0_x_cg_snd_fun, f0_x_cg_snd_arg
-callsnd f0_x_cg_snd_fun, f0_x_f_out
-callsnd f0_x_cg_snd_arg, f0_x_x_out
-inctag f0_inctag, f0_f_out
-callgroup f0_cg, f0_inctag, f0_cg_snd_fun, f0_cg_snd_arg
-callsnd f0_cg_snd_fun, f0_f_out
-callsnd f0_cg_snd_arg, f0_x_out
-retsnd f0_retsnd, f0_out
-super f1_l_out, 1, 3, f1_in_n
-const f1_r_out, 1
-add f1_out, f1_l_out, f1_r_out
-retsnd f1_retsnd, f1_out
-inctag f2_f_inctag, f2_f_f_out
-callgroup f2_f_cg, f2_f_inctag, f2_f_cg_snd_fun, f2_f_cg_snd_arg
-callsnd f2_f_cg_snd_fun, f2_f_f_out
-callsnd f2_f_cg_snd_arg, f2_f_x_out
-const f2_x_out, 10
-inctag f2_inctag, f2_f_out
-callgroup f2_cg, f2_inctag, f2_cg_snd_fun, f2_cg_snd_arg
-callsnd f2_cg_snd_fun, f2_f_out
-callsnd f2_cg_snd_arg, f2_x_out
-retsnd f2_retsnd, f2_out
+// TALM Assembly Generated
+// Top-level binding main
+// call applyTwice inc
+const t1, 10
+// call t0 t1
+
+// Result in: t2
+
+// Function inc params: ["n"]
+const t3, 1
+add t4, n, t3
+
+ret inc, t4, []
+
+// Function applyTwice params: ["x","f"]
+// call f x
+// call f t5
+
+ret applyTwice, t6, []
+
