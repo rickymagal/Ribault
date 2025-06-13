@@ -1,14 +1,36 @@
-super f0, 0, 1, f0_body_out
-tagop , f0
-split f0_body_out, f0_in_x
-split f0_body_out, f0_in_y
-add f0, f0_body_l_out, f0_body_r_out
+super f0_out, 1, 3, f0_in_x
 retsnd f0_retsnd, f0_out
-super f1, 0, 1, f1_body_out
-tagop , f1
-split f1, f1_in_x
+super f1_out, 1, 3, f1_in_x
 retsnd f1_retsnd, f1_out
-super f2, 0, 1, f2_body_out
-tagop , f2
-split f2, f2_in_x
+super f2_l_out, 1, 3, f2_in_x
+super f2_r_out, 1, 3, f2_in_y
+add f2_out, f2_l_out, f2_r_out
 retsnd f2_retsnd, f2_out
+const f3_x_out, 10
+inctag f3_inctag, f3_f_out
+callgroup f3_cg, f3_inctag, f3_cg_snd_fun, f3_cg_snd_arg
+callsnd f3_cg_snd_fun, f3_f_out
+callsnd f3_cg_snd_arg, f3_x_out
+retsnd f3_retsnd, f3_out
+const f4_f_x_out, 10
+inctag f4_f_inctag, f4_f_f_out
+callgroup f4_f_cg, f4_f_inctag, f4_f_cg_snd_fun, f4_f_cg_snd_arg
+callsnd f4_f_cg_snd_fun, f4_f_f_out
+callsnd f4_f_cg_snd_arg, f4_f_x_out
+const f4_x_out, 4
+inctag f4_inctag, f4_f_out
+callgroup f4_cg, f4_inctag, f4_cg_snd_fun, f4_cg_snd_arg
+callsnd f4_cg_snd_fun, f4_f_out
+callsnd f4_cg_snd_arg, f4_x_out
+retsnd f4_retsnd, f4_out
+const f5_f_x_out, 10
+inctag f5_f_inctag, f5_f_f_out
+callgroup f5_f_cg, f5_f_inctag, f5_f_cg_snd_fun, f5_f_cg_snd_arg
+callsnd f5_f_cg_snd_fun, f5_f_f_out
+callsnd f5_f_cg_snd_arg, f5_f_x_out
+const f5_x_out, 4
+inctag f5_inctag, f5_f_out
+callgroup f5_cg, f5_inctag, f5_cg_snd_fun, f5_cg_snd_arg
+callsnd f5_cg_snd_fun, f5_f_out
+callsnd f5_cg_snd_arg, f5_x_out
+retsnd f5_retsnd, f5_out
