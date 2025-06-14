@@ -1,4 +1,0 @@
-super f0_el0_out, 1, 3, f0_in_y
-super f0_el1_out, 1, 3, f0_in_x
-super f0_build, 1, 1, f0_el0_out, f0_el1_out
-retsnd f0_retsnd, f0_out

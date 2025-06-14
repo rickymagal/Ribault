@@ -1,14 +1,14 @@
-digraph Dataflow {
-  node [shape=record,fontname="Courier"];
-  "f0_l_out" [label="const:2"];
-  "f0_r_l_out" [label="const:3"];
-  "f0_r_r_out" [label="const:4"];
-  "f0_r_out" [label="mul"];
-  "f0_r_l_out" -> "f0_r_out";
-  "f0_r_r_out" -> "f0_r_out";
-  "f0_out" [label="add"];
-  "f0_l_out" -> "f0_out";
-  "f0_r_out" -> "f0_out";
-  "f0_retsnd" [label="retsnd"];
-  "f0_out" -> "f0_retsnd";
+digraph G {
+  node [shape=box, style=rounded];
+  node [shape=triangle, style=solid];
+  const0 [label="const#2", shape=box, style=rounded];
+  const1 [label="const#3", shape=box, style=rounded];
+  const2 [label="const#4", shape=box, style=rounded];
+  mul3 [label="*", shape=box, style=rounded];
+  add4 [label="+", shape=box, style=rounded];
+
+  const1 -> mul3 [tailport=s, headport=nw];
+  const2 -> mul3 [tailport=s, headport=ne];
+  const0 -> add4 [tailport=s, headport=nw];
+  mul3 -> add4 [tailport=s, headport=ne];
 }

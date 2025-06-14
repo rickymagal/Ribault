@@ -1,16 +1,19 @@
-digraph Dataflow {
-  node [shape=record,fontname="Courier"];
-  "f0_in_p" [label="in:p"];
-  "f0_scr_out" [label="var:p"];
-  "f0_in_p" -> "f0_scr_out";
-  "f0_steer" [label="steer"];
-  "f0_scr_out" -> "f0_steer";
-  "f0_steer" -> "f0_alt0";
-  "f0_alt0_out" [label="var:x"];
-  "f0_in_x" -> "f0_alt0_out";
-  "f0_alt0_out" -> "f0_phi";
-  "f0_phi" [label="super:2"];
-  "f0_phi" -> "f0_out";
-  "f0_retsnd" [label="retsnd"];
-  "f0_out" -> "f0_retsnd";
+digraph G {
+  node [shape=box, style=rounded];
+  node [shape=triangle, style=solid];
+  const0 [label="const#10", shape=box, style=rounded];
+  const1 [label="const#15", shape=box, style=rounded];
+  super2 [label="S2", shape=box, style=rounded];
+  const3 [label="const#0", shape=box, style=rounded];
+  matchtuple24 [label="matchtuple2", shape=box, style=rounded];
+  steer5 [label="T   F", shape=triangle, style=solid];
+  proj06 [label="proj0", shape=box, style=rounded];
+
+  const0 -> super2 [tailport=s, headport=nw];
+  const1 -> super2 [tailport=s, headport=nw];
+  super2 -> matchtuple24 [tailport=s, headport=n];
+  matchtuple24 -> steer5 [tailport=s, headport=n];
+  super2 -> proj06 [tailport=s, headport=nw];
+  proj06 -> steer5 [tailport=sw, headport=nw];
+  const3 -> steer5 [tailport=se, headport=ne];
 }

@@ -1,25 +1,13 @@
-digraph Dataflow {
-  node [shape=record,fontname="Courier"];
-  "f0_let0_out" [label="const:2"];
-  "f0_let1_out" [label="const:1"];
-  "f0_in_let0_l_out" [label="var:x"];
-  "f0_in_x" -> "f0_in_let0_l_out";
-  "f0_in_let0_r_out" [label="var:y"];
-  "f0_in_y" -> "f0_in_let0_r_out";
-  "f0_in_let0_out" [label="add"];
-  "f0_in_let0_l_out" -> "f0_in_let0_out";
-  "f0_in_let0_r_out" -> "f0_in_let0_out";
-  "f0_in_let0_retsnd" [label="retsnd"];
-  "f0_in_let0_out" -> "f0_in_let0_retsnd";
-  "f0_in_in_l_out" [label="var:z"];
-  "f0_in_z" -> "f0_in_in_l_out";
-  "f0_in_in_r_out" [label="var:z"];
-  "f0_in_z" -> "f0_in_in_r_out";
-  "f0_in_in_out" [label="mul"];
-  "f0_in_in_l_out" -> "f0_in_in_out";
-  "f0_in_in_r_out" -> "f0_in_in_out";
-  "f0_in_in_out" -> "f0_in";
-  "f0_in_out" -> f0;
-  "f0_retsnd" [label="retsnd"];
-  "f0_out" -> "f0_retsnd";
+digraph G {
+  node [shape=box, style=rounded];
+  node [shape=triangle, style=solid];
+  const0 [label="const#2", shape=box, style=rounded];
+  const1 [label="const#1", shape=box, style=rounded];
+  add2 [label="+", shape=box, style=rounded];
+  mul3 [label="*", shape=box, style=rounded];
+
+  const1 -> add2 [tailport=s, headport=nw];
+  const0 -> add2 [tailport=s, headport=ne];
+  add2 -> mul3 [tailport=s, headport=nw];
+  add2 -> mul3 [tailport=s, headport=ne];
 }

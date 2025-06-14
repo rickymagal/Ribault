@@ -1,3 +1,0 @@
-applyTwice f x = f (f x);
-inc n = n + 1;
-main = applyTwice inc 10

@@ -1,24 +1,37 @@
 digraph AST {
   node [shape=box, fontname="Courier"];
   decl0 [label="FunDecl
-max()"];
-  decl0_body [label="Lambda(b,a)"];
+res()"];
+  decl0_body [label="App"];
   decl0 -> decl0_body;
-  decl0_body_body [label="If"];
-  decl0_body -> decl0_body_body;
-  decl0_body_body_cond [label="BinOp
+  decl0_body_fun [label="App"];
+  decl0_body -> decl0_body_fun;
+  decl0_body_fun_fun [label="Var
+max"];
+  decl0_body_fun -> decl0_body_fun_fun;
+  decl0_body_fun_arg [label="Lit"];
+  decl0_body_fun -> decl0_body_fun_arg;
+  decl0_body_arg [label="Lit"];
+  decl0_body -> decl0_body_arg;
+  decl1 [label="FunDecl
+max()"];
+  decl1_body [label="Lambda(b,a)"];
+  decl1 -> decl1_body;
+  decl1_body_body [label="If"];
+  decl1_body -> decl1_body_body;
+  decl1_body_body_cond [label="BinOp
 Gt"];
-  decl0_body_body -> decl0_body_body_cond;
-  decl0_body_body_cond_l [label="Var
+  decl1_body_body -> decl1_body_body_cond;
+  decl1_body_body_cond_l [label="Var
 a"];
-  decl0_body_body_cond -> decl0_body_body_cond_l;
-  decl0_body_body_cond_r [label="Var
+  decl1_body_body_cond -> decl1_body_body_cond_l;
+  decl1_body_body_cond_r [label="Var
 b"];
-  decl0_body_body_cond -> decl0_body_body_cond_r;
-  decl0_body_body_then [label="Var
+  decl1_body_body_cond -> decl1_body_body_cond_r;
+  decl1_body_body_then [label="Var
 a"];
-  decl0_body_body -> decl0_body_body_then;
-  decl0_body_body_else [label="Var
+  decl1_body_body -> decl1_body_body_then;
+  decl1_body_body_else [label="Var
 b"];
-  decl0_body_body -> decl0_body_body_else;
+  decl1_body_body -> decl1_body_body_else;
 }
