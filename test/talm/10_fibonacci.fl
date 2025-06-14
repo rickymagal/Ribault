@@ -2,9 +2,12 @@
 // Function main
 main:
 const t0, 10
-callsnd t1, fib, 1, t0
+callgroup("cg2", "fib")
+callsnd snd1, t0, cg2
+retsnd rtsnd2, t0, cg2
+addi t1, fib.cg2, 1
 
-ret main, t1, []
+ret main, t1, [cg_main]
 
 // Function fib
 fib:
@@ -12,12 +15,18 @@ const t2, 1
 lthani t3, n, t2
 const t4, 1
 sub t5, n, t4
-callsnd t6, fib, 1, t5
+callgroup("cg7", "fib")
+callsnd snd1, t5, cg7
+retsnd rtsnd7, t5, cg7
+addi t6, fib.cg7, 1
 const t7, 2
 sub t8, n, t7
-callsnd t9, fib, 1, t8
+callgroup("cg10", "fib")
+callsnd snd1, t8, cg10
+retsnd rtsnd10, t8, cg10
+addi t9, fib.cg10, 1
 add t10, t6, t9
 steer t11, t3, n, t10
 
-ret fib, t11, []
+ret fib, t11, [cg_fib]
 

@@ -1,7 +1,10 @@
 // TALM Assembly Generated
 // Function result
 result:
-callsnd t3, f, 1, t1
+callgroup("cg4", "f")
+callsnd snd1, t1, cg4
+retsnd rtsnd4, t1, cg4
+addi t3, f.cg4, 1
 
-ret result, t3, []
+ret result, t3, [cg_result]
 

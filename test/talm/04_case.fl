@@ -4,13 +4,16 @@ res:
 const t0, 10
 const t1, 15
 super t2, 1, 2, t0, t1
-callsnd t3, fstPair, 1, t2
+callgroup("cg4", "fstPair")
+callsnd snd1, t2, cg4
+retsnd rtsnd4, t2, cg4
+addi t3, fstPair.cg4, 1
 
-ret res, t3, []
+ret res, t3, [cg_res]
 
 // Function fstPair
 fstPair:
 splitn t4 t5, p
 
-ret fstPair, t4, []
+ret fstPair, t4, [cg_fstPair]
 

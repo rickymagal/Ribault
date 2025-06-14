@@ -2,13 +2,16 @@
 // Function main
 main:
 const t0, 7
-callsnd t1, neg, 1, t0
+callgroup("cg2", "neg")
+callsnd snd1, t0, cg2
+retsnd rtsnd2, t0, cg2
+addi t1, neg.cg2, 1
 
-ret main, t1, []
+ret main, t1, [cg_main]
 
 // Function neg
 neg:
 subi t2, 0, x
 
-ret neg, t2, []
+ret neg, t2, [cg_neg]
 

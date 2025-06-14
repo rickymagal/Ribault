@@ -2,21 +2,31 @@
 // Function main
 main:
 const t0, 10
-callsnd t1, applyTwice, 2, inc, t0
+callgroup("cg2", "applyTwice")
+callsnd snd1, inc, cg2
+callsnd snd2, t0, cg2
+retsnd rtsnd2, inc, cg2
+addi t1, applyTwice.cg2, 2
 
-ret main, t1, []
+ret main, t1, [cg_main]
 
 // Function inc
 inc:
 const t2, 1
 add t3, n, t2
 
-ret inc, t3, []
+ret inc, t3, [cg_inc]
 
 // Function applyTwice
 applyTwice:
-callsnd t4, f, 1, x
-callsnd t5, f, 1, t4
+callgroup("cg5", "f")
+callsnd snd1, x, cg5
+retsnd rtsnd5, x, cg5
+addi t4, f.cg5, 1
+callgroup("cg6", "f")
+callsnd snd1, t4, cg6
+retsnd rtsnd6, t4, cg6
+addi t5, f.cg6, 1
 
-ret applyTwice, t5, []
+ret applyTwice, t5, [cg_applyTwice]
 

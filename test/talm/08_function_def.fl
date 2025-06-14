@@ -4,14 +4,19 @@ res:
 const t0, 1
 const t1, 2
 const t2, 3
-callsnd t3, addThree, 3, t0, t1, t2
+callgroup("cg4", "addThree")
+callsnd snd1, t0, cg4
+callsnd snd2, t1, cg4
+callsnd snd3, t2, cg4
+retsnd rtsnd4, t0, cg4
+addi t3, addThree.cg4, 3
 
-ret res, t3, []
+ret res, t3, [cg_res]
 
 // Function addThree
 addThree:
 add t4, x, y
 add t5, t4, z
 
-ret addThree, t5, []
+ret addThree, t5, [cg_addThree]
 

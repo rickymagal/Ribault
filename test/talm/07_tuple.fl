@@ -3,5 +3,5 @@
 swap:
 super t0, 1, 2, y, x
 
-ret swap, t0, []
+ret swap, t0, [cg_swap]
 

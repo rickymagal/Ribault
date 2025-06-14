@@ -4,9 +4,12 @@ main:
 const t0, 10
 const t1, 15
 super t2, 1, 2, t0, t1
-callsnd t3, sumTwo, 1, t2
+callgroup("cg4", "sumTwo")
+callsnd snd1, t2, cg4
+retsnd rtsnd4, t2, cg4
+addi t3, sumTwo.cg4, 1
 
-ret main, t3, []
+ret main, t3, [cg_main]
 
 // Function sumTwo
 sumTwo:
@@ -18,5 +21,5 @@ add t8, t4, t5
 const t9, 0
 steer t10, 1, t8, t9
 
-ret sumTwo, t10, []
+ret sumTwo, t10, [cg_sumTwo]
 
