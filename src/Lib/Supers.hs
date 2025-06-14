@@ -1,73 +1,66 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE DeriveGeneric #-}
 
--- | Implementação das super-instruções usadas pelo código gerado.
---   Compile com:   ghc -O2 -shared -dynamic -o libsupers.so Supers.hs
-module Supers where
+-- | LibSupers: construtores e matcher genérico de padrões
+module Lib.Supers
+  ( Value(..)
+  , PatternDef(..)
+  , makeList
+  , makeTuple
+  , matchSeq
+  ) where
 
-import Foreign
-import Foreign.C.Types
-import Foreign.Marshal.Alloc (mallocBytes)
-import Control.Monad        (forM_)
-import Data.Word            (Word32)
+import           GHC.Generics (Generic)
 
--------------------------------------------------------------------------------
--- super:1  ‒  buildList  -----------------------------------------------------
--- Constrói uma lista “caixa” contendo N ponteiros recebidos em @argv@.
--- A cabeça do objeto tem layout:  Word32 tag  |  Word32 len  |  [Ptr () ... ]
--------------------------------------------------------------------------------
-foreign export ccall super1 :: CInt -> Ptr (Ptr ()) -> Ptr (Ptr ()) -> IO ()
+-- | Representação genérica de valores em tempo de execução
+data Value
+  = VInt   Int
+  | VBool  Bool
+  | VList  [Value]
+  | VTup   [Value]        -- tupla de aridade arbitrária
+  deriving (Show, Eq, Generic)
 
-super1 :: CInt -> Ptr (Ptr ()) -> Ptr (Ptr ()) -> IO ()
-super1 argc argv out = do
-  let n       = fromIntegral argc :: Int
-      hdrSz   = sizeOf (undefined :: Word32) * 2   -- tag + len
-      elemSz  = sizeOf (undefined :: Ptr ())
-      boxSize = hdrSz + n * elemSz
+-- | Definição de um único padrão atômico
+data PatternDef
+  = PVar               -- corresponde a qualquer valor
+  | PWildcard          -- ignora o valor
+  | PConstInt   Int    -- corresponde apenas a esse inteiro exato
+  | PConstBool  Bool   -- corresponde apenas a esse booleano exato
+  deriving (Show, Eq, Generic)
 
-  box <- mallocBytes boxSize
+-- | Constrói uma lista em Value a partir de N elementos
+makeList :: [Value] -> Value
+makeList xs = VList xs
 
-  -- header: tag = 1, len = n
-  poke               (castPtr box)           (1 :: Word32)
-  pokeByteOff box 4  (fromIntegral n :: Word32)
+-- | Constrói uma tupla em Value a partir de N elementos
+makeTuple :: [Value] -> Value
+makeTuple xs = VTup xs
 
-  -- payload
-  forM_ [0 .. n-1] $ \i -> do
-    ptr <- peekElemOff argv i
-    pokeElemOff (castPtr box `plusPtr` 8) i ptr
+-- | Testa uma sequência de padrões (para listas ou tuplas) contra um Value.
+--   Retorna True se e somente se:
+--     - value for VList vs ou VTup vs
+--     - length ps == length vs
+--     - cada PatternDef ps[i] casa com vs[i]
+matchSeq :: [PatternDef] -> Value -> Bool
+matchSeq ps val = case val of
+  VList vs
+    | length vs == length ps
+    -> and (zipWith matchValue ps vs)
+    | otherwise
+    -> False
 
-  -- único token de saída
-  poke out box
+  VTup vs
+    | length vs == length ps
+    -> and (zipWith matchValue ps vs)
+    | otherwise
+    -> False
 
+  _ ->
+    False
 
--------------------------------------------------------------------------------
--- super:2  ‒  phi2  ----------------------------------------------------------
--- Recebe dois ponteiros e devolve o primeiro que não seja NULL.
--------------------------------------------------------------------------------
-foreign export ccall super2 :: CInt -> Ptr (Ptr ()) -> Ptr (Ptr ()) -> IO ()
-
-super2 :: CInt -> Ptr (Ptr ()) -> Ptr (Ptr ()) -> IO ()
-super2 _ argv out = do
-  a <- peekElemOff argv 0
-  b <- peekElemOff argv 1
-  poke out (if a /= nullPtr then a else b)
-
-
--------------------------------------------------------------------------------
--- super:3  ‒  splitHead2  ----------------------------------------------------
--- Divide uma lista caixa (construída por super1) e devolve os dois
--- primeiros elementos como tokens independentes.
--------------------------------------------------------------------------------
-foreign export ccall super3 :: CInt -> Ptr (Ptr ()) -> Ptr (Ptr ()) -> IO ()
-
-super3 :: CInt -> Ptr (Ptr ()) -> Ptr (Ptr ()) -> IO ()
-super3 _ argv out = do
-  boxPtr <- peekElemOff argv 0
-  len    <- (peekByteOff boxPtr 4 :: IO Word32)  -- <- anotação no RHS
-
-  if len < 2
-     then error "super3: list length < 2"
-     else do
-       a <- peekElemOff (castPtr boxPtr `plusPtr` 8) 0
-       b <- peekElemOff (castPtr boxPtr `plusPtr` 8) 1
-       pokeElemOff out 0 a
-       pokeElemOff out 1 b
+-- | Testa um PatternDef atômico contra um Value
+matchValue :: PatternDef -> Value -> Bool
+matchValue PVar           _         = True
+matchValue PWildcard      _         = True
+matchValue (PConstInt i)  (VInt j)  = i == j
+matchValue (PConstBool b) (VBool c) = b == c
+matchValue _              _         = False
