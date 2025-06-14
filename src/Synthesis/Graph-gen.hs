@@ -7,14 +7,11 @@ module GraphGen (programToDataflowDot) where
 import           Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as T
 import           Data.Char      (isAlphaNum)
-import           Syntax         (Program(..), Decl(..), Expr(..), Literal(..), Ident, BinOperator(..))
+import           Syntax         (Program(..), Decl(..), Expr(..), Literal(..), Ident, BinOperator(..), Pattern(..))
 import           Semantic       (desugarProgram)
 import           Control.Monad.State
 import           Data.List (intercalate)
 
--- | Contexto com contador, nós, arestas e ambiente de variáveis e defs
-
--- prettier names for constants, parameters, temporaries
 formatReg :: String -> String
 formatReg name
   | "const" `prefixOf` name = name
@@ -22,7 +19,6 @@ formatReg name
   | otherwise               = name
   where prefixOf p s = take (length p) s == p
 
--- | Contexto com contador, nós, arestas e ambiente de variáveis e defs
 data CGCtx = CGCtx { counter :: Int, nodes :: [Text], edges :: [Text], env :: [(Ident, String)], defs :: [(Ident, ([Ident], Expr))] }
 
 type GenM = State CGCtx
@@ -66,19 +62,15 @@ lookupDef f = do
   st <- get
   pure (lookup f (defs st))
 
--- | Entrada principal: gera .dot
 programToDataflowDot :: Program -> Text
 programToDataflowDot prog =
   let Program decls = desugarProgram prog
       CGCtx _ ns es _ _ = execState (mapM_ recordDecl decls >> mapM_ genDecl decls) (CGCtx 0 [] [] [] [])
   in T.unlines ( ["digraph Dataflow {", "  node [shape=record,fontname=Courier];"] ++ ns ++ es ++ ["}"])
 
--- | Primeiro passo: armazena definições no ambiente
 recordDecl :: Decl -> GenM ()
 recordDecl (FunDecl name ps body) = bindDef name ps body
 
--- | Gera grafo para declaração top-level
--- Agora, só gera se não tiver parâmetros (isto é, bindings diretos como "main = ...")
 genDecl :: Decl -> GenM ()
 genDecl (FunDecl name [] body) = do
   res <- genExpr [] body
@@ -87,7 +79,6 @@ genDecl (FunDecl name [] body) = do
   pure ()
 genDecl (FunDecl _ (_:_) _) = pure ()
 
--- | Expressões com controle de recursão (stack de chamadas)
 genExpr :: [Ident] -> Expr -> GenM String
 genExpr stack = \case
   Var x -> lookupVar x >>= emitNode "var"
@@ -159,17 +150,45 @@ genExpr stack = \case
     pure n
 
   Lambda{} -> emitNode "lambda" "// lambda (ignored)"
-  Case{}   -> emitNode "case" "// case (not yet supported)"
+
+  Case e alts -> do
+    scrut <- genExpr stack e
+    branches <- forM alts $ \(pat, expr) -> do
+      oldEnv <- gets env
+      cond <- case pat of
+        PVar v -> bindVar v scrut >> pure scrut
+        PLit l -> do
+          lit <- genExpr stack (Lit l)
+          cmp <- emitNode "equal" ("equal result, " ++ scrut ++ ", " ++ lit)
+          emitEdge scrut cmp >> emitEdge lit cmp
+          pure cmp
+        PWildcard -> pure scrut
+        PTuple ps -> do
+          parts <- replicateM (length ps) (freshId "pt")
+          splitter <- emitNode "split" ("splitn " ++ unwords parts ++ ", " ++ scrut)
+          emitEdge scrut splitter
+          mapM_ (\p -> emitEdge splitter p) parts
+          let binders = [(v, r) | (PVar v, r) <- zip ps parts]
+          mapM_ (uncurry bindVar) binders
+          pure scrut
+        _ -> error "Unsupported pattern"
+      val <- genExpr stack expr
+      modify (\s -> s { env = oldEnv })
+      pure (cond, val)
+    let (conds, results) = unzip branches
+    steer <- emitNode "steer" ("steer result, " ++ scrut ++ concatMap (", " ++) results)
+    emitEdge scrut steer
+    mapM_ (\r -> emitEdge r steer) results
+    pure steer
 
 fallbackToCall :: Ident -> [Expr] -> [Ident] -> GenM String
 fallbackToCall fname args stack = do
   argRegs <- mapM (genExpr stack) args
   callgroup <- emitNode "cg" ("callgroup(\"cg_" ++ fname ++ "\", \"" ++ fname ++ "\")")
-  snds <- zipWithM (\i a -> do
-            n <- emitNode "snd" ("callsnd " ++ fname ++ "[" ++ show (i+1) ++ "], " ++ a ++ ", cg_" ++ fname)
-            emitEdge a n
-            emitEdge n callgroup
-            pure n) [0..] argRegs
+  zipWithM_ (\i a -> do
+    n <- emitNode "snd" ("callsnd " ++ fname ++ "[" ++ show (i+1) ++ "], " ++ a ++ ", cg_" ++ fname)
+    emitEdge a n
+    emitEdge n callgroup) [0..] argRegs
   retreg <- freshId "rtsnd"
   nret <- emitNode "retsnd" ("retsnd " ++ fname ++ "[0], " ++ retreg ++ ", cg_" ++ fname)
   emitEdge callgroup nret
