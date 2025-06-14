@@ -170,7 +170,7 @@ isPVar (PVar _) = True
 isPVar _        = False
 
 genExpr :: [Ident] -> Expr -> GenM String
-genExpr stack = \case
+genExpr stack expr =  case expr of
 
   -- Variável ou função
   Var x ->
@@ -293,58 +293,103 @@ genExpr stack = \case
   Lambda{} ->
     emitNode "lambda" "lambda"
 
-  -- Case exaustivo
   Case scrut alts -> do
-    let exhaustive = case alts of
-          [] -> False
-          xs -> case fst (last xs) of PWildcard -> True; _ -> False
+    -- 1) avalia a expressão que será casada
+    scrutReg <- genExpr stack scrut
 
-    sid        <- genExpr stack scrut
-    defaultReg <- if exhaustive
-                    then let (_, exprDef) = last alts in genExpr stack exprDef
-                    else error "Case não-exaustivo sem catch-all"
+    -- 2) serializa cada Pattern em um reg:
+    --    • PVar/PWildcard → emitConst
+    --    • PLit → emitConst do valor
+    --    • PList → makeListPat dos sub-padrões
+    --    • PTuple → makeTuplePat dos sub-padrões
+    patRegs <- forM (map fst alts) $ \pat -> case pat of
 
-    let tests = if exhaustive then init alts else alts
+      -- padrões atômicos
+      PVar _        -> emitNode "pat" "PVar"
+      PWildcard     -> emitNode "pat" "PWildcard"
 
-        go [] fal = pure fal
-        go ((pat,expr):rest) fal = do
-          -- guarda e binds
-          (g, vs) <- case pat of
-            PList ps -> do
-              let vs = [v | PVar v <- ps]
-              sw <- emitNode ("switchList" ++ show (length ps))
-                             ("switchList" ++ show (length ps))
-              emitEdge sid sw [("tailport","s"),("headport","n")]
-              pure (sw, vs)
+      -- literais
+      PLit (LInt i) -> emitConst ("PConstInt" ++ show i)
+      PLit (LBool b)
+        -> emitConst (if b then "PConstBoolTrue" else "PConstBoolFalse")
 
-            PTuple ps | any isPVar ps -> do
-              let vs = [v | PVar v <- ps]
-              sw <- emitNode ("matchtuple" ++ show (length ps))
-                             ("matchtuple" ++ show (length ps))
-              emitEdge sid sw [("tailport","s"),("headport","n")]
-              pure (sw, vs)
+      -- padrão de lista [p1,p2,…]
+      PList ps -> do
+        subRegs <- forM ps $ \p -> case p of
+          PVar _        -> emitNode "pat" "PVar"
+          PWildcard     -> emitNode "pat" "PWildcard"
+          PLit (LInt i) -> emitConst ("PConstInt" ++ show i)
+          PLit (LBool b)
+            -> emitConst (if b then "PConstBoolTrue" else "PConstBoolFalse")
+          _             -> error "sub-pattern de lista não suportado"
+        listPat <- emitNode "makeListPat"  "makeListPat"
+        forM_ subRegs $ \r ->
+          emitEdge r listPat [("tailport","s"),("headport","nw")]
+        pure listPat
 
-            PVar v    -> (,) <$> emitConst "const#1" <*> pure [v]
-            PWildcard -> (,) <$> emitConst "const#1" <*> pure []
-            _         -> error $ "Pattern não suportado: " ++ show pat
+      -- padrão de tupla (p1,p2,…)
+      PTuple ps -> do
+        subRegs <- forM ps $ \p -> case p of
+          PVar _        -> emitNode "pat" "PVar"
+          PWildcard     -> emitNode "pat" "PWildcard"
+          PLit (LInt i) -> emitConst ("PConstInt" ++ show i)
+          PLit (LBool b)
+            -> emitConst (if b then "PConstBoolTrue" else "PConstBoolFalse")
+          _             -> error "sub-pattern de tupla não suportado"
+        tupPat <- emitNode "makeTuplePat"  "makeTuplePat"
+        forM_ subRegs $ \r ->
+          emitEdge r tupPat [("tailport","s"),("headport","nw")]
+        pure tupPat
 
-          -- steer
-          st <- emitSteer
-          emitEdge g  st [("tailport","s"),("headport","n")]
+      -- qualquer outro
+      _ -> error "Pattern não suportado pelo matchSeq"
 
-          -- projeções + bind
-          prs <- forM (zip vs [0..]) $ \(_,i) -> do
-            pr <- emitNode ("proj" ++ show i) ("proj" ++ show i)
-            let port = if i==0 then "nw" else "ne"
-            emitEdge sid pr [("tailport","s"),("headport",port)]
-            pure pr
-          forM_ (zip vs prs) $ \(v,r) -> bindVar v r
+    -- 3) agrupa TODOS os patRegs num único makeListAll
+    patternsList <- emitNode "makeListAll" "makeListAll"
+    forM_ patRegs $ \pr ->
+      emitEdge pr patternsList [("tailport","s"),("headport","nw")]
 
-          -- corpo + ligações T/F
-          br <- genExpr stack expr
-          emitEdge br  st [("tailport","sw"),("headport","nw")]
-          emitEdge fal st [("tailport","se"),("headport","ne")]
+    -- 4) chama matchSeq via callsnd/callgroup/retsnd
+    cgM   <- emitNode "callgroup" "callgroup(matchSeq)"
+    sndP  <- emitNode "callsnd"   "callsnd(matchSeq,1)"
+    emitEdge patternsList sndP [("tailport","s"),("headport","n")]
+    emitEdge sndP         cgM    [("tailport","s"),("headport","nw")]
 
-          go rest st
+    sndS  <- emitNode "callsnd"   "callsnd(matchSeq,2)"
+    emitEdge scrutReg      sndS    [("tailport","s"),("headport","n")]
+    emitEdge sndS          cgM     [("tailport","s"),("headport","nw")]
 
-    go tests defaultReg
+    retsM <- emitNode "retsnd"   "retsnd(matchSeq)"
+    emitEdge cgM            retsM [("tailport","s"),("headport","n")]
+
+    let matchReg = retsM
+
+    -- 5) steer do resultado do match
+    st <- emitSteer
+    emitEdge matchReg st [("tailport","s"),("headport","n")]
+
+    -- 6) projeta e bindVar das variáveis do primeiro padrão
+    let (firstPat, thenExpr) = head alts
+        bindProj (PVar v, i) = do
+          prj <- emitNode ("proj" ++ show i) ("proj" ++ show i)
+          let port = if i == 0 then "nw" else "ne"
+          emitEdge scrutReg prj [("tailport","s"),("headport",port)]
+          bindVar v prj
+        bindProj _ = pure ()
+    case firstPat of
+      PList ps  -> mapM_ bindProj (zip ps [0..])
+      PTuple ps -> mapM_ bindProj (zip ps [0..])
+      _         -> pure ()
+
+    -- 7) then-branch: corpo da primeira alternativa
+    thenReg <- genExpr stack thenExpr
+    emitEdge thenReg st [("tailport","sw"),("headport","nw")]
+
+    -- 8) else-branch: recursão sobre demais alts ou default
+    let restAlts = tail alts
+    elseReg <- if null restAlts
+      then genExpr stack scrut
+      else genExpr stack (Case scrut restAlts)
+    emitEdge elseReg st [("tailport","se"),("headport","ne")]
+
+    pure st
