@@ -148,7 +148,7 @@ genDecl _                = pure ()
 genExpr :: [Ident] -> Expr -> GenM String
 genExpr stack = \case
 
-  -- Variável ou função: busca em envVars, ou pré-vincula FunDecl top-level a um reg "lambda"
+  -- Variável ou função: busca em envVars (pré-vincula FunDecls a um reg “lambda”)
   Var x ->
     lookupVar x
 
@@ -160,7 +160,7 @@ genExpr stack = \case
     LFloat f   -> emitConst ("fconst#" ++ show f)
     LString s  -> genExpr stack (List (map (Lit . LChar) s))
 
-  -- Operadores unários: aritmético e lógico
+  -- Operadores unários
   UnOp op e -> do
     r <- genExpr stack e
     case op of
@@ -173,17 +173,14 @@ genExpr stack = \case
         emitEdge r n [("tailport","s"),("headport","nw")]
         pure n
 
-  -- Aplicação de função / inline de FunDecls e Lambdas / dynamic call
+  -- Aplicação de função / inline / dynamic call
   App f x -> do
-    -- 1) "Desenrola" aplicações curried em (hd, [args])
-    let flatten :: Expr -> (Expr, [Expr])
-        flatten (App f' a) =
+    -- desenrola aplicações curried em (hd, args)
+    let flatten (App f' a) =
           let (g, xs) = flatten f' in (g, xs ++ [a])
         flatten e = (e, [])
         (hd, args) = flatten (App f x)
 
-        -- 2) Dynamic call a partir de um reg de função e regs de args
-        dynCall :: String -> [String] -> GenM String
         dynCall funReg argRegs = do
           cg <- emitNode "callgroup" ("callgroup(" ++ funReg ++ ")")
           zipWithM_ (\i a -> do
@@ -196,65 +193,41 @@ genExpr stack = \case
           pure retN
 
     case hd of
-
-      -- A) FunDecl top-level COMPLETAMENTE aplicado → inline corpo **com alias** de parâmetros FunDecl
+      -- A) FunDecl top-level completamente aplicado → inline corpo
       Var fid -> do
-        mdef   <- lookupDef fid
+        mdef <- lookupDef fid
         case mdef of
           Just (ps, body)
             | length ps == length args
            && fid `notElem` stack -> do
-              -- gera regs dos args
               regs   <- mapM (genExpr stack) args
               oldEnv <- gets envVars
-              oldDef <- gets defs
-
-              -- 1) vincula parâmetros aos regs
-              let env'  = foldl (\m (p,r) -> M.insert p r m) oldEnv (zip ps regs)
-
-              -- 2) para cada parâmetro que foi Var afid e afid ∈ oldDef, cria alias p↦def afid
-              let aliasList = mapMaybe
-                    (\(p,argExp) -> case argExp of
-                        Var afid -> fmap (\d -> (p,d)) (M.lookup afid oldDef)
-                        _        -> Nothing)
-                    (zip ps args)
-                  defs' = foldl (\m (p,d) -> M.insert p d m) oldDef aliasList
-
-              -- instala novo estado
-              modify $ \s -> s { envVars = env', defs = defs' }
-
-              -- inline do corpo
+              zipWithM_ bindVar ps regs
               res <- genExpr (fid:stack) body
-
-              -- restaura estado anterior
-              modify $ \s -> s { envVars = oldEnv, defs = oldDef }
-
+              modify $ \s -> s { envVars = oldEnv }
               pure res
-
-          -- recursão ou não-FunDecl → dynamic call via reg vinculado
           _ -> do
             funReg  <- lookupVar fid
             argRegs <- mapM (genExpr stack) args
             dynCall funReg argRegs
 
-      -- B) Lambda literal totalmente aplicado → inline corpo
+      -- B) Lambda saturada → inline corpo
       Lambda ps body
         | length ps == length args -> do
             regs   <- mapM (genExpr stack) args
             oldEnv <- gets envVars
-            let env' = foldl (\m (p,r) -> M.insert p r m) oldEnv (zip ps regs)
-            modify $ \s -> s { envVars = env' }
-            res <- genExpr ("<lam>":stack) body
+            zipWithM_ bindVar ps regs
+            res    <- genExpr ("<lam>":stack) body
             modify $ \s -> s { envVars = oldEnv }
             pure res
 
-      -- C) Qualquer outro caso → dynamic call a partir da expressão
+      -- C) Caso geral → dynamic call
       _ -> do
         funReg  <- genExpr stack hd
         argRegs <- mapM (genExpr stack) args
         dynCall funReg argRegs
 
-  -- Operador binário com símbolo real
+  -- Operador binário
   BinOp op a b -> do
     ra <- genExpr stack a
     rb <- genExpr stack b
@@ -271,16 +244,18 @@ genExpr stack = \case
     emitEdge rb n [("tailport","s"),("headport","ne")]
     pure n
 
-  -- If → steer
+  -- If-then-else → steer
   If c t e -> do
-    rc <- genExpr stack c; rt <- genExpr stack t; re <- genExpr stack e
+    rc <- genExpr stack c
+    rt <- genExpr stack t
+    re <- genExpr stack e
     n  <- emitSteer
     emitEdge rc n [("tailport","s"),("headport","n")]
     emitEdge rt n [("tailport","se"),("headport","ne")]
     emitEdge re n [("tailport","sw"),("headport","nw")]
     pure n
 
-  -- Let-binding de FunDecl aridade-0 inline
+  -- Let-binding inline de FunDecl aridade-0
   Let decls body -> do
     forM_ decls $ \(FunDecl x [] ex) ->
       bindVar x =<< genExpr stack ex
@@ -294,7 +269,7 @@ genExpr stack = \case
     forM_ rs $ \r -> emitEdge r sup [("tailport","s"),("headport","nw")]
     pure sup
 
-  -- Lista literal (único nó S1)
+  -- Lista literal → nó único S1
   List es -> do
     rs  <- mapM (genExpr stack) es
     sup <- emitNode "super" "S1"
@@ -305,26 +280,40 @@ genExpr stack = \case
   Lambda{} ->
     emitNode "lambda" "lambda"
 
-  -- Case com tuple- & list-patterns
+  -- Case com tuple- & list-patterns (genérico para PList de qualquer tamanho)
   Case scrut alts -> do
     sid   <- genExpr stack scrut
-    altRs <- forM alts $ \(pat, expr) -> case pat of
-      PList []                -> emitConst "const#0"
-      PList [PVar x]          -> bindVar x sid >> pure sid
-      PList [PVar x,PWildcard]-> bindVar x sid >> pure sid
-      PTuple ps | any isPVar ps ->
-        let xs = [x | PVar x <- ps] in mapM_ (`bindVar` sid) xs >> pure sid
-      PVar x                  -> bindVar x sid >> pure sid
-      _                       -> genExpr stack expr
+    altRs <- forM alts $ \(pat, expr) ->
+      case pat of
+        -- Lista enumerada de qualquer tamanho
+        PList pats -> do
+          -- vincula cada variável PVar ao mesmo reg do scrutinee
+          forM_ pats $ \p -> case p of
+            PVar v -> bindVar v sid
+            _      -> pure ()
+          -- agora gera o corpo da alternativa
+          genExpr stack expr
+
+        -- Tuple-pattern
+        PTuple ps | any isPVar ps -> do
+          forM_ [v | PVar v <- ps] $ \v -> bindVar v sid
+          genExpr stack expr
+
+        -- Var-pattern simples
+        PVar v -> bindVar v sid >> genExpr stack expr
+
+        -- fallback
+        _ -> genExpr stack expr
+
     n <- emitSteer
     emitEdge sid n [("tailport","s"),("headport","n")]
     case altRs of
-      [r]     -> emitEdge r n [("tailport","s"),("headport","ne")]
-      [rT,rF] -> do
+      [r]      -> emitEdge r n [("tailport","s"),("headport","ne")]
+      [rT,rF]  -> do
         emitEdge rT n [("tailport","se"),("headport","ne")]
         emitEdge rF n [("tailport","sw"),("headport","nw")]
-      rs      -> zipWithM_ (\r p -> emitEdge r n [("tailport","s"),("headport",p)])
-                          rs (cycle ["ne","nw","se","sw"])
+      rs       -> zipWithM_ (\r p -> emitEdge r n [("tailport","s"),("headport",p)])
+                            rs (cycle ["ne","nw","se","sw"])
     pure n
 
 -- | Auxiliar para Pattern
