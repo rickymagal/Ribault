@@ -160,7 +160,6 @@ programToDataflowDot prog =
 
 recordDecl :: Decl -> GenM ()
 recordDecl (FunDecl n ps b) = bindDef n ps b
-recordDecl _                = pure ()
 
 genDecl :: Decl -> GenM ()
 genDecl (FunDecl _ [] b) = void (genExpr [] b)

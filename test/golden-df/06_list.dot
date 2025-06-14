@@ -1,23 +1,33 @@
-digraph Dataflow {
-  node [shape=record,fontname="Courier"];
-  "f0_in_lst" [label="in:lst"];
-  "f0_scr_out" [label="var:lst"];
-  "f0_in_lst" -> "f0_scr_out";
-  "f0_steer" [label="steer"];
-  "f0_scr_out" -> "f0_steer";
-  "f0_steer" -> "f0_alt0";
-  "f0_alt0_out" [label="const:0"];
-  "f0_alt0_out" -> "f0_phi";
-  "f0_steer" -> "f0_alt1";
-  "f0_alt1_out" [label="var:x"];
-  "f0_in_x" -> "f0_alt1_out";
-  "f0_alt1_out" -> "f0_phi";
-  "f0_steer" -> "f0_alt2";
-  "f0_alt2_out" [label="var:x"];
-  "f0_in_x" -> "f0_alt2_out";
-  "f0_alt2_out" -> "f0_phi";
-  "f0_phi" [label="super:2"];
-  "f0_phi" -> "f0_out";
-  "f0_retsnd" [label="retsnd"];
-  "f0_out" -> "f0_retsnd";
+digraph G {
+  node [shape=box, style=rounded];
+  node [shape=triangle, style=solid];
+  const0 [label="const#10", shape=box, style=rounded];
+  const1 [label="const#15", shape=box, style=rounded];
+  super2 [label="S1", shape=box, style=rounded];
+  const3 [label="const#0", shape=box, style=rounded];
+  switchList04 [label="switchList0", shape=box, style=rounded];
+  steer5 [label="T   F", shape=triangle, style=solid];
+  switchList16 [label="switchList1", shape=box, style=rounded];
+  steer7 [label="T   F", shape=triangle, style=solid];
+  proj08 [label="proj0", shape=box, style=rounded];
+  switchList29 [label="switchList2", shape=box, style=rounded];
+  steer10 [label="T   F", shape=triangle, style=solid];
+  proj011 [label="proj0", shape=box, style=rounded];
+
+  const0 -> super2 [tailport=s, headport=nw];
+  const1 -> super2 [tailport=s, headport=nw];
+  super2 -> switchList04 [tailport=s, headport=n];
+  switchList04 -> steer5 [tailport=s, headport=n];
+  const3 -> steer5 [tailport=sw, headport=nw];
+  const3 -> steer5 [tailport=se, headport=ne];
+  super2 -> switchList16 [tailport=s, headport=n];
+  switchList16 -> steer7 [tailport=s, headport=n];
+  super2 -> proj08 [tailport=s, headport=nw];
+  proj08 -> steer7 [tailport=sw, headport=nw];
+  steer5 -> steer7 [tailport=se, headport=ne];
+  super2 -> switchList29 [tailport=s, headport=n];
+  switchList29 -> steer10 [tailport=s, headport=n];
+  super2 -> proj011 [tailport=s, headport=nw];
+  proj011 -> steer10 [tailport=sw, headport=nw];
+  steer7 -> steer10 [tailport=se, headport=ne];
 }

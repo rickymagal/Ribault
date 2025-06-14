@@ -1,25 +1,8 @@
-digraph Dataflow {
-  node [shape=record,fontname="Courier"];
-  "f0_in_b" [label="in:b"];
-  "f0_v_out" [label="var:b"];
-  "f0_in_b" -> "f0_v_out";
-  "f0_out" [label="not"];
-  "f0_v_out" -> "f0_out";
-  "f0_retsnd" [label="retsnd"];
-  "f0_out" -> "f0_retsnd";
-  "f1_f_out" [label="var:negBool"];
-  "f1_x_out" [label="const:1"];
-  "f1_inctag" [label="inctag"];
-  "f1_f_out" -> "f1_inctag";
-  "f1_cg" [label="callgroup"];
-  "f1_inctag" -> "f1_cg";
-  "f1_cg_snd_fun" [label="callsnd"];
-  "f1_f_out" -> "f1_cg_snd_fun";
-  "f1_cg_snd_fun" -> "f1_cg";
-  "f1_cg_snd_arg" [label="callsnd"];
-  "f1_x_out" -> "f1_cg_snd_arg";
-  "f1_cg_snd_arg" -> "f1_cg";
-  "f1_cg" -> "f1_out";
-  "f1_retsnd" [label="retsnd"];
-  "f1_out" -> "f1_retsnd";
+digraph G {
+  node [shape=box, style=rounded];
+  node [shape=triangle, style=solid];
+  const0 [label="const#1", shape=box, style=rounded];
+  not1 [label="not", shape=box, style=rounded];
+
+  const0 -> not1 [tailport=s, headport=nw];
 }

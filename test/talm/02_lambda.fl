@@ -1,9 +1,0 @@
-const t0, 10
-const t1, 4
-
-callgroup('cg1', 'add')
-callsnd add[1], t0, cg1
-callsnd add[2], t1, cg1
-retsnd add[0], res, cg1
-
-ret main, res, [cg1]

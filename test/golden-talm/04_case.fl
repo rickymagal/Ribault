@@ -1,5 +1,0 @@
-super f0_scr_out, 1, 3, f0_in_p
-steer f0_steer, f0_scr_out
-super f0_alt0_out, 1, 3, f0_in_x
-super f0_phi, 1, 2, f0_alt0_out
-retsnd f0_retsnd, f0_out
