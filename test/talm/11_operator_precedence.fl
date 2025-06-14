@@ -7,5 +7,5 @@ const t2, 4
 mul t3, t1, t2
 add t4, t0, t3
 
-ret result, t4, []
+ret result, t4, [cg_result]
 

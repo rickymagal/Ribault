@@ -12,5 +12,5 @@ add t2, t1, t0
 
 mul t3, t2, t2
 
-ret result, t3, []
+ret result, t3, [cg_result]
 

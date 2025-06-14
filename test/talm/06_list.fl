@@ -17,5 +17,5 @@ equal t8, t8, t9
 splitn t6 t7, lst
 steer t10, t10, t10, t6
 
-ret headList, t10, []
+ret headList, t10, [cg_headList]
 

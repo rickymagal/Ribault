@@ -2,13 +2,16 @@
 // Function main
 main:
 const t0, 1
-callsnd t1, negBool, 1, t0
+callgroup("cg2", "negBool")
+callsnd snd1, t0, cg2
+retsnd rtsnd2, t0, cg2
+addi t1, negBool.cg2, 1
 
-ret main, t1, []
+ret main, t1, [cg_main]
 
 // Function negBool
 negBool:
 not t2, b
 
-ret negBool, t2, []
+ret negBool, t2, [cg_negBool]
 
