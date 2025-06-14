@@ -143,6 +143,7 @@ recordDecl _                = pure ()
 genDecl :: Decl -> GenM ()
 genDecl (FunDecl _ [] b) = void (genExpr [] b)
 genDecl _                = pure ()
+
 genExpr :: [Ident] -> Expr -> GenM String
 genExpr stack = \case
 
@@ -158,7 +159,7 @@ genExpr stack = \case
     LFloat f   -> emitConst ("fconst#" ++ show f)
     LString s  -> genExpr stack (List (map (Lit . LChar) s))
 
-  -- Unários
+  -- Unários aritmético e lógico
   UnOp op e -> do
     r <- genExpr stack e
     let mkUn sym = do
@@ -169,25 +170,28 @@ genExpr stack = \case
       Neg -> mkUn "-"
       Not -> mkUn "not"
 
-  -- Aplicação / inline / dynamic call
+  -- Aplicação de função / inline / super-instrução applyN
   App f x -> do
-    let flatten (App f' a) = let (g,xs) = flatten f' in (g, xs ++ [a])
-        flatten e          = (e, [])
-        (hd, args)         = flatten (App f x)
+    -- desenrola aplicações curried em (hd, args)
+    let flatten (App f' a) =
+          let (g, xs) = flatten f' in (g, xs ++ [a])
+        flatten e = (e, [])
+        (hd, args) = flatten (App f x)
 
-        dynCall funReg argRegs = do
-          cg <- emitNode "callgroup" ("callgroup(" ++ funReg ++ ")")
-          zipWithM_ (\i a -> do
-              sn <- emitNode "callsnd" ("callsnd(" ++ funReg ++ "," ++ show i ++ ")")
-              emitEdge a    sn [("tailport","s"),("headport","n")]
-              emitEdge sn cg [("tailport","s"),("headport","nw")]
-            ) [1..] argRegs
-          rt <- emitNode "retsnd" ("retsnd(" ++ funReg ++ ")")
-          emitEdge cg rt [("tailport","s"),("headport","n")]
-          pure rt
+        -- fallback local para super-instrução applyN
+        fallback :: GenM String
+        fallback = do
+          funReg  <- genExpr stack hd
+          argRegs <- mapM (genExpr stack) args
+          let instr = "apply" ++ show (length argRegs)
+          node <- emitNode instr instr
+          emitEdge funReg node [("tailport","s"),("headport","nw")]
+          forM_ argRegs $ \a ->
+            emitEdge a node [("tailport","s"),("headport","ne")]
+          pure node
 
     case hd of
-      -- FunDecl top-level saturada
+      -- A) Inline de FunDecl totalmente aplicado
       Var fid -> do
         mdef <- lookupDef fid
         case mdef of
@@ -200,12 +204,10 @@ genExpr stack = \case
               res    <- genExpr (fid:stack) body
               modify $ \s -> s { envVars = oldEnv }
               pure res
-          _ -> do
-            funReg  <- lookupVar fid
-            argRegs <- mapM (genExpr stack) args
-            dynCall funReg argRegs
+          _ ->
+            fallback
 
-      -- Lambda saturada
+      -- B) Inline de Lambda saturada
       Lambda ps body
         | length ps == length args -> do
             regs   <- mapM (genExpr stack) args
@@ -215,20 +217,18 @@ genExpr stack = \case
             modify $ \s -> s { envVars = oldEnv }
             pure res
 
-      -- fallback dinâmico
-      _ -> do
-        funReg  <- genExpr stack hd
-        argRegs <- mapM (genExpr stack) args
-        dynCall funReg argRegs
+      -- C) Qualquer outro caso → applyN
+      _ ->
+        fallback
 
-  -- BinOp
+  -- Operador binário com símbolo real
   BinOp op a b -> do
     ra <- genExpr stack a
     rb <- genExpr stack b
     let (nm,sym) = case op of
           Add -> ("add","+"); Sub -> ("sub","-")
           Mul -> ("mul","*"); Div -> ("div","/")
-          Mod -> ("mod","%"); Eq -> ("eq","==")
+          Mod -> ("mod","%"); Eq  -> ("eq","==")
           Neq -> ("neq","!="); Lt -> ("lt","<")
           Le  -> ("le","<="); Gt -> ("gt",">")
           Ge  -> ("ge",">="); And -> ("and","&&")
@@ -238,7 +238,7 @@ genExpr stack = \case
     emitEdge rb n [("tailport","s"),("headport","ne")]
     pure n
 
-  -- If → steer
+  -- If-then-else → steer
   If c t e -> do
     rc <- genExpr stack c
     rt <- genExpr stack t
@@ -249,13 +249,13 @@ genExpr stack = \case
     emitEdge re n [("tailport","sw"),("headport","nw")]
     pure n
 
-  -- Let-binding aridade-0
+  -- Let-binding de FunDecl aridade-0 inline
   Let decls body -> do
     forM_ decls $ \(FunDecl x [] ex) ->
       bindVar x =<< genExpr stack ex
     genExpr stack body
 
-  -- Tuple literal
+  -- Tupla literal
   Tuple es -> do
     rs <- mapM (genExpr stack) es
     let lbl = "S" ++ show (length rs)
@@ -274,48 +274,46 @@ genExpr stack = \case
   Lambda{} ->
     emitNode "lambda" "lambda"
 
-  -- Case geral → usa switchList para as alternaivas PList
+  -- Case geral (switchList + steers)
   Case scrut alts -> do
     sid <- genExpr stack scrut
 
-    -- para cada alternativa de lista, emite um switchList
+    -- makeMatch retorna (guardNode, bodyNode)
     let makeMatch (pat, expr) = case pat of
-
           PList ps -> do
             sw <- emitNode "switchList" "switchList"
             emitEdge sid sw [("tailport","s"),("headport","n")]
-            -- bind das variáveis de ps ao mesmo registrador do switch
             forM_ ps $ \p -> case p of
               PVar v -> bindVar v sw
               _      -> pure ()
-            -- corpo da alternativa
             br <- genExpr stack expr
-            pure (Just (sw, br))
+            pure (sw, br)
 
-          -- para tuplas e var-patterns, mantemos como antes
           PTuple ps | any isPVar ps -> do
             n <- emitNode ("matchtuple" ++ show (length ps))
                           ("matchtuple" ++ show (length ps))
             emitEdge sid n [("tailport","s"),("headport","n")]
             forM_ (zip ps [0..]) $ \(p,i) -> do
-              proj <- emitNode ("tproj"++show i) ("tproj"++show i)
+              proj <- emitNode ("tproj" ++ show i) ("tproj" ++ show i)
               let port = ["nw","ne","sw","se"] !! (i `mod` 4)
               emitEdge n proj [("tailport","s"),("headport",port)]
               case p of PVar v -> bindVar v proj; _ -> pure ()
             br <- genExpr stack expr
-            pure (Just (n, br))
+            pure (n, br)
 
           PVar v -> do
             bindVar v sid
             br <- genExpr stack expr
-            pure (Just (sid, br))
+            pure (sid, br)
 
-          _ ->
-            pure Nothing
+          _ -> do
+            br <- genExpr stack expr
+            pure (sid, br)
 
-    pairs <- fmap catMaybes (mapM makeMatch alts)
+    -- constrói lista de (guard,body)
+    pairs <- mapM makeMatch alts
 
-    -- encadeia steers normalmente
+    -- buildChain monta a cadeia de steers
     let buildChain []           = error "Case sem alternativa válida"
         buildChain [(g,b)]      = do
           s <- emitSteer
