@@ -13,7 +13,6 @@ import           Data.Char             (ord)
 import           Control.Monad.State
 import           Control.Monad         (forM, forM_, void, zipWithM_)
 import           Data.List             (intercalate)
-import           Data.Maybe            (mapMaybe)
 import qualified Data.Map.Strict  as M
 import           Syntax                ( Program(..)
                                       , Decl(..)
@@ -25,15 +24,15 @@ import           Syntax                ( Program(..)
                                       , Pattern(..)
                                       )
 import           Semantic              (desugarProgram)
-import           Data.Maybe            (mapMaybe, catMaybes)
+
 -- | Estado do gerador
 data CGCtx = CGCtx
   { counter  :: Int
   , nodes    :: [T.Text]
   , edges    :: [T.Text]
-  , envVars  :: M.Map Ident String           -- variáveis ligadas a regs
-  , defs     :: M.Map Ident ([Ident], Expr)  -- top-level FunDecls
-  , cacheC   :: M.Map String String          -- constantes cacheadas
+  , envVars  :: M.Map Ident String
+  , defs     :: M.Map Ident ([Ident], Expr)
+  , cacheC   :: M.Map String String
   }
 
 type GenM = State CGCtx
@@ -71,7 +70,7 @@ emitSteer = do
   modify $ \s -> s { nodes = nodes s ++ [line] }
   pure nid
 
--- | Emite constante cacheada (int, float, char/bool→ord)
+-- | Emite constante cacheada
 emitConst :: String -> GenM String
 emitConst lbl = do
   cmap <- gets cacheC
@@ -99,7 +98,7 @@ bindVar :: Ident -> String -> GenM ()
 bindVar x r = modify $ \s ->
   s { envVars = M.insert x r (envVars s) }
 
--- | Procura variável; se não achar, mas for FunDecl top-level, gera node de função
+-- | Procura variável; se for FunDecl top-level, gera nodo lambda
 lookupVar :: Ident -> GenM String
 lookupVar x = do
   ev <- gets envVars
@@ -109,14 +108,13 @@ lookupVar x = do
       m <- lookupDef x
       case m of
         Just _ -> do
-          -- gera um nó 'lambda' para a função e o liga
           r <- emitNode "lambda" x
           bindVar x r
           pure r
         Nothing ->
           error $ "variável não ligada: " ++ show x
 
--- | Registra FunDecl para inline/recursão
+-- | Registra FunDecls para inline/recursão
 bindDef :: Ident -> [Ident] -> Expr -> GenM ()
 bindDef f ps e = modify $ \s ->
   s { defs = M.insert f (ps,e) (defs s) }
@@ -125,41 +123,43 @@ bindDef f ps e = modify $ \s ->
 lookupDef :: Ident -> GenM (Maybe ([Ident], Expr))
 lookupDef f = gets (M.lookup f . defs)
 
--- | Entrada: gera .dot inteiro
+-- | Gera .dot completo
 programToDataflowDot :: Program -> Text
 programToDataflowDot prog =
   let Program decls = desugarProgram prog
-      initial = CGCtx 0 [] [] M.empty M.empty M.empty
+      initial       = CGCtx 0 [] [] M.empty M.empty M.empty
       CGCtx _ ns es _ _ _ =
         execState (mapM_ recordDecl decls >> mapM_ genDecl decls) initial
   in T.unlines (dotHeader ++ ns ++ es ++ ["}"])
 
--- | Registra todos os FunDecls top-level
 recordDecl :: Decl -> GenM ()
 recordDecl (FunDecl n ps b) = bindDef n ps b
 recordDecl _                = pure ()
 
--- | Gera corpo de FunDecls sem parâmetros
 genDecl :: Decl -> GenM ()
 genDecl (FunDecl _ [] b) = void (genExpr [] b)
 genDecl _                = pure ()
 
+-- | Auxiliar para patterns
+isPVar :: Pattern -> Bool
+isPVar (PVar _) = True
+isPVar _        = False
+
+-- | Geração de expressões com suporte a applyN e case exaustivo
 genExpr :: [Ident] -> Expr -> GenM String
 genExpr stack = \case
 
-  -- Variável ou função
   Var x ->
     lookupVar x
 
-  -- Literais
   Lit lit -> case lit of
     LInt i     -> emitConst ("const#" ++ show i)
     LBool b    -> emitConst ("const#" ++ show (if b then 1 else 0))
     LChar c    -> emitConst ("const#" ++ show (ord c))
     LFloat f   -> emitConst ("fconst#" ++ show f)
-    LString s  -> genExpr stack (List (map (Lit . LChar) s))
+    LString s  ->
+      genExpr stack (List (map (Lit . LChar) s))
 
-  -- Unários aritmético e lógico
   UnOp op e -> do
     r <- genExpr stack e
     let mkUn sym = do
@@ -170,31 +170,26 @@ genExpr stack = \case
       Neg -> mkUn "-"
       Not -> mkUn "not"
 
-  -- Aplicação de função / inline / super-instrução applyN
   App f x -> do
-    -- desenrola aplicações curried em (hd, args)
     let flatten (App f' a) =
-          let (g, xs) = flatten f' in (g, xs ++ [a])
+          let (g,xs) = flatten f' in (g, xs ++ [a])
         flatten e = (e, [])
         (hd, args) = flatten (App f x)
 
-        -- fallback local para super-instrução applyN
         fallback :: GenM String
         fallback = do
           funReg  <- genExpr stack hd
           argRegs <- mapM (genExpr stack) args
           let instr = "apply" ++ show (length argRegs)
           node <- emitNode instr instr
-          emitEdge funReg node [("tailport","s"),("headport","nw")]
+          emitEdge funReg node    [("tailport","s"),("headport","nw")]
           forM_ argRegs $ \a ->
-            emitEdge a node [("tailport","s"),("headport","ne")]
+            emitEdge a node       [("tailport","s"),("headport","ne")]
           pure node
 
     case hd of
-      -- A) Inline de FunDecl totalmente aplicado
       Var fid -> do
-        mdef <- lookupDef fid
-        case mdef of
+        lookupDef fid >>= \case
           Just (ps, body)
             | length ps == length args
            && fid `notElem` stack -> do
@@ -204,10 +199,8 @@ genExpr stack = \case
               res    <- genExpr (fid:stack) body
               modify $ \s -> s { envVars = oldEnv }
               pure res
-          _ ->
-            fallback
+          _ -> fallback
 
-      -- B) Inline de Lambda saturada
       Lambda ps body
         | length ps == length args -> do
             regs   <- mapM (genExpr stack) args
@@ -217,11 +210,8 @@ genExpr stack = \case
             modify $ \s -> s { envVars = oldEnv }
             pure res
 
-      -- C) Qualquer outro caso → applyN
-      _ ->
-        fallback
+      _ -> fallback
 
-  -- Operador binário com símbolo real
   BinOp op a b -> do
     ra <- genExpr stack a
     rb <- genExpr stack b
@@ -230,7 +220,7 @@ genExpr stack = \case
           Mul -> ("mul","*"); Div -> ("div","/")
           Mod -> ("mod","%"); Eq  -> ("eq","==")
           Neq -> ("neq","!="); Lt -> ("lt","<")
-          Le  -> ("le","<="); Gt -> ("gt",">")
+          Le  -> ("le","<="); Gt  -> ("gt",">")
           Ge  -> ("ge",">="); And -> ("and","&&")
           Or  -> ("or","||")
     n <- emitNode nm sym
@@ -238,7 +228,6 @@ genExpr stack = \case
     emitEdge rb n [("tailport","s"),("headport","ne")]
     pure n
 
-  -- If-then-else → steer
   If c t e -> do
     rc <- genExpr stack c
     rt <- genExpr stack t
@@ -249,13 +238,11 @@ genExpr stack = \case
     emitEdge re n [("tailport","sw"),("headport","nw")]
     pure n
 
-  -- Let-binding de FunDecl aridade-0 inline
   Let decls body -> do
     forM_ decls $ \(FunDecl x [] ex) ->
       bindVar x =<< genExpr stack ex
     genExpr stack body
 
-  -- Tupla literal
   Tuple es -> do
     rs <- mapM (genExpr stack) es
     let lbl = "S" ++ show (length rs)
@@ -263,74 +250,80 @@ genExpr stack = \case
     forM_ rs $ \r -> emitEdge r sup [("tailport","s"),("headport","nw")]
     pure sup
 
-  -- Lista literal
   List es -> do
-    rs <- mapM (genExpr stack) es
+    rs  <- mapM (genExpr stack) es
     sup <- emitNode "super" "S1"
     forM_ rs $ \r -> emitEdge r sup [("tailport","s"),("headport","nw")]
     pure sup
 
-  -- Lambda isolada
   Lambda{} ->
     emitNode "lambda" "lambda"
 
-  -- Case geral (switchList + steers)
   Case scrut alts -> do
+    -- detecta exaustividade (último padrão '_' ou PWildcard)
+    let exhaustive = case alts of
+          [] -> False
+          xs -> case fst (last xs) of PWildcard -> True; _ -> False
+
     sid <- genExpr stack scrut
 
-    -- makeMatch retorna (guardNode, bodyNode)
-    let makeMatch (pat, expr) = case pat of
-          PList ps -> do
-            sw <- emitNode "switchList" "switchList"
-            emitEdge sid sw [("tailport","s"),("headport","n")]
-            forM_ ps $ \p -> case p of
-              PVar v -> bindVar v sw
-              _      -> pure ()
-            br <- genExpr stack expr
-            pure (sw, br)
+    -- default: corpo do último caso se exaustivo, erro caso não
+    defaultReg <- if exhaustive
+      then let (_, exprDef) = last alts in genExpr stack exprDef
+      else error "Case não-exaustivo sem padrão catch-all"
 
-          PTuple ps | any isPVar ps -> do
-            n <- emitNode ("matchtuple" ++ show (length ps))
-                          ("matchtuple" ++ show (length ps))
-            emitEdge sid n [("tailport","s"),("headport","n")]
-            forM_ (zip ps [0..]) $ \(p,i) -> do
-              proj <- emitNode ("tproj" ++ show i) ("tproj" ++ show i)
-              let port = ["nw","ne","sw","se"] !! (i `mod` 4)
-              emitEdge n proj [("tailport","s"),("headport",port)]
-              case p of PVar v -> bindVar v proj; _ -> pure ()
-            br <- genExpr stack expr
-            pure (n, br)
+    -- padrões a testar (todos menos o último se exaustivo)
+    let tests = if exhaustive then init alts else alts
 
-          PVar v -> do
-            bindVar v sid
-            br <- genExpr stack expr
-            pure (sid, br)
+    -- encadeia switch + steer para cada pattern
+    let go [] falReg = pure falReg
+        go ((pat, expr):rest) falReg = do
+          -- gera guardReg e lista de variáveis para bind
+          (guardReg, binds) <- case pat of
+            PList ps -> do
+              let vars = [v | PVar v <- ps]
+              sw <- emitNode ("switchList" ++ show (length ps))
+                             ("switchList" ++ show (length ps))
+              emitEdge sid sw [("tailport","s"),("headport","n")]
+              pure (sw, vars)
 
-          _ -> do
-            br <- genExpr stack expr
-            pure (sid, br)
+            PTuple ps | any isPVar ps -> do
+              let vars = [v | PVar v <- ps]
+              sw <- emitNode ("matchtuple" ++ show (length ps))
+                             ("matchtuple" ++ show (length ps))
+              emitEdge sid sw [("tailport","s"),("headport","n")]
+              pure (sw, vars)
 
-    -- constrói lista de (guard,body)
-    pairs <- mapM makeMatch alts
+            PVar v -> do
+              c <- emitConst "const#1"
+              pure (c, [v])
 
-    -- buildChain monta a cadeia de steers
-    let buildChain []           = error "Case sem alternativa válida"
-        buildChain [(g,b)]      = do
-          s <- emitSteer
-          emitEdge g s [("tailport","s"),("headport","n")]
-          emitEdge b s [("tailport","se"),("headport","ne")]
-          pure s
-        buildChain ((g,b):rest) = do
-          nxt <- buildChain rest
-          s   <- emitSteer
-          emitEdge g s    [("tailport","s"),("headport","n")]
-          emitEdge b s    [("tailport","se"),("headport","ne")]
-          emitEdge nxt s  [("tailport","s"),("headport","sw")]
-          pure s
+            PWildcard -> do
+              c <- emitConst "const#1"
+              pure (c, [])
 
-    buildChain pairs
+            _ ->
+              error $ "Pattern não suportado: " ++ show pat
 
--- | Auxiliar para Pattern
-isPVar :: Pattern -> Bool
-isPVar (PVar _) = True
-isPVar _        = False
+          -- steer
+          st <- emitSteer
+          emitEdge guardReg st [("tailport","s"),("headport","n")]
+
+          -- projeções + bind
+          projRegs <- forM (zip binds [0..]) $ \(_,i) -> do
+            pr <- emitNode ("proj" ++ show i) ("proj" ++ show i)
+            let port = if i == 0 then "nw" else "ne"
+            emitEdge sid pr [("tailport","s"),("headport",port)]
+            pure pr
+          forM_ (zip binds projRegs) $ \(v,r) -> bindVar v r
+
+          -- corpo
+          br <- genExpr stack expr
+          -- <–––– TRUE: conectar à esquerda (nw)
+          emitEdge br st [("tailport","sw"),("headport","nw")]
+          -- <–––– FALSE: conectar à direita (ne)
+          emitEdge falReg st [("tailport","se"),("headport","ne")]
+
+          go rest st
+
+    go tests defaultReg
