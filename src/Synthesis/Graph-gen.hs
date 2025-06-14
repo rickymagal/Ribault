@@ -1,50 +1,47 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 
--- | Gera grafo Dataflow (.dot) no estilo Trebuchet/TALM
---   - constantes int: const#<n>
---   - constantes float: fconst#<f>
---   - char e bool → int (usando ord True=1,False=0; Char via ord)
---   - string → lista de Char
---   - lista literal → um único nó "S1"
---   - evita nós duplicados de constantes
---   - sem nó de retorno
+-- | Gera grafo Dataflow (.dot) no estilo Trebuchet/TALM,
+--   com constantes inline, lista única, tuple-pattern no case sem nó extra.
 module GraphGen (programToDataflowDot) where
 
 import           Data.Text.Lazy        (Text)
-import qualified Data.Text.Lazy as T
+import qualified Data.Text.Lazy   as T
 import           Data.Char             (ord, toUpper)
-import           Syntax                ( Program(..), Decl(..), Expr(..)
-                                      , Literal(..), Ident, BinOperator(..)
-                                      , Pattern(..) )
-import           Semantic              (desugarProgram)
 import           Control.Monad.State
-import           Control.Monad         (forM, forM_, void, zipWithM_)
 import           Data.List             (intercalate)
-import qualified Data.Map.Strict as M
+import qualified Data.Map.Strict  as M
+import           Syntax                ( Program(..)
+                                      , Decl(..)
+                                      , Expr(..)
+                                      , Literal(..)
+                                      , Ident
+                                      , BinOperator(..)
+                                      , Pattern(..)
+                                      )
+import           Semantic              (desugarProgram)
 
--- | Estado do gerador
+-- Estado do gerador
 data CGCtx = CGCtx
   { counter  :: Int
   , nodes    :: [Text]
   , edges    :: [Text]
-  , envVars  :: M.Map Ident String           -- ^ variáveis ligadas
-  , defs     :: M.Map Ident ([Ident], Expr)  -- ^ defs de função
-  , constMap :: M.Map String String          -- ^ labelConst → idConst
+  , envVars  :: M.Map Ident String
+  , defs     :: M.Map Ident ([Ident], Expr)
+  , cacheC   :: M.Map String String
   }
 
 type GenM = State CGCtx
 
--- | freshId genérico
+-- | Identificador único
 freshId :: String -> GenM String
 freshId base = do
   s <- get
-  let n = counter s
-      idx = show n
-  put s { counter = n + 1 }
-  pure (base ++ idx)
+  let i = counter s
+  put s { counter = i + 1 }
+  pure (base ++ show i)
 
--- | header do .dot
+-- | Cabeçalho .dot
 dotHeader :: [Text]
 dotHeader =
   [ "digraph G {"
@@ -52,138 +49,136 @@ dotHeader =
   , "  node [shape=triangle, style=solid];"
   ]
 
--- | emite um nó qualquer de caixa arredondada
+-- | Nó arredondado genérico
 emitNode :: String -> String -> GenM String
 emitNode base lbl = do
   nid <- freshId base
-  let line = T.pack $ nid
-            ++ " [label=\"" ++ lbl ++ "\","
-            ++ " shape=box,"
-            ++ " style=rounded];"
+  let line = T.pack $
+        nid
+        ++ " [label=\"" ++ lbl ++ "\","
+        ++ " shape=box,"
+        ++ " style=rounded];"
   modify $ \s -> s { nodes = nodes s ++ [line] }
   pure nid
 
--- | nó steer
+-- | Nó triangular de steer
 emitSteer :: GenM String
 emitSteer = do
   nid <- freshId "steer"
-  let line = T.pack $ nid
-            ++ " [label=\"T   F\","
-            ++ " shape=triangle,"
-            ++ " style=solid];"
+  let line = T.pack $
+        nid
+        ++ " [label=\"T   F\","
+        ++ " shape=triangle,"
+        ++ " style=solid];"
   modify $ \s -> s { nodes = nodes s ++ [line] }
   pure nid
 
--- | emite constante (int ou float), cacheada
-emitConst :: String   -- ^ label sem aspas: e.g. "const#42" ou "fconst#3.14"
-          -> GenM String
+-- | Constantes cacheadas (int, float, char/bool → ord)
+emitConst :: String -> GenM String
 emitConst lbl = do
-  mp <- gets constMap
-  case M.lookup lbl mp of
+  cmap <- gets cacheC
+  case M.lookup lbl cmap of
     Just nid -> pure nid
     Nothing  -> do
       nid <- freshId "const"
-      let line = T.pack $ nid
-                ++ " [label=\"" ++ lbl ++ "\","
-                ++ " shape=box,"
-                ++ " style=rounded];"
+      let line = T.pack $
+            nid
+            ++ " [label=\"" ++ lbl ++ "\","
+            ++ " shape=box,"
+            ++ " style=rounded];"
       modify $ \s -> s
-        { nodes    = nodes s ++ [line]
-        , constMap = M.insert lbl nid (constMap s)
+        { nodes  = nodes s ++ [line]
+        , cacheC = M.insert lbl nid (cacheC s)
         }
       pure nid
 
--- | emite aresta com tail/head ports
+-- | Aresta com tail/head ports
 emitEdge :: String -> String -> [(String,String)] -> GenM ()
-emitEdge from to attrs = do
+emitEdge f t attrs = do
   let attrsTxt = intercalate ", " [k ++ "=" ++ v | (k,v) <- attrs]
-      line = T.pack $ from ++ " -> " ++ to ++ " [" ++ attrsTxt ++ "];"
+      line = T.pack $ f ++ " -> " ++ t ++ " [" ++ attrsTxt ++ "];"
   modify $ \s -> s { edges = edges s ++ [line] }
 
--- | vincula var → id
+-- | Bind e lookup de variáveis
 bindVar :: Ident -> String -> GenM ()
-bindVar x nid = modify $ \s -> s { envVars = M.insert x nid (envVars s) }
+bindVar x nid = modify $ \s ->
+  s { envVars = M.insert x nid (envVars s) }
 
 lookupVar :: Ident -> GenM String
 lookupVar x = do
-  mp <- gets envVars
-  case M.lookup x mp of
+  m <- gets envVars
+  case M.lookup x m of
     Just nid -> pure nid
     Nothing  -> error $ "variável não ligada: " ++ show x
 
--- | defs de função para inline/recursão
+-- | Definições de função para inline/recursão
 bindDef :: Ident -> [Ident] -> Expr -> GenM ()
-bindDef f ps b = modify $ \s ->
-  s { defs = M.insert f (ps,b) (defs s) }
+bindDef f ps e = modify $ \s ->
+  s { defs = M.insert f (ps,e) (defs s) }
 
 lookupDef :: Ident -> GenM (Maybe ([Ident],Expr))
 lookupDef f = gets (M.lookup f . defs)
 
--- | gera o .dot completo
+-- | Gera todo o .dot (sem nó de retorno)
 programToDataflowDot :: Program -> Text
 programToDataflowDot prog =
   let Program decls = desugarProgram prog
-      initial = CGCtx 0 [] [] M.empty M.empty M.empty
+      initial       = CGCtx 0 [] [] M.empty M.empty M.empty
       CGCtx _ ns es _ _ _ =
-        execState
-          (mapM_ recordDecl decls >> mapM_ genDecl decls)
-          initial
+        execState (mapM_ recordDecl decls >> mapM_ genDecl decls) initial
   in T.unlines (dotHeader ++ ns ++ es ++ ["}"])
 
--- | registra todas as funções
+-- | Registra todas as funções
 recordDecl :: Decl -> GenM ()
 recordDecl (FunDecl n ps b) = bindDef n ps b
 recordDecl _                = pure ()
 
--- | gera só o corpo (sem nó de retorno)
+-- | Gera só o corpo de funções sem parâmetros
 genDecl :: Decl -> GenM ()
-genDecl (FunDecl _ [] body) = void (genExpr [] body)
-genDecl _                   = pure ()
+genDecl (FunDecl _ [] b) = void (genExpr [] b)
+genDecl _                = pure ()
 
--- | gera cada expressão
+-- | Geração recursiva de expressões
 genExpr :: [Ident] -> Expr -> GenM String
 genExpr stack = \case
 
-  Var x ->
-    lookupVar x
+  -- variável: uso direto do id ligado
+  Var x -> lookupVar x
 
+  -- literais
   Lit lit -> case lit of
-    LInt i ->
-      emitConst ("const#" ++ show i)
-
-    LBool b ->
-      emitConst ("const#" ++ show (if b then 1 else 0))
-
-    LChar c ->
-      emitConst ("const#" ++ show (ord c))
-
-    LFloat f ->
-      emitConst ("fconst#" ++ show f)
-
+    LInt i   -> emitConst ("const#" ++ show i)
+    LBool b  -> emitConst ("const#" ++ show (if b then 1 else 0))
+    LChar c  -> emitConst ("const#" ++ show (ord c))
+    LFloat f -> emitConst ("fconst#" ++ show f)
     LString s ->
-      -- string é lista de char
       genExpr stack (List (map (Lit . LChar) s))
 
+  -- aplicação / inline
   App f x -> do
-    let flatten (App f' x') = let (g, xs) = flatten f' in (g, xs++[x'])
-        flatten e           = (e, [])
+    -- flatten do App em hd + args
+    let flatten :: Expr -> (Expr, [Expr])
+        flatten (App f' x') =
+          let (g, xs) = flatten f'
+          in (g, xs ++ [x'])
+        flatten e = (e, [])
         (hd, args) = flatten (App f x)
     case hd of
       Var fid -> do
-        m <- lookupDef fid
-        case m of
-          Just (ps,b)
+        md <- lookupDef fid
+        case md of
+          Just (ps, body)
             | fid `notElem` stack -> do
                 regs   <- mapM (genExpr stack) args
                 oldEnv <- gets envVars
                 zipWithM_ bindVar ps regs
-                res <- genExpr (fid:stack) b
+                res <- genExpr (fid:stack) body
                 modify $ \s -> s { envVars = oldEnv }
                 pure res
           _ -> fallbackCall fid args stack
-      _ ->
-        fallbackCall "anon" (hd:args) stack
+      _ -> fallbackCall "anon" (hd:args) stack
 
+  -- binop com símbolo real
   BinOp op a b -> do
     ra <- genExpr stack a
     rb <- genExpr stack b
@@ -200,52 +195,61 @@ genExpr stack = \case
     emitEdge rb n [("tailport","s"),("headport","ne")]
     pure n
 
+  -- if → steer
   If c t e -> do
     rc <- genExpr stack c
     rt <- genExpr stack t
     re <- genExpr stack e
     n  <- emitSteer
-    emitEdge rc n [("tailport","s"), ("headport","n")]
+    emitEdge rc n [("tailport","s"),("headport","n")]
     emitEdge rt n [("tailport","se"),("headport","ne")]
     emitEdge re n [("tailport","sw"),("headport","nw")]
     pure n
 
-  Let decls bd -> do
+  -- let
+  Let decls body -> do
     forM_ decls $ \(FunDecl x [] ex) -> do
       r <- genExpr stack ex
       bindVar x r
-    genExpr stack bd
+    genExpr stack body
 
+  -- tupla
   Tuple es -> do
-    rs <- mapM (genExpr stack) es
-    -- super de tupla com label S<n>
+    rs  <- mapM (genExpr stack) es
     let lbl = "S" ++ show (length rs)
     sup <- emitNode "super" lbl
     forM_ rs $ \r -> emitEdge r sup [("tailport","s"),("headport","nw")]
     pure sup
 
+  -- lista literal → nó único S1
   List es -> do
-    rs <- mapM (genExpr stack) es
-    -- sempre um único nó de lista: S1
+    rs  <- mapM (genExpr stack) es
     sup <- emitNode "super" "S1"
     forM_ rs $ \r -> emitEdge r sup [("tailport","s"),("headport","nw")]
     pure sup
 
-  Lambda{} ->
-    emitNode "lambda" "lambda"
+  -- lambda raro no topo
+  Lambda{} -> emitNode "lambda" "lambda"
 
-  Case e alts -> do
-    scr   <- genExpr stack e
-    altRs <- forM alts $ \(pat,ex) -> case pat of
-      PVar x -> bindVar x scr >> genExpr stack ex
-      _      -> genExpr stack ex
+  -- case com tuple-pattern ou outros
+  Case scrut alts -> do
+    sid   <- genExpr stack scrut
+    altRs <- forM alts $ \(pat, expr) -> case pat of
+      PTuple pats | any isPVar pats ->
+        let xs = [x | PVar x <- pats]
+        in mapM_ (`bindVar` sid) xs >> pure sid
+      PVar x ->
+        bindVar x sid >> pure sid
+      _ ->
+        genExpr stack expr
     n <- emitSteer
-    emitEdge scr n [("tailport","s"),("headport","n")]
+    emitEdge sid n [("tailport","s"),("headport","n")]
     case altRs of
-      [rT,rF] -> do
+      [r]      -> emitEdge r n [("tailport","s"),("headport","ne")]
+      [rT,rF]  -> do
         emitEdge rT n [("tailport","se"),("headport","ne")]
         emitEdge rF n [("tailport","sw"),("headport","nw")]
-      _ -> forM_ altRs $ \r -> emitEdge r n [("tailport","s"),("headport","nw")]
+      rs       -> forM_ rs $ \r -> emitEdge r n [("tailport","s"),("headport","nw")]
     pure n
 
 -- | fallback para chamadas externas
@@ -254,10 +258,15 @@ fallbackCall fn args stack = do
   regs <- mapM (genExpr stack) args
   cg   <- emitNode "callgroup" ("callgroup(" ++ fn ++ ")")
   zipWithM_ (\i r -> do
-      sndN <- emitNode "callsnd" ("callsnd(" ++ fn ++ "," ++ show i ++ ")")
-      emitEdge r    sndN [("tailport","s"),("headport","n")]
-      emitEdge sndN cg   [("tailport","s"),("headport","nw")]
+      sn <- emitNode "callsnd" ("callsnd(" ++ fn ++ "," ++ show i ++ ")")
+      emitEdge r  sn [("tailport","s"),("headport","n")]
+      emitEdge sn cg [("tailport","s"),("headport","nw")]
     ) [1..] regs
-  retN <- emitNode "retsnd" ("retsnd(" ++ fn ++ ")")
-  emitEdge cg retN [("tailport","s"),("headport","n")]
-  pure retN
+  retn <- emitNode "retsnd" ("retsnd(" ++ fn ++ ")")
+  emitEdge cg retn [("tailport","s"),("headport","n")]
+  pure retn
+
+-- | Detecta PVar em Pattern
+isPVar :: Pattern -> Bool
+isPVar (PVar _) = True
+isPVar _        = False
