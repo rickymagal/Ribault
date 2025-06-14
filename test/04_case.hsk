@@ -2,4 +2,4 @@
 fstPair = \p -> case p of
   (x, _) -> x;
 ;
-res = fstPair [10,15]
+res = fstPair (10,15)
