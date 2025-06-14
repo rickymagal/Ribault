@@ -2,17 +2,18 @@
 {-# LANGUAGE LambdaCase #-}
 
 -- | Gera grafo Dataflow (.dot) no estilo Trebuchet/TALM,
---   com inline de funções nomeadas e lambdas saturadas, unária,
---   constantes cacheadas, lista única, tuple- e list-pattern,
---   e sem nós extras de retorno ou var.
+--   com constantes cacheadas, unária, lista única,
+--   tuple- & list-pattern no case, inline de Lambdas e FunDecls não-recursivos,
+--   e fallback dinâmico para funções recursivas ou higher-order.
 module GraphGen (programToDataflowDot) where
 
 import           Data.Text.Lazy        (Text)
 import qualified Data.Text.Lazy   as T
 import           Data.Char             (ord)
 import           Control.Monad.State
-import           Control.Monad         (forM, forM_, zipWithM, void)
+import           Control.Monad         (forM, forM_, void, zipWithM_)
 import           Data.List             (intercalate)
+import           Data.Maybe            (mapMaybe)
 import qualified Data.Map.Strict  as M
 import           Syntax                ( Program(..)
                                       , Decl(..)
@@ -30,14 +31,14 @@ data CGCtx = CGCtx
   { counter  :: Int
   , nodes    :: [T.Text]
   , edges    :: [T.Text]
-  , envVars  :: M.Map Ident String
-  , defs     :: M.Map Ident ([Ident], Expr)
-  , cacheC   :: M.Map String String
+  , envVars  :: M.Map Ident String           -- variáveis ligadas a regs
+  , defs     :: M.Map Ident ([Ident], Expr)  -- top-level FunDecls
+  , cacheC   :: M.Map String String          -- constantes cacheadas
   }
 
 type GenM = State CGCtx
 
--- | Gera um ID único
+-- | Gera ID único
 freshId :: String -> GenM String
 freshId base = do
   s <- get
@@ -53,88 +54,105 @@ dotHeader =
   , "  node [shape=triangle, style=solid];"
   ]
 
--- | Emite um nó arredondado
+-- | Emite nó arredondado
 emitNode :: String -> String -> GenM String
 emitNode base lbl = do
-  nid  <- freshId base
-  let line = T.pack $ nid ++ " [label=\"" ++ lbl ++ "\", shape=box, style=rounded];"
+  nid <- freshId base
+  let line = T.pack $ nid ++ " [label=\"" ++ lbl ++
+               "\", shape=box, style=rounded];"
   modify $ \s -> s { nodes = nodes s ++ [line] }
   pure nid
 
--- | Emite um nó triangular de steer
+-- | Emite nó triangular de steer
 emitSteer :: GenM String
 emitSteer = do
-  nid  <- freshId "steer"
+  nid <- freshId "steer"
   let line = T.pack $ nid ++ " [label=\"T   F\", shape=triangle, style=solid];"
   modify $ \s -> s { nodes = nodes s ++ [line] }
   pure nid
 
--- | Emite constante cacheada (int, float, char/bool via ord)
+-- | Emite constante cacheada (int, float, char/bool→ord)
 emitConst :: String -> GenM String
 emitConst lbl = do
   cmap <- gets cacheC
   case M.lookup lbl cmap of
     Just nid -> pure nid
     Nothing  -> do
-      nid  <- freshId "const"
-      let line = T.pack $ nid ++ " [label=\"" ++ lbl ++ "\", shape=box, style=rounded];"
+      nid <- freshId "const"
+      let line = T.pack $ nid ++ " [label=\"" ++ lbl ++
+                   "\", shape=box, style=rounded];"
       modify $ \s -> s
         { nodes  = nodes s ++ [line]
         , cacheC = M.insert lbl nid (cacheC s)
         }
       pure nid
 
--- | Emite uma aresta com atributos tail/head ports
+-- | Emite aresta com tail/head ports
 emitEdge :: String -> String -> [(String,String)] -> GenM ()
-emitEdge f t attrs = do
+emitEdge from to attrs = do
   let a    = intercalate ", " [k ++ "=" ++ v | (k,v) <- attrs]
-      line = T.pack $ f ++ " -> " ++ t ++ " [" ++ a ++ "];"
+      line = T.pack $ from ++ " -> " ++ to ++ " [" ++ a ++ "];"
   modify $ \s -> s { edges = edges s ++ [line] }
 
--- | Liga variável a nó no ambiente
+-- | Liga variável a reg
 bindVar :: Ident -> String -> GenM ()
-bindVar x r = modify $ \s -> s { envVars = M.insert x r (envVars s) }
+bindVar x r = modify $ \s ->
+  s { envVars = M.insert x r (envVars s) }
 
+-- | Procura variável; se não achar, mas for FunDecl top-level, gera node de função
 lookupVar :: Ident -> GenM String
 lookupVar x = do
-  m <- gets envVars
-  case M.lookup x m of
+  ev <- gets envVars
+  case M.lookup x ev of
     Just r  -> pure r
-    Nothing -> error $ "variável não ligada: " ++ show x
+    Nothing -> do
+      m <- lookupDef x
+      case m of
+        Just _ -> do
+          -- gera um nó 'lambda' para a função e o liga
+          r <- emitNode "lambda" x
+          bindVar x r
+          pure r
+        Nothing ->
+          error $ "variável não ligada: " ++ show x
 
--- | Registra defs de função para inline/recursão
+-- | Registra FunDecl para inline/recursão
 bindDef :: Ident -> [Ident] -> Expr -> GenM ()
-bindDef f ps e = modify $ \s -> s { defs = M.insert f (ps,e) (defs s) }
+bindDef f ps e = modify $ \s ->
+  s { defs = M.insert f (ps,e) (defs s) }
 
+-- | Procura definição top-level
 lookupDef :: Ident -> GenM (Maybe ([Ident], Expr))
 lookupDef f = gets (M.lookup f . defs)
 
--- | Ponto de entrada: gera o .dot completo
+-- | Entrada: gera .dot inteiro
 programToDataflowDot :: Program -> Text
 programToDataflowDot prog =
   let Program decls = desugarProgram prog
-      initial       = CGCtx 0 [] [] M.empty M.empty M.empty
+      initial = CGCtx 0 [] [] M.empty M.empty M.empty
       CGCtx _ ns es _ _ _ =
         execState (mapM_ recordDecl decls >> mapM_ genDecl decls) initial
   in T.unlines (dotHeader ++ ns ++ es ++ ["}"])
 
--- | Grava todas as funções para uso em inline
+-- | Registra todos os FunDecls top-level
 recordDecl :: Decl -> GenM ()
 recordDecl (FunDecl n ps b) = bindDef n ps b
 recordDecl _                = pure ()
 
--- | Gera apenas o corpo de funções sem parâmetros (main, etc.)
+-- | Gera corpo de FunDecls sem parâmetros
 genDecl :: Decl -> GenM ()
 genDecl (FunDecl _ [] b) = void (genExpr [] b)
 genDecl _                = pure ()
 
--- | Geração recursiva de expressões, com inline "inteligente" de FunDecl e Lambda
+-- | Geração recursiva de expressõe
 genExpr :: [Ident] -> Expr -> GenM String
 genExpr stack = \case
 
+  -- Variável ou função: busca em envVars, ou pré-vincula FunDecl top-level a um reg "lambda"
   Var x ->
     lookupVar x
 
+  -- Literais
   Lit lit -> case lit of
     LInt i     -> emitConst ("const#" ++ show i)
     LBool b    -> emitConst ("const#" ++ show (if b then 1 else 0))
@@ -142,58 +160,99 @@ genExpr stack = \case
     LFloat f   -> emitConst ("fconst#" ++ show f)
     LString s  -> genExpr stack (List (map (Lit . LChar) s))
 
-  -- Negação unária
-  UnOp Neg e -> do
+  -- Operadores unários: aritmético e lógico
+  UnOp op e -> do
     r <- genExpr stack e
-    n <- emitNode "neg" "-"
-    emitEdge r n [("tailport","s"),("headport","nw")]
-    pure n
+    case op of
+      Neg -> do
+        n <- emitNode "neg" "-"
+        emitEdge r n [("tailport","s"),("headport","nw")]
+        pure n
+      Not -> do
+        n <- emitNode "not" "not"
+        emitEdge r n [("tailport","s"),("headport","nw")]
+        pure n
 
-  -- Aplicação: inline de FunDecl saturadas e de Lambdas, fallbackCall caso geral
+  -- Aplicação de função / inline de FunDecls e Lambdas / dynamic call
   App f x -> do
-    let flatten (App f' x') = let (g,xs) = flatten f' in (g, xs ++ [x'])
-        flatten e           = (e, [])
-        (hd, args)         = flatten (App f x)
+    -- 1) "Desenrola" aplicações curried em (hd, [args])
+    let flatten :: Expr -> (Expr, [Expr])
+        flatten (App f' a) =
+          let (g, xs) = flatten f' in (g, xs ++ [a])
+        flatten e = (e, [])
+        (hd, args) = flatten (App f x)
+
+        -- 2) Dynamic call a partir de um reg de função e regs de args
+        dynCall :: String -> [String] -> GenM String
+        dynCall funReg argRegs = do
+          cg <- emitNode "callgroup" ("callgroup(" ++ funReg ++ ")")
+          zipWithM_ (\i a -> do
+              sndN <- emitNode "callsnd" ("callsnd(" ++ funReg ++ "," ++ show i ++ ")")
+              emitEdge a    sndN [("tailport","s"),("headport","n")]
+              emitEdge sndN cg   [("tailport","s"),("headport","nw")]
+            ) [1..] argRegs
+          retN <- emitNode "retsnd" ("retsnd(" ++ funReg ++ ")")
+          emitEdge cg retN [("tailport","s"),("headport","n")]
+          pure retN
 
     case hd of
-      -- 1) Função nomeada totalmente aplicada → inline
+
+      -- A) FunDecl top-level COMPLETAMENTE aplicado → inline corpo **com alias** de parâmetros FunDecl
       Var fid -> do
-        md <- lookupDef fid
-        case md of
+        mdef   <- lookupDef fid
+        case mdef of
           Just (ps, body)
             | length ps == length args
            && fid `notElem` stack -> do
-              -- gera regs para cada arg; se Var de FunDecl, inline desse FunDecl
-              regs <- zipWithM (\param argExp ->
-                        case argExp of
-                          Var afid -> do
-                            ma <- lookupDef afid
-                            case ma of
-                              Just (aps, ab) -> genExpr stack (Lambda aps ab)
-                              Nothing        -> genExpr stack argExp
-                          _ -> genExpr stack argExp
-                      ) ps args
+              -- gera regs dos args
+              regs   <- mapM (genExpr stack) args
               oldEnv <- gets envVars
-              zipWithM_ bindVar ps regs
-              res <- genExpr (fid:stack) body
-              modify $ \s -> s { envVars = oldEnv }
-              pure res
-          _ ->
-            fallbackCall fid args stack
+              oldDef <- gets defs
 
-      -- 2) Lambda literal totalmente aplicada → inline
+              -- 1) vincula parâmetros aos regs
+              let env'  = foldl (\m (p,r) -> M.insert p r m) oldEnv (zip ps regs)
+
+              -- 2) para cada parâmetro que foi Var afid e afid ∈ oldDef, cria alias p↦def afid
+              let aliasList = mapMaybe
+                    (\(p,argExp) -> case argExp of
+                        Var afid -> fmap (\d -> (p,d)) (M.lookup afid oldDef)
+                        _        -> Nothing)
+                    (zip ps args)
+                  defs' = foldl (\m (p,d) -> M.insert p d m) oldDef aliasList
+
+              -- instala novo estado
+              modify $ \s -> s { envVars = env', defs = defs' }
+
+              -- inline do corpo
+              res <- genExpr (fid:stack) body
+
+              -- restaura estado anterior
+              modify $ \s -> s { envVars = oldEnv, defs = oldDef }
+
+              pure res
+
+          -- recursão ou não-FunDecl → dynamic call via reg vinculado
+          _ -> do
+            funReg  <- lookupVar fid
+            argRegs <- mapM (genExpr stack) args
+            dynCall funReg argRegs
+
+      -- B) Lambda literal totalmente aplicado → inline corpo
       Lambda ps body
         | length ps == length args -> do
             regs   <- mapM (genExpr stack) args
             oldEnv <- gets envVars
-            zipWithM_ bindVar ps regs
-            res    <- genExpr ("<lam>":stack) body
+            let env' = foldl (\m (p,r) -> M.insert p r m) oldEnv (zip ps regs)
+            modify $ \s -> s { envVars = env' }
+            res <- genExpr ("<lam>":stack) body
             modify $ \s -> s { envVars = oldEnv }
             pure res
 
-      -- 3) Caso geral → callgroup/callsnd/retsnd
-      _ ->
-        fallbackCall "anon" (hd:args) stack
+      -- C) Qualquer outro caso → dynamic call a partir da expressão
+      _ -> do
+        funReg  <- genExpr stack hd
+        argRegs <- mapM (genExpr stack) args
+        dynCall funReg argRegs
 
   -- Operador binário com símbolo real
   BinOp op a b -> do
@@ -203,8 +262,8 @@ genExpr stack = \case
           Add -> ("add","+"); Sub -> ("sub","-")
           Mul -> ("mul","*"); Div -> ("div","/")
           Mod -> ("mod","%"); Eq  -> ("eq","==")
-          Neq -> ("neq","!="); Lt  -> ("lt","<")
-          Le  -> ("le","<="); Gt  -> ("gt",">")
+          Neq -> ("neq","!="); Lt -> ("lt","<")
+          Le  -> ("le","<="); Gt -> ("gt",">")
           Ge  -> ("ge",">="); And -> ("and","&&")
           Or  -> ("or","||")
     n <- emitNode nm sym
@@ -214,90 +273,61 @@ genExpr stack = \case
 
   -- If → steer
   If c t e -> do
-    rc <- genExpr stack c
-    rt <- genExpr stack t
-    re <- genExpr stack e
+    rc <- genExpr stack c; rt <- genExpr stack t; re <- genExpr stack e
     n  <- emitSteer
     emitEdge rc n [("tailport","s"),("headport","n")]
     emitEdge rt n [("tailport","se"),("headport","ne")]
     emitEdge re n [("tailport","sw"),("headport","nw")]
     pure n
 
-  -- Let inline de FunDecl de aridade zero
+  -- Let-binding de FunDecl aridade-0 inline
   Let decls body -> do
-    forM_ decls $ \(FunDecl x [] ex) -> bindVar x =<< genExpr stack ex
+    forM_ decls $ \(FunDecl x [] ex) ->
+      bindVar x =<< genExpr stack ex
     genExpr stack body
 
   -- Tupla literal
   Tuple es -> do
-    rs <- mapM (genExpr stack) es
+    rs  <- mapM (genExpr stack) es
     let lbl = "S" ++ show (length rs)
     sup <- emitNode "super" lbl
-    forM_ rs (\r -> emitEdge r sup [("tailport","s"),("headport","nw")])
+    forM_ rs $ \r -> emitEdge r sup [("tailport","s"),("headport","nw")]
     pure sup
 
-  -- Lista literal → nó único S1
+  -- Lista literal (único nó S1)
   List es -> do
-    rs <- mapM (genExpr stack) es
+    rs  <- mapM (genExpr stack) es
     sup <- emitNode "super" "S1"
-    forM_ rs (\r -> emitEdge r sup [("tailport","s"),("headport","nw")])
+    forM_ rs $ \r -> emitEdge r sup [("tailport","s"),("headport","nw")]
     pure sup
 
-  -- Lambda não aplicada → nó genérico
+  -- Lambda isolada
   Lambda{} ->
     emitNode "lambda" "lambda"
 
-  -- Case com tuple- e list-patterns
+  -- Case com tuple- & list-patterns
   Case scrut alts -> do
     sid   <- genExpr stack scrut
     altRs <- forM alts $ \(pat, expr) -> case pat of
-
-      -- lista enumerada
-      PList pats -> case pats of
-        []                  -> emitConst "const#0"
-        [PVar x]            -> bindVar x sid >> pure sid
-        [PVar x,PWildcard]  -> bindVar x sid >> pure sid
-        _                   -> genExpr stack expr
-
-      -- tuple-pattern
+      PList []                -> emitConst "const#0"
+      PList [PVar x]          -> bindVar x sid >> pure sid
+      PList [PVar x,PWildcard]-> bindVar x sid >> pure sid
       PTuple ps | any isPVar ps ->
         let xs = [x | PVar x <- ps] in mapM_ (`bindVar` sid) xs >> pure sid
-
-      -- var-pattern simples
-      PVar x ->
-        bindVar x sid >> pure sid
-
-      -- outros
-      _ ->
-        genExpr stack expr
-
+      PVar x                  -> bindVar x sid >> pure sid
+      _                       -> genExpr stack expr
     n <- emitSteer
     emitEdge sid n [("tailport","s"),("headport","n")]
     case altRs of
-      [r]      -> emitEdge r n [("tailport","s"),("headport","ne")]
-      [rT,rF]  -> do
+      [r]     -> emitEdge r n [("tailport","s"),("headport","ne")]
+      [rT,rF] -> do
         emitEdge rT n [("tailport","se"),("headport","ne")]
         emitEdge rF n [("tailport","sw"),("headport","nw")]
-      rs       ->
-        zipWithM_ (\r p -> emitEdge r n [("tailport","s"),("headport",p)])
-                  rs (cycle ["ne","nw","se","sw"])
+      rs      -> zipWithM_ (\r p -> emitEdge r n [("tailport","s"),("headport",p)])
+                          rs (cycle ["ne","nw","se","sw"])
     pure n
 
--- | Fallback para chamadas externas de FunDecl ou lambdas não saturadas
-fallbackCall :: Ident -> [Expr] -> [Ident] -> GenM String
-fallbackCall fn args _ = do
-  regs <- mapM (genExpr []) args
-  cg   <- emitNode "callgroup" ("callgroup(" ++ fn ++ ")")
-  zipWithM_ (\i r -> do
-      sndN <- emitNode "callsnd" ("callsnd(" ++ fn ++ "," ++ show i ++ ")")
-      emitEdge r    sndN [("tailport","s"),("headport","n")]
-      emitEdge sndN cg   [("tailport","s"),("headport","nw")]
-    ) [1..] regs
-  retN <- emitNode "retsnd" ("retsnd(" ++ fn ++ ")")
-  emitEdge cg retN [("tailport","s"),("headport","n")]
-  pure retN
-
--- | Auxiliar para detectar PVar em Pattern
+-- | Auxiliar para Pattern
 isPVar :: Pattern -> Bool
 isPVar (PVar _) = True
 isPVar _        = False
