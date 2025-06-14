@@ -2,13 +2,15 @@
 {-# LANGUAGE LambdaCase #-}
 
 -- | Gera grafo Dataflow (.dot) no estilo Trebuchet/TALM,
---   com constantes inline, lista única, tuple-pattern no case sem nó extra.
+--   com constantes inline, lista única, tuple- e list-pattern no case,
+--   sem nós extras de retorno ou var.
 module GraphGen (programToDataflowDot) where
 
 import           Data.Text.Lazy        (Text)
 import qualified Data.Text.Lazy   as T
 import           Data.Char             (ord, toUpper)
 import           Control.Monad.State
+import           Control.Monad         (forM, forM_, zipWithM_, void)
 import           Data.List             (intercalate)
 import qualified Data.Map.Strict  as M
 import           Syntax                ( Program(..)
@@ -33,7 +35,7 @@ data CGCtx = CGCtx
 
 type GenM = State CGCtx
 
--- | Identificador único
+-- Gera IDs únicos para nós
 freshId :: String -> GenM String
 freshId base = do
   s <- get
@@ -41,7 +43,7 @@ freshId base = do
   put s { counter = i + 1 }
   pure (base ++ show i)
 
--- | Cabeçalho .dot
+-- Cabeçalho .dot
 dotHeader :: [Text]
 dotHeader =
   [ "digraph G {"
@@ -49,7 +51,7 @@ dotHeader =
   , "  node [shape=triangle, style=solid];"
   ]
 
--- | Nó arredondado genérico
+-- Emite nó arredondado (binop, super, callgroup, var, lambda…)
 emitNode :: String -> String -> GenM String
 emitNode base lbl = do
   nid <- freshId base
@@ -61,7 +63,7 @@ emitNode base lbl = do
   modify $ \s -> s { nodes = nodes s ++ [line] }
   pure nid
 
--- | Nó triangular de steer
+-- Emite nó triangular de steer
 emitSteer :: GenM String
 emitSteer = do
   nid <- freshId "steer"
@@ -73,7 +75,7 @@ emitSteer = do
   modify $ \s -> s { nodes = nodes s ++ [line] }
   pure nid
 
--- | Constantes cacheadas (int, float, char/bool → ord)
+-- Emite constante cacheada (int, float, char/bool → ord)
 emitConst :: String -> GenM String
 emitConst lbl = do
   cmap <- gets cacheC
@@ -92,14 +94,14 @@ emitConst lbl = do
         }
       pure nid
 
--- | Aresta com tail/head ports
+-- Emite aresta com tailport/headport
 emitEdge :: String -> String -> [(String,String)] -> GenM ()
 emitEdge f t attrs = do
   let attrsTxt = intercalate ", " [k ++ "=" ++ v | (k,v) <- attrs]
       line = T.pack $ f ++ " -> " ++ t ++ " [" ++ attrsTxt ++ "];"
   modify $ \s -> s { edges = edges s ++ [line] }
 
--- | Bind e lookup de variáveis
+-- Bind/lookup de variáveis
 bindVar :: Ident -> String -> GenM ()
 bindVar x nid = modify $ \s ->
   s { envVars = M.insert x nid (envVars s) }
@@ -111,7 +113,7 @@ lookupVar x = do
     Just nid -> pure nid
     Nothing  -> error $ "variável não ligada: " ++ show x
 
--- | Definições de função para inline/recursão
+-- Registro de definições de função
 bindDef :: Ident -> [Ident] -> Expr -> GenM ()
 bindDef f ps e = modify $ \s ->
   s { defs = M.insert f (ps,e) (defs s) }
@@ -119,7 +121,7 @@ bindDef f ps e = modify $ \s ->
 lookupDef :: Ident -> GenM (Maybe ([Ident],Expr))
 lookupDef f = gets (M.lookup f . defs)
 
--- | Gera todo o .dot (sem nó de retorno)
+-- Ponto de entrada: gera o .dot completo
 programToDataflowDot :: Program -> Text
 programToDataflowDot prog =
   let Program decls = desugarProgram prog
@@ -128,39 +130,41 @@ programToDataflowDot prog =
         execState (mapM_ recordDecl decls >> mapM_ genDecl decls) initial
   in T.unlines (dotHeader ++ ns ++ es ++ ["}"])
 
--- | Registra todas as funções
+-- Primeiro: registra todas as funções para inline/recursão
 recordDecl :: Decl -> GenM ()
 recordDecl (FunDecl n ps b) = bindDef n ps b
 recordDecl _                = pure ()
 
--- | Gera só o corpo de funções sem parâmetros
+-- Gera apenas o corpo das funções sem parâmetros
 genDecl :: Decl -> GenM ()
 genDecl (FunDecl _ [] b) = void (genExpr [] b)
 genDecl _                = pure ()
 
--- | Geração recursiva de expressões
+-- Geração recursiva de expressões
 genExpr :: [Ident] -> Expr -> GenM String
 genExpr stack = \case
 
-  -- variável: uso direto do id ligado
-  Var x -> lookupVar x
+  -- Variável: usa o ID já ligado
+  Var x ->
+    lookupVar x
 
-  -- literais
+  -- Literais
   Lit lit -> case lit of
     LInt i   -> emitConst ("const#" ++ show i)
     LBool b  -> emitConst ("const#" ++ show (if b then 1 else 0))
     LChar c  -> emitConst ("const#" ++ show (ord c))
     LFloat f -> emitConst ("fconst#" ++ show f)
     LString s ->
+      -- string → lista de Char
       genExpr stack (List (map (Lit . LChar) s))
 
-  -- aplicação / inline
+  -- Aplicação / inline de funções
   App f x -> do
-    -- flatten do App em hd + args
+    -- flatten de App em head + args
     let flatten :: Expr -> (Expr, [Expr])
         flatten (App f' x') =
           let (g, xs) = flatten f'
-          in (g, xs ++ [x'])
+          in  (g, xs ++ [x'])
         flatten e = (e, [])
         (hd, args) = flatten (App f x)
     case hd of
@@ -175,10 +179,12 @@ genExpr stack = \case
                 res <- genExpr (fid:stack) body
                 modify $ \s -> s { envVars = oldEnv }
                 pure res
-          _ -> fallbackCall fid args stack
-      _ -> fallbackCall "anon" (hd:args) stack
+          _ ->
+            fallbackCall fid args stack
+      _ ->
+        fallbackCall "anon" (hd:args) stack
 
-  -- binop com símbolo real
+  -- BinOp com símbolo real
   BinOp op a b -> do
     ra <- genExpr stack a
     rb <- genExpr stack b
@@ -195,25 +201,25 @@ genExpr stack = \case
     emitEdge rb n [("tailport","s"),("headport","ne")]
     pure n
 
-  -- if → steer
+  -- If → steer
   If c t e -> do
     rc <- genExpr stack c
     rt <- genExpr stack t
     re <- genExpr stack e
     n  <- emitSteer
-    emitEdge rc n [("tailport","s"),("headport","n")]
+    emitEdge rc n [("tailport","s"), ("headport","n")]
     emitEdge rt n [("tailport","se"),("headport","ne")]
     emitEdge re n [("tailport","sw"),("headport","nw")]
     pure n
 
-  -- let
+  -- Let inline de defs
   Let decls body -> do
     forM_ decls $ \(FunDecl x [] ex) -> do
       r <- genExpr stack ex
       bindVar x r
     genExpr stack body
 
-  -- tupla
+  -- Tuple literal
   Tuple es -> do
     rs  <- mapM (genExpr stack) es
     let lbl = "S" ++ show (length rs)
@@ -221,38 +227,59 @@ genExpr stack = \case
     forM_ rs $ \r -> emitEdge r sup [("tailport","s"),("headport","nw")]
     pure sup
 
-  -- lista literal → nó único S1
+  -- Lista literal → único nó "S1"
   List es -> do
     rs  <- mapM (genExpr stack) es
     sup <- emitNode "super" "S1"
     forM_ rs $ \r -> emitEdge r sup [("tailport","s"),("headport","nw")]
     pure sup
 
-  -- lambda raro no topo
-  Lambda{} -> emitNode "lambda" "lambda"
+  -- Lambda (raramente no topo)
+  Lambda{} ->
+    emitNode "lambda" "lambda"
 
-  -- case com tuple-pattern ou outros
+  -- Case com tuple- ou list-patterns
   Case scrut alts -> do
     sid   <- genExpr stack scrut
     altRs <- forM alts $ \(pat, expr) -> case pat of
-      PTuple pats | any isPVar pats ->
-        let xs = [x | PVar x <- pats]
+
+      -- lista enumerada
+      PList pats -> case pats of
+        []                  -> genExpr stack expr
+        [PVar x]            -> bindVar x sid >> pure sid
+        [PVar x, PWildcard] -> bindVar x sid >> pure sid
+        _                   -> genExpr stack expr
+
+      -- tuple-pattern existente
+      PTuple ps | any isPVar ps ->
+        let xs = [x | PVar x <- ps]
         in mapM_ (`bindVar` sid) xs >> pure sid
+
+      -- var-pattern simples
       PVar x ->
         bindVar x sid >> pure sid
+
+      -- outros: gera a expressão normalmente
       _ ->
         genExpr stack expr
+
     n <- emitSteer
     emitEdge sid n [("tailport","s"),("headport","n")]
+
+    -- distribui arestas segundo quantidade de alts
     case altRs of
-      [r]      -> emitEdge r n [("tailport","s"),("headport","ne")]
-      [rT,rF]  -> do
+      [r]       -> emitEdge r n [("tailport","s"),("headport","ne")]
+      [rT,rF]   -> do
         emitEdge rT n [("tailport","se"),("headport","ne")]
         emitEdge rF n [("tailport","sw"),("headport","nw")]
-      rs       -> forM_ rs $ \r -> emitEdge r n [("tailport","s"),("headport","nw")]
+      rs        ->
+        let ports = cycle ["ne","nw","se","sw"]
+        in zipWithM_ (\r p -> emitEdge r n [("tailport","s"),("headport",p)])
+                     rs ports
+
     pure n
 
--- | fallback para chamadas externas
+-- Fallback para chamadas externas (callgroup/callsnd/retsnd)
 fallbackCall :: Ident -> [Expr] -> [Ident] -> GenM String
 fallbackCall fn args stack = do
   regs <- mapM (genExpr stack) args
@@ -266,7 +293,7 @@ fallbackCall fn args stack = do
   emitEdge cg retn [("tailport","s"),("headport","n")]
   pure retn
 
--- | Detecta PVar em Pattern
+-- Testa se um Pattern é PVar
 isPVar :: Pattern -> Bool
 isPVar (PVar _) = True
 isPVar _        = False
