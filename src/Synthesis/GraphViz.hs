@@ -86,7 +86,7 @@ edgesFrom origin = \case
                 ++ zipWith (edge "ne") rightSrc (repeat Nothing)
   InstBinopI{..}->  map (\s -> edge "n" s Nothing) uniSrc
   InstSteer{..} ->  map edgeDefault steerInp
-                ++ map (\c -> edge "nw" c Nothing) steerExpr
+                ++ map (\c -> edge "n" c Nothing) steerExpr
   InstIncTag{..}->  map edgeDefault tagInp
   InstSuper{..} ->  concatMap (map edgeDefault) superInp
   InstPar{..}   ->  concatMap (map edgeDefault) parInp
