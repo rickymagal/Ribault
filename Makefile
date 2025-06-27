@@ -11,7 +11,7 @@ SRC_DIR     := src
 TEST_DIR    := test
 
 # Saídas
-DF_OUT_DIR  := $(TEST_DIR)/output
+DF_OUT_DIR  := $(TEST_DIR)/df-output
 DF_IMG_DIR  := $(TEST_DIR)/df-images
 AST_OUT_DIR := $(TEST_DIR)/ast-output
 AST_IMG_DIR := $(TEST_DIR)/ast-images
@@ -23,7 +23,9 @@ LEXER_HS    := $(SRC_DIR)/Analysis/Lexer.hs
 PARSER_HS   := $(SRC_DIR)/Analysis/Parser.hs
 SYNTAX_HS   := $(SRC_DIR)/Analysis/Syntax.hs
 SEMANTIC_HS := $(SRC_DIR)/Analysis/Semantic.hs
-GRAPHGEN_HS := $(SRC_DIR)/Synthesis/Graph-gen.hs
+INSTR_HS     := $(SRC_DIR)/Synthesis/Instruction.hs
+BUILDER_HS   := $(SRC_DIR)/Synthesis/Builder.hs
+GRAPHVIZ_HS  := $(SRC_DIR)/Synthesis/GraphViz.hs
 ASTGEN_HS   := $(SRC_DIR)/Analysis/AST-gen.hs
 
 MAIN_DF_HS  := $(SRC_DIR)/Synthesis/MainGraph.hs
@@ -34,8 +36,8 @@ SUPERS_HS   := $(SRC_DIR)/Lib/Supers.hs
 LIB_SUPERS  := libsupers.so
 
 # -------- executáveis -----------------------------------------
-EXE_DF      := analysis
-EXE_AST     := analysis-ast
+EXE_DF      := synthesis
+EXE_AST     := analysis
 
 # ============================================================
 # Casos de teste
@@ -84,9 +86,12 @@ $(PARSER_HS): $(PARSER_SRC)
 # ------------------------------------------------------------
 # Compilação executáveis
 # ------------------------------------------------------------
-$(EXE_DF): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(GRAPHGEN_HS) $(MAIN_DF_HS)
+$(EXE_DF): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
+           $(INSTR_HS) $(BUILDER_HS) $(GRAPHVIZ_HS) $(MAIN_DF_HS)
 	@echo "[GHC  ] $@"
-	$(GHC) -O2 -o $@ $(MAIN_DF_HS) $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(GRAPHGEN_HS)
+	$(GHC) -O2 -o $@ $(MAIN_DF_HS) $(LEXER_HS) $(PARSER_HS) \
+	                 $(SYNTAX_HS) $(SEMANTIC_HS) \
+	                 $(INSTR_HS)  $(BUILDER_HS)  $(GRAPHVIZ_HS)
 
 $(EXE_AST): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS) $(MAIN_AST_HS)
 	@echo "[GHC  ] $@"
