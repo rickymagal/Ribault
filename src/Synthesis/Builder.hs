@@ -14,11 +14,11 @@ import           Data.Maybe           (fromMaybe)
 import           Data.Foldable        (for_)
 
 -- ════════════════════════════════════════════════════════
--- Estado do builder
+-- Estado
 -- ════════════════════════════════════════════════════════
 type Build = State BS
 data BS = BS { env   :: Map Ident [IR.Signal]
-             , acc   :: [IR.Inst]    -- ^ acumulador (reverso)
+             , acc   :: [IR.Inst]     -- ^ instruções (reverso)
              , nextN :: Int }
 empty :: BS
 empty = BS M.empty [] 0
@@ -35,7 +35,7 @@ remember v s = modify' $ \st -> st{env = M.insert v s (env st)}
 lookupSig :: Ident -> Build [IR.Signal]
 lookupSig v = gets (fromMaybe (error ("unbound var "++v)) . M.lookup v . env)
 
--- Bool constante rápida ---------------------------------------------------
+-- Constante booleana helper ----------------------------------------------
 constBool :: Bool -> Build [IR.Signal]
 constBool b = do nid<-freshId
                  emit (IR.InstConst nid (if b then 1 else 0) "int")
@@ -45,15 +45,18 @@ constBool b = do nid<-freshId
 -- Entrada pública
 -- ════════════════════════════════════════════════════════
 buildProgram :: Program -> [IR.Inst]
-buildProgram (Program ds) = reverse . acc $ execState (mapM_ decl ds) empty
+buildProgram (Program ds) = reverse . acc $ execState (mapM_ topDecl ds) empty
 
 -- ════════════════════════════════════════════════════════
--- Declarações
+-- Declarações topo-de-linha
 -- ════════════════════════════════════════════════════════
-decl :: Decl -> Build ()
-decl (FunDecl f ps (Lambda lamPs body)) =
-  decl (FunDecl f (ps ++ lamPs) body)
-decl (FunDecl f ps body) = do
+topDecl :: Decl -> Build ()
+-- desazucar lambda no corpo
+topDecl (FunDecl f ps (Lambda ls b)) =
+  topDecl (FunDecl f (ps ++ ls) b)
+
+-- função “normal”
+topDecl (FunDecl f ps body) = do
   let dummy ix = IR.SigInstPort (IR.NodeId (-ix)) 0 Nothing
   modify' $ \st -> st{env = M.fromList (zip ps (map (pure . dummy) [1..]))}
   res <- expr body
@@ -71,7 +74,7 @@ expr = \case
   BinOp o a b-> binop o a b
   UnOp  o e  -> unop  o e
   If c t e   -> ifExpr c t e
-  Let ds e   -> mapM_ decl ds >> expr e
+  Let ds e   -> letExpr ds e
   App f x    -> app f x
   Lambda{}   -> err "lambda expression not supported"
   Case s as  -> caseExpr s as
@@ -81,8 +84,8 @@ expr = \case
 -- ═════════════ Literais ════════════════════════════════
 lit :: Literal -> Build [IR.Signal]
 lit = \case
-  LFloat d  -> scalar (floor (d*100)) "float"
-  LString s -> fmap concat $ mapM (lit . LChar) s
+  LFloat d  -> scalar (floor (d*100)) "float"   -- fconst 3.14
+  LString s -> fmap concat (mapM (lit . LChar) s)
   LInt n    -> scalar (toInteger n) "int"
   LBool b   -> scalar (if b then 1 else 0) "int"
   LChar c   -> scalar (toInteger (fromEnum c)) "int"
@@ -92,10 +95,10 @@ lit = \case
                    pure [IR.SigInstPort nid 0 Nothing]
 
 listLit :: [Expr] -> Build [IR.Signal]
-listLit es  = for_ es expr >> makeCount (length es)
+listLit es = for_ es expr >> makeCount (length es)
 
 tupleLit :: [Expr] -> Build [IR.Signal]
-tupleLit es = concat <$> mapM expr es      -- cada campo devolve seu sinal
+tupleLit es = concat <$> mapM expr es
 
 makeCount n = do nid<-freshId
                  emit (IR.InstConst nid (toInteger n) "int")
@@ -123,7 +126,24 @@ ifExpr c t e = do cond<-expr c; nid<-freshId
                   emit (IR.InstSteer nid cond [])
                   (++) <$> expr t <*> expr e
 
--- ═════════════ Case expression ═════════════════════════
+-- ═════════════ Let (agora com valores) ═════════════════
+letExpr :: [Decl] -> Expr -> Build [IR.Signal]
+letExpr binds body = do
+  env0 <- gets env
+  mapM_ bindLocal binds
+  res  <- expr body
+  modify' $ \st -> st{env = env0}     -- restaura escopo externo
+  pure res
+ where
+  bindLocal :: Decl -> Build ()
+  -- ligação de valor: FunDecl f [] rhs
+  bindLocal (FunDecl v [] rhs) = do
+      sig <- expr rhs
+      remember v sig
+  -- ligação de função com params dentro de let – delega ao mesmo código
+  bindLocal d@(FunDecl{})      = topDecl d
+
+-- ═════════════ Case (tupla & literais) ═════════════════
 caseExpr :: Expr -> [(Pattern,Expr)] -> Build [IR.Signal]
 caseExpr scr alts = expr scr >>= go alts
  where
@@ -139,38 +159,52 @@ caseExpr scr alts = expr scr >>= go alts
     elseS <- if null rest then constBool False else go rest scrSig
     pure (thenS ++ elseS)
 
--- * padrões suportados ----------------------------------------------------
 patCond :: Pattern -> [IR.Signal] -> Build [IR.Signal]
 patCond pat scrS = case pat of
-  PWildcard      -> constBool True
-  PVar _         -> constBool True
-  PLit litConst  -> do sig <- lit litConst
-                       nid <- freshId
-                       emit (IR.InstBinop nid "==" "int" scrS sig)
-                       pure [IR.SigInstPort nid 0 Nothing]
-  PTuple _       -> constBool True
-  _              -> err "unsupported pattern"
+  PWildcard        -> constBool True
+  PVar _           -> constBool True
+  PLit litC        -> cmpLit litC
+  PTuple _         -> constBool True
+  PList ps         -> cmpLen (length ps)   -- compara tamanho
+  where
+    cmpLit litC = do
+      sig <- lit litC
+      nid <- freshId
+      emit (IR.InstBinop nid "==" "int" scrS sig)
+      pure [IR.SigInstPort nid 0 Nothing]
+
+    cmpLen k = do
+      nidK <- freshId
+      emit (IR.InstConst nidK (toInteger k) "int")
+      nidC <- freshId
+      emit (IR.InstBinop nidC "==" "int" scrS [IR.SigInstPort nidK 0 Nothing])
+      pure [IR.SigInstPort nidC 0 Nothing]
 
 bindPat :: Pattern -> [IR.Signal] -> Build ()
 bindPat pat src = case pat of
   PVar x     -> remember x src
   PTuple ps  -> sequence_ [ bindPat p [src !! i] | (p,i) <- zip ps [0..] ]
+  PList ps   -> sequence_ [ bindPat p src        -- lista devolve 1 sinal: o próprio scr
+                          | p <- ps, not (isWildcard p) ]
   _          -> pure ()
+  where
+    isWildcard PWildcard = True
+    isWildcard _         = False
 
 -- ═════════════ Aplicação 1ª ordem ═════════════════════
 app :: Expr -> Expr -> Build [IR.Signal]
 app fun arg = do
-  let peel (App f a) xs = peel f (a:xs)
-      peel other xs     = (other,xs)
+  let peel (App f a) xs = peel f (a:xs); peel other xs = (other,xs)
       (callee,args)     = peel (App fun arg) []
   fn <- case callee of Var v -> pure v; _ -> err "HO call"
   gid<-freshId; let IR.NodeId n = gid; grp="cg"<>show n
   emit (IR.InstCallGrp gid fn grp)
-  for_ (zip [1..] args) $ \(ix,a)-> do
-    s<-expr a; nid<-freshId
-    emit (IR.InstCallSnd nid fn grp ix s)
+  for_ (zip [1..] args) $ \(ix,a)-> do s<-expr a
+                                       nid<-freshId
+                                       emit (IR.InstCallSnd nid fn grp ix s)
   nidR<-freshId; let ret=[IR.SigReturnPort fn grp]
-  emit (IR.InstRetSnd nidR fn grp ret); pure ret
+  emit (IR.InstRetSnd nidR fn grp ret)
+  pure ret
 
 -- ═════════════ util ═══════════════════════════════════
 err :: String -> a
