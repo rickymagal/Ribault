@@ -1,41 +1,59 @@
 {-# LANGUAGE OverloadedStrings #-}
-
--- | Entry point for the Dataflow graph generation tool.
+-- | Entry point for the **data‑flow graph** generation tool.
+--   Esta Main NÃO substitui `Analysis/MainAST.hs`; apenas acrescenta um
+--   executável separado que faz **um passo extra**: depois da AST pronta e
+--   verificada ele constrói o grafo de instruções e o imprime em DOT.
 --
--- This executable reads a Haskell-subset program from a file or standard input,
--- performs lexical scanning, parsing, and semantic analysis, and then emits
--- the dataflow graph in Graphviz DOT format if no errors are found.
+--   Compile algo como:
+--
+--   @
+--   ghc -isrc -o lambdaflow-df src/Synthesis/MainGraph.hs
+--   @
+--
+--   Uso:
+--
+--   > lambdaflow-df [arquivo.hsk]
+--   > cat prog.hsk | lambdaflow-df
+----------------------------------------------------------------------
 module Main where
 
-import System.Environment (getArgs)      -- ^ Access command-line arguments
-import System.IO          (readFile, getContents) -- ^ Read from file or stdin
-import System.Exit        (exitFailure)  -- ^ Exit with failure code on error
-import Prelude hiding (putStr)           -- ^ Hide default putStr
-import qualified Data.Text.Lazy.IO as TLIO -- ^ Efficient lazy I/O for Text
+import System.Environment (getArgs)
+import System.IO          (readFile, getContents, hPutStrLn, stderr)
+import System.Exit        (exitFailure)
+import Prelude hiding (putStr)
+import qualified Data.Text.Lazy.IO as TLIO
 
-import Lexer       (alexScanTokens)      -- ^ Tokenize input source
-import Parser      (parse)               -- ^ Parse tokens into an AST
-import Syntax      (Program)            -- ^ AST data types
-import Semantic    (checkAll)            -- ^ Semantic and type checking
-import GraphGen    (programToDataflowDot) -- ^ Render AST as DOT dataflow graph
+-- Fases de front‑end -----------------------------------------------------
+import Lexer    (alexScanTokens)   -- ^ Scanner
+import Parser   (parse)            -- ^ Parser
+import Syntax   (Program)          -- ^ AST datatypes (for type sigs)
+import Semantic (checkAll)         -- ^ Verificação semântica
 
--- | Main entry point.
---
--- Reads source code from a file (if a single filename argument is provided)
--- or from standard input otherwise.  Performs semantic validation, and on
--- success writes the dataflow graph in DOT format to stdout.  If any semantic
--- or type errors are detected, they are printed to stderr and the program
--- exits with a failure code.
+-- Geração do grafo Data‑flow --------------------------------------------
+import qualified Synthesis.Builder  as DF  -- buildProgram :: Program -> [Inst]
+import qualified Synthesis.GraphViz as GV  -- render       :: [Inst]  -> Text
+
+----------------------------------------------------------------------
+-- | Main entry: igual ao MainAST, mas com o passo DF extra.
 main :: IO ()
 main = do
   args  <- getArgs
   input <- case args of
     [file] -> readFile file
     []     -> getContents
-    _      -> putStrLn "Usage: lambdaflow [file]" >> exitFailure
+    _      -> do hPutStrLn stderr "Usage: lambdaflow-df [file]"; exitFailure
 
-  let ast = parse (alexScanTokens input)
+  -- 1. Lexing & Parsing --------------------------------------------------
+  let ast :: Program
+      ast = parse (alexScanTokens input)
 
+  -- 2. Semantic check ----------------------------------------------------
   case checkAll ast of
-    []   -> TLIO.putStr $ programToDataflowDot ast
-    errs -> mapM_ print errs >> exitFailure
+    []   -> do
+      -- 3. AST → Data‑flow → DOT ----------------------------------------
+      let df  = DF.buildProgram ast
+          dot = GV.render df
+      TLIO.putStr dot
+    errs -> do
+      mapM_ (hPutStrLn stderr . show) errs
+      exitFailure
