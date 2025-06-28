@@ -64,9 +64,12 @@ all: df ast code supers       ## gera .dot e .png de Dataflow/AST e libsupers.so
 
 # ---------- biblioteca de super-instruções --------------------
 supers: $(LIB_SUPERS)     ## compila libsupers.so
+
 $(LIB_SUPERS): $(SUPERS_HS)
 	@echo "[GHC  ] $@"
-	$(GHC) -O2 -shared -dynamic -fPIC -o $@ $<
+	$(GHC) -O2 -shared -dynamic -fPIC                     \
+	       -package hint -package hashable               \
+	       -o $@ $<
 
 # ---------- Dataflow & AST pipelines -------------------------
 df: tokens images        
