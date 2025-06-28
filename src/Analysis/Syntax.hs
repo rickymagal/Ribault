@@ -27,6 +27,7 @@ data Expr
   | UnOp UnOperator Expr     -- ^ Unary operator application
   | List [Expr]              -- ^ List literal
   | Tuple [Expr]             -- ^ Tuple literal
+  | Cons Expr Expr
   deriving (Show)
 
 -- | Patterns used in case alternatives.
@@ -36,6 +37,7 @@ data Pattern
   | PLit Literal             -- ^ Literal pattern
   | PList [Pattern]          -- ^ List pattern
   | PTuple [Pattern]         -- ^ Tuple pattern
+  | PCons Pattern Pattern
   deriving (Show)
 
 -- | Literal values supported by the language.

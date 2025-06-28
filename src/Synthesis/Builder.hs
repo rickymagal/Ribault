@@ -79,7 +79,7 @@ expr = \case
   Case s as  -> caseExpr s as
   List es    -> listLit es
   Tuple es   -> tupleLit es
-
+  Cons x xs   -> consExpr x xs
 -- ═════════════ Literais ════════════════════════════════
 lit :: Literal -> Build [IR.Signal]
 lit = \case
@@ -148,6 +148,7 @@ caseExpr scr alts
     needsSuper = \case
         PList  _ -> True   -- lista  [x, y, …]
         PTuple _ -> True   -- tupla  (a, b, …)
+        PCons _ _ -> True
         -- acrescente outros conforme necessário
         _        -> False
 
@@ -177,6 +178,17 @@ caseExpr scr alts
       -- superNum=1, 1 entrada, 1 saída, sem propriedades paralelas
       emit (IR.InstSuper nid 1 [inSig] 1 [[]])
       pure [IR.SigInstPort nid 0 Nothing]
+
+
+consExpr :: Expr -> Expr -> Build [IR.Signal]
+consExpr hd tl = do
+  -- Avalia cabeça e cauda
+  _ <- expr hd
+  _ <- expr tl
+  -- Gera super-instrução genérica
+  nid <- freshId
+  emit (IR.InstSuper nid 1 [] 1 [[]])
+  pure [IR.SigInstPort nid 0 Nothing]
 
 -- ---- Super para pattern-matching de listas -----------------------------
 listCaseViaSuper :: Expr -> Build [IR.Signal]
@@ -209,6 +221,7 @@ bindPat pat src = case pat of
   PVar x     -> remember x src
   PTuple ps  -> sequence_ [ bindPat p [src !! i] | (p,i) <- zip ps [0..] ]
   PList ps   -> sequence_ [ bindPat p src | p <- ps, not (isWild p) ]
+  PCons p ps  -> sequence_ [ bindPat subPat src | subPat <- [p, ps], not (isWild subPat) ]
   _          -> pure ()
  where isWild PWildcard = True; isWild _ = False
 

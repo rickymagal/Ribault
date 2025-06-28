@@ -140,6 +140,7 @@ checkExpr sig env expr = case expr of
         env' = Set.union env (Set.fromList ps)
     in dup ++ checkExpr sig env' e
   If c t e    -> concatMap (checkExpr sig env) [c,t,e]
+  Cons x xs -> checkExpr sig env x ++ checkExpr sig env xs
   Case s alts -> checkExpr sig env s ++ concatMap (checkAlt sig env) alts
   Let ds e    ->
     let sig' = Map.union (buildSig ds) sig
@@ -183,7 +184,8 @@ patVars = \case
   PLit _      -> []
   PList ps    -> concatMap patVars ps
   PTuple ps   -> concatMap patVars ps
-
+  PCons p ps -> patVars p ++ patVars ps
+  
 -- ======================================================
 -- 6) Type checking and inference
 -- ======================================================
@@ -209,9 +211,25 @@ checkProgram prog =
 -- | Unify expected and actual return types, allowing type variables.
 unifyReturn :: Type -> Type -> Infer Type
 unifyReturn expected actual
-  | TVar _ <- expected = return actual
-  | expected == actual = return actual
-  | otherwise          = throwError (Mismatch (Lit (LString "return")) expected actual)
+  -- variável de tipo no declarado: aceita o inferido
+  | TVar _    <- expected          = return actual
+  -- variável de tipo no inferido: aceita o declarado
+  | TVar _    <- actual            = return expected
+  -- ambos literais/idênticos: ok
+  | expected == actual             = return actual
+  -- listas homônomas: unifica o elemento
+  | TList e  <- expected
+  , TList a  <- actual             = unifyReturn e a >> return actual
+  -- tuplas do mesmo tamanho: unifica cada componente
+  | TTuple es <- expected
+  , TTuple as <- actual
+  , length es == length as         = mapM_ (uncurry unifyReturn) (zip es as) >> return actual
+  -- caso contrário é mismatch de retorno
+  | otherwise                      = throwError (Mismatch (Var "<return>") expected actual)
+
+isTVar :: Type -> Bool
+isTVar (TVar _) = True
+isTVar _        = False
 
 -- | Infer the type of an expression.
 inferExpr :: FuncEnv -> TypeEnv -> Expr -> Infer Type
@@ -221,7 +239,16 @@ inferExpr fenv tenv expr = case expr of
              Nothing -> case Map.lookup x fenv of
                           Just (argTys, retT) -> return (TFun argTys retT)
                           Nothing             -> throwError (UnknownVar x)
+
   Lit l -> return $ literalType l
+
+  Cons hd tl -> do
+    tHd <- inferExpr fenv tenv hd
+    tTl <- inferExpr fenv tenv tl
+    case tTl of
+      TList tEl | match tHd tEl -> return (TList (resolve tHd tEl))
+      TVar _ -> return (TList tHd)
+      _ -> throwError (Mismatch expr (TList tHd) tTl)
 
   Lambda ps bd -> do
     tys <- mapM (const freshTypeVar) ps
@@ -231,29 +258,18 @@ inferExpr fenv tenv expr = case expr of
 
   If c t e -> do
     _  <- inferExpr fenv tenv c >>= ensureBool c
-    tc <- inferExpr fenv tenv t; te <- inferExpr fenv tenv e
-    case (tc, te) of
-      (a,b) | a==b       -> return a
-      (TVar _, x)        -> return x
-      (x, TVar _)        -> return x
-      _                  -> throwError (BranchesTypeDiffer t e tc te)
+    tc <- inferExpr fenv tenv t
+    te <- inferExpr fenv tenv e
+    unifyReturn tc te
 
   Case scr alts -> do
     scrT <- inferExpr fenv tenv scr
     rs   <- forM alts $ \(pat, bd') -> do
       (vs,pT) <- inferPattern pat
-      when (not (isPoly scrT || isPoly pT) && pT /= scrT)
-        $ throwError (Mismatch scr pT scrT)
+      _ <- unifyReturn scrT pT
       inferExpr fenv (Map.union (Map.fromList vs) tenv) bd'
     case rs of
-      (r0:rs') -> do
-        t <- foldM (\t1 t2 ->
-                if t1==t2 then return t1
-                else if isPoly t1 then return t2
-                else if isPoly t2 then return t1
-                else throwError (BranchesTypeDiffer scr scr t1 t2)
-              ) r0 rs'
-        return t
+      (r0:rs') -> foldM unifyReturn r0 rs'
       [] -> throwError (Mismatch scr scrT scrT)
 
   Let ds e -> do
@@ -282,29 +298,37 @@ inferExpr fenv tenv expr = case expr of
       _      -> throwError (Mismatch expr (TVar "_") fty)
 
   BinOp op l r -> do
-    tl <- inferExpr fenv tenv l; tr <- inferExpr fenv tenv r
+    tl <- inferExpr fenv tenv l
+    tr <- inferExpr fenv tenv r
     case op of
-      Add -> numBin  op tl tr; Sub -> numBin  op tl tr
-      Mul -> numBin  op tl tr; Div -> numBin  op tl tr; Mod -> numBin  op tl tr
-      Eq  -> compBin op tl tr; Neq -> compBin op tl tr
-      Lt  -> compBin op tl tr; Le  -> compBin op tl tr
-      Gt  -> compBin op tl tr; Ge  -> compBin op tl tr
+      Add -> numBin  op tl tr
+      Sub -> numBin  op tl tr
+      Mul -> numBin  op tl tr
+      Div -> numBin  op tl tr
+      Mod -> numBin  op tl tr
+      Eq  -> compBin op tl tr
+      Neq -> compBin op tl tr
+      Lt  -> compBin op tl tr
+      Le  -> compBin op tl tr
+      Gt  -> compBin op tl tr
+      Ge  -> compBin op tl tr
 
   UnOp op e -> do
     te <- inferExpr fenv tenv e
     case op of
       Neg | te `elem` [TInt,TFloat] -> return te
-          | isPoly te              -> return TInt   -- assume int, unifica depois
-          | otherwise              -> throwError (UnOpTypeErr op te)
-      Not | te == TBool            -> return TBool
-          | isPoly te              -> return TBool
-          | otherwise              -> throwError (UnOpTypeErr op te)
+          | isPoly te               -> return TInt
+          | otherwise               -> throwError (UnOpTypeErr op te)
+      Not | te == TBool             -> return TBool
+          | isPoly te               -> return TBool
+          | otherwise               -> throwError (UnOpTypeErr op te)
+
   List xs -> do
     ts <- mapM (inferExpr fenv tenv) xs
     case ts of
-      []      -> freshTypeVar
-      (t:ts') | all (==t) ts' -> return (TList t)
-      _       -> throwError (Mismatch expr (TList (head ts)) (TList (last ts)))
+      [] -> freshTypeVar
+      (t:ts') | all (match t) ts' -> return (TList t)
+      _ -> throwError (Mismatch expr (TList (head ts)) (TList (last ts)))
 
   Tuple xs -> TTuple <$> mapM (inferExpr fenv tenv) xs
 
@@ -344,7 +368,13 @@ inferPattern = \case
     xs <- mapM inferPattern ps
     let (vs,ts) = unzip xs
     return (concat vs, TTuple ts)
-
+  PCons p ps -> do
+    (v1, t1) <- inferPattern p
+    (v2, t2) <- inferPattern ps
+    unless (match t2 (TList t1) || isPoly t1 || isPoly t2)
+      $ throwError (Mismatch (Lit (LString "pattern")) (TList t1) t2)
+    return (v1 ++ v2, TList t1)
+    
 -- | Determine the type of a literal.
 literalType :: Literal -> Type
 literalType = \case
