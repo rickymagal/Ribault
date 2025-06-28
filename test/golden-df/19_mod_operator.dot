@@ -1,10 +1,7 @@
-digraph G {
-  node [shape=box, style=rounded];
-  node [shape=triangle, style=solid];
-  const0 [label="const#15", shape=box, style=rounded];
-  const1 [label="const#7", shape=box, style=rounded];
-  mod2 [label="%", shape=box, style=rounded];
-
-  const0 -> mod2 [tailport=s, headport=nw];
-  const1 -> mod2 [tailport=s, headport=ne];
+digraph G{
+  n1 [shape=box style=rounded label="const #15"];
+  n5 [shape=box style=rounded label="const #7"];
+  n6 [shape=box style=rounded label="%"];
+  n-1 -> n6 [tailport=s, headport=nw];
+  n5 -> n6 [tailport=s, headport=ne];
 }

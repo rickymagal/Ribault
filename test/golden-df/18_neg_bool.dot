@@ -1,8 +1,5 @@
-digraph G {
-  node [shape=box, style=rounded];
-  node [shape=triangle, style=solid];
-  const0 [label="const#1", shape=box, style=rounded];
-  not1 [label="not", shape=box, style=rounded];
-
-  const0 -> not1 [tailport=s, headport=nw];
+digraph G{
+  n1 [shape=box style=rounded label="const #1"];
+  n5 [shape=box style=rounded label="eq0"];
+  n-1 -> n5 [tailport=s, headport=n];
 }

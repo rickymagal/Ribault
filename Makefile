@@ -15,6 +15,7 @@ DF_OUT_DIR  := $(TEST_DIR)/df-output
 DF_IMG_DIR  := $(TEST_DIR)/df-images
 AST_OUT_DIR := $(TEST_DIR)/ast-output
 AST_IMG_DIR := $(TEST_DIR)/ast-images
+CODE_OUT_DIR := $(TEST_DIR)/talm
 
 # -------- fontes -----------------------------------------------
 LEXER_SRC   := $(SRC_DIR)/Analysis/Lexer.x
@@ -27,7 +28,9 @@ INSTR_HS     := $(SRC_DIR)/Synthesis/Instruction.hs
 BUILDER_HS   := $(SRC_DIR)/Synthesis/Builder.hs
 GRAPHVIZ_HS  := $(SRC_DIR)/Synthesis/GraphViz.hs
 ASTGEN_HS   := $(SRC_DIR)/Analysis/AST-gen.hs
+CODEGEN_HS   := $(SRC_DIR)/Synthesis/Codegen.hs
 
+MAIN_CODE_HS := $(SRC_DIR)/Synthesis/MainCode.hs
 MAIN_DF_HS  := $(SRC_DIR)/Synthesis/MainGraph.hs
 MAIN_AST_HS := $(SRC_DIR)/Analysis/MainAST.hs
 
@@ -38,6 +41,7 @@ LIB_SUPERS  := libsupers.so
 # -------- executáveis -----------------------------------------
 EXE_DF      := synthesis
 EXE_AST     := analysis
+EXE_CODE     := codegen
 
 # ============================================================
 # Casos de teste
@@ -50,12 +54,13 @@ DF_IMGS     := $(patsubst $(DF_OUT_DIR)/%.dot,$(DF_IMG_DIR)/%.png,$(DF_DOTS))
 AST_DOTS    := $(patsubst $(TEST_DIR)/%.hsk,$(AST_OUT_DIR)/%.dot,$(TESTS))
 AST_IMGS    := $(patsubst $(AST_OUT_DIR)/%.dot,$(AST_IMG_DIR)/%.png,$(AST_DOTS))
 
+CODE_FL  := $(patsubst $(TEST_DIR)/%.hsk,$(CODE_OUT_DIR)/%.fl,$(TESTS))
 # ------------------------------------------------------------
 # Alvos de alto nível
 # ------------------------------------------------------------
-.PHONY: all df ast tokens images ast-dots ast-images supers clean
+.PHONY: all df ast code tokens images ast-dots ast-images supers clean
 
-all: df ast supers       ## gera .dot e .png de Dataflow/AST e libsupers.so
+all: df ast code supers       ## gera .dot e .png de Dataflow/AST e libsupers.so
 
 # ---------- biblioteca de super-instruções --------------------
 supers: $(LIB_SUPERS)     ## compila libsupers.so
@@ -64,13 +69,15 @@ $(LIB_SUPERS): $(SUPERS_HS)
 	$(GHC) -O2 -shared -dynamic -fPIC -o $@ $<
 
 # ---------- Dataflow & AST pipelines -------------------------
-df: tokens images        ## gera .dot/.png de Dataflow
+df: tokens images        
 tokens: $(DF_DOTS)
 images: $(DF_IMGS)
 
-ast: ast-dots ast-images ## gera .dot/.png de AST
+ast: ast-dots ast-images 
 ast-dots: $(AST_DOTS)
 ast-images: $(AST_IMGS)
+
+code: $(CODE_FL)  
 
 # ------------------------------------------------------------
 # Geração de Lexer / Parser
@@ -96,6 +103,13 @@ $(EXE_DF): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
 $(EXE_AST): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS) $(MAIN_AST_HS)
 	@echo "[GHC  ] $@"
 	$(GHC) -O2 -o $@ $(MAIN_AST_HS) $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS)
+
+$(EXE_CODE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
+             $(INSTR_HS) $(BUILDER_HS) $(CODEGEN_HS) $(MAIN_CODE_HS)
+	@echo "[GHC  ] $@"
+	$(GHC) -O2 -o $@ $(MAIN_CODE_HS) $(LEXER_HS) $(PARSER_HS) \
+	                 $(SYNTAX_HS) $(SEMANTIC_HS) \
+	                 $(INSTR_HS)  $(BUILDER_HS)  $(CODEGEN_HS)
 
 # ------------------------------------------------------------
 # Dataflow .dot
@@ -126,11 +140,17 @@ $(AST_IMG_DIR)/%.png: $(AST_OUT_DIR)/%.dot
 	$(DOT) -Tpng $< -o $@
 
 # ------------------------------------------------------------
+
+$(CODE_OUT_DIR)/%.fl: $(TEST_DIR)/%.hsk | $(EXE_CODE)
+	@mkdir -p $(CODE_OUT_DIR)
+	@echo "[TALM ] $< → $@"
+	./$(EXE_CODE) $< > $@
+
 # limpeza
 clean:
 	@echo "Limpeza completa."
 	@rm -f $(SRC_DIR)/Analysis/*.hi $(SRC_DIR)/Analysis/*.o \
 	        $(SRC_DIR)/Synthesis/*.hi $(SRC_DIR)/Synthesis/*.o \
-	        $(EXE_DF) $(EXE_AST) $(LIB_SUPERS)
+	        $(EXE_DF) $(EXE_AST) $(EXE_CODE) $(LIB_SUPERS)
 	@rm -f $(LEXER_HS) $(PARSER_HS)
 	@rm -rf $(DF_OUT_DIR) $(AST_OUT_DIR)

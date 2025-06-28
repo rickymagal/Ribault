@@ -1,36 +1,20 @@
-digraph G {
-  node [shape=box, style=rounded];
-  node [shape=triangle, style=solid];
-  const0 [label="const#10", shape=box, style=rounded];
-  const1 [label="const#1", shape=box, style=rounded];
-  le2 [label="<=", shape=box, style=rounded];
-  sub3 [label="-", shape=box, style=rounded];
-  callgroup4 [label="callgroup(fib)", shape=box, style=rounded];
-  callsnd5 [label="callsnd(fib,1)", shape=box, style=rounded];
-  retsnd6 [label="retsnd(fib)", shape=box, style=rounded];
-  const7 [label="const#2", shape=box, style=rounded];
-  sub8 [label="-", shape=box, style=rounded];
-  callgroup9 [label="callgroup(fib)", shape=box, style=rounded];
-  callsnd10 [label="callsnd(fib,1)", shape=box, style=rounded];
-  retsnd11 [label="retsnd(fib)", shape=box, style=rounded];
-  add12 [label="+", shape=box, style=rounded];
-  steer13 [label="T   F", shape=triangle, style=solid];
-
-  const0 -> le2 [tailport=s, headport=nw];
-  const1 -> le2 [tailport=s, headport=ne];
-  const0 -> sub3 [tailport=s, headport=nw];
-  const1 -> sub3 [tailport=s, headport=ne];
-  sub3 -> callsnd5 [tailport=s, headport=n];
-  callsnd5 -> callgroup4 [tailport=s, headport=nw];
-  callgroup4 -> retsnd6 [tailport=s, headport=n];
-  const0 -> sub8 [tailport=s, headport=nw];
-  const7 -> sub8 [tailport=s, headport=ne];
-  sub8 -> callsnd10 [tailport=s, headport=n];
-  callsnd10 -> callgroup9 [tailport=s, headport=nw];
-  callgroup9 -> retsnd11 [tailport=s, headport=n];
-  retsnd6 -> add12 [tailport=s, headport=nw];
-  retsnd11 -> add12 [tailport=s, headport=ne];
-  le2 -> steer13 [tailport=s, headport=n];
-  const0 -> steer13 [tailport=se, headport=ne];
-  add12 -> steer13 [tailport=sw, headport=nw];
+digraph G{
+  n1 [shape=box style=rounded label="const #10"];
+  n5 [shape=box style=rounded label="const #1"];
+  n6 [shape=box style=rounded label="<="];
+  n7 [shape=triangle style=solid label="T   F"];
+  n9 [shape=box style=rounded label="const #1"];
+  n10 [shape=box style=rounded label="-"];
+  n14 [shape=box style=rounded label="const #2"];
+  n15 [shape=box style=rounded label="-"];
+  n18 [shape=box style=rounded label="+"];
+  n-1 -> n6 [tailport=s, headport=nw];
+  n5 -> n6 [tailport=s, headport=ne];
+  n6 -> n7 [tailport=s, headport=n];
+  n-1 -> n10 [tailport=s, headport=nw];
+  n9 -> n10 [tailport=s, headport=ne];
+  n-1 -> n15 [tailport=s, headport=nw];
+  n14 -> n15 [tailport=s, headport=ne];
+  return -> n18 [tailport=s, headport=nw];
+  return -> n18 [tailport=s, headport=ne];
 }
