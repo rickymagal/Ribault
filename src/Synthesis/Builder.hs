@@ -94,10 +94,19 @@ lit = \case
                    pure [IR.SigInstPort nid 0 Nothing]
 
 listLit :: [Expr] -> Build [IR.Signal]
-listLit es = for_ es expr >> makeCount (length es)
+listLit es = do
+  sigsPerElem <- mapM expr es
+  let allSigs = concat sigsPerElem
+  nid <- freshId
+  emit (IR.InstSuper nid 1 [allSigs] 1 [[]])
+  pure [IR.SigInstPort nid 0 Nothing]
 
 tupleLit :: [Expr] -> Build [IR.Signal]
-tupleLit es = concat <$> mapM expr es
+tupleLit es = do
+  allSigs <- concat <$> mapM expr es
+  nid     <- freshId
+  emit (IR.InstSuper nid 1 [allSigs] 1 [[]])
+  pure [IR.SigInstPort nid 0 Nothing]
 
 makeCount :: Int -> Build [IR.Signal]
 makeCount n = do nid <- freshId
@@ -182,12 +191,11 @@ caseExpr scr alts
 
 consExpr :: Expr -> Expr -> Build [IR.Signal]
 consExpr hd tl = do
-  -- Avalia cabeça e cauda
-  _ <- expr hd
-  _ <- expr tl
-  -- Gera super-instrução genérica
-  nid <- freshId
-  emit (IR.InstSuper nid 1 [] 1 [[]])
+  hdSig <- expr hd
+  tlSig <- expr tl
+  nid   <- freshId
+  -- Super-instrução genérica de cons: agora passa hdSig e tlSig COMO entrada
+  emit (IR.InstSuper nid 1 [hdSig, tlSig] 1 [[]])
   pure [IR.SigInstPort nid 0 Nothing]
 
 -- ---- Super para pattern-matching de listas -----------------------------
