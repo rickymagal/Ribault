@@ -46,13 +46,15 @@ $white+                  ;
 "="                      { \p _ -> (p, TokenEquals) }
 "\"                      { \p _ -> (p, TokenBackslash) }
 "_"                      { \p _ -> (p, TokenUnderscore) }
-
+			 
 "("                      { \p _ -> (p, TokenLParen) }
 ")"                      { \p _ -> (p, TokenRParen) }
 "["                      { \p _ -> (p, TokenLBracket) }
 "]"                      { \p _ -> (p, TokenRBracket) }
 ","                      { \p _ -> (p, TokenComma) }
 ";"                      { \p _ ->   (p, TokenSemi) }
+":"                      { \p _ -> (p, TokenColon) }
+
 
 $digit+ "." $digit+     { \p s -> (p, TokenFloat (read s)) }
 $digit+                 { \p s -> (p, TokenInt (read s)) }
@@ -62,7 +64,7 @@ $digit+                 { \p s -> (p, TokenInt (read s)) }
 
 $alpha $idchar*          { \p s -> (p, TokenIdent s) }
 "-"                      { \p _ -> (p, TokenMinus) }
-.                         { \p s -> error ("Erro léxico: caractere inesperado `" ++ s ++ "` em " ++ show p) }
+.                         { \p s -> error ("Erro léxico: caractere inesperado " ++ s ++ " em " ++ show p) }
 
 {
 
@@ -84,7 +86,7 @@ data Token
   | TokenUnderscore
   | TokenLParen | TokenRParen
   | TokenLBracket | TokenRBracket
-  | TokenComma | TokenSemi
+  | TokenComma | TokenColon | TokenSemi
 
   -- Literais e identificadores
   | TokenInt Int
@@ -96,6 +98,7 @@ data Token
 
 instance Show Token where
   show TokenSemi        = ";"
+  show TokenColon       = ":" 
   show TokenLet         = "let"
   show TokenIn          = "in"
   show TokenIf          = "if"
@@ -136,4 +139,4 @@ instance Show Token where
 type PosnToken = (AlexPosn, Token)
 alexScanTokens :: String -> [PosnToken]
 
-}
+} 

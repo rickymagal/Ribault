@@ -14,6 +14,7 @@ import Lexer (Token(..), PosnToken, AlexPosn)
 %left "*" "/" "%"
 %right "not" "-"
 %right ";"
+%right ":"
 %left APP   
 
 
@@ -23,6 +24,7 @@ import Lexer (Token(..), PosnToken, AlexPosn)
 
 %token
   ";"           { (_, TokenSemi) }
+  ":"           { (_, TokenColon) }
   "let"         { (_, TokenLet) }
   "in"          { (_, TokenIn) }
   "if"          { (_, TokenIf) }
@@ -85,6 +87,7 @@ Expr :: { Expr }
     | CaseExpr                      { $1 }
     | LetExpr                       { $1 }
     | ExprOr                        { $1 }
+    | Expr ":" Expr                 { Cons $1 $3 }
 
 Lambda :: { Expr }
     : "\\" LamParams "->" Expr     { Lambda (reverse $2) $4 }
@@ -225,6 +228,7 @@ Pattern :: { Pattern }
     : "_"                           { PWildcard }
     | ident                         { PVar $1 }
     | Literal                       { PLit $1 }
+    | Pattern ":" Pattern           { PCons $1 $3 }
     | ListPattern                   { $1 }
     | TuplePattern                  { $1 }
 
