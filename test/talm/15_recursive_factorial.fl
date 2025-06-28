@@ -1,0 +1,16 @@
+callgroup("cg0", "fact")
+const n1 5
+callsnd fact[1] n1.0 cg0
+retsnd fact[0] factret.cg0 cg0
+ret n4 factret.cg0 factret.cg0
+const n5 1
+<= n6 n-1.0 n5.0
+steer n7 n6.0 []
+const n8 1
+callgroup("cg9", "fact")
+const n10 1
+sub n11 n-1.0 n10.0
+callsnd fact[1] n11.0 cg9
+retsnd fact[0] factret.cg9 cg9
+mul n14 n-1.0 factret.cg9
+ret n15 [n8.0, n14.0] [n8.0, n14.0]

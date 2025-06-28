@@ -1,0 +1,7 @@
+callgroup("cg0", "negBool")
+const n1 1
+callsnd negBool[1] n1.0 cg0
+retsnd negBool[0] negBoolret.cg0 cg0
+ret n4 negBoolret.cg0 negBoolret.cg0
+eqi n5 n-1.0 0
+ret n6 n5.0 n5.0

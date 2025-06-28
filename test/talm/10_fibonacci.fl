@@ -1,0 +1,20 @@
+callgroup("cg0", "fib")
+const n1 10
+callsnd fib[1] n1.0 cg0
+retsnd fib[0] fibret.cg0 cg0
+ret n4 fibret.cg0 fibret.cg0
+const n5 1
+<= n6 n-1.0 n5.0
+steer n7 n6.0 []
+callgroup("cg8", "fib")
+const n9 1
+sub n10 n-1.0 n9.0
+callsnd fib[1] n10.0 cg8
+retsnd fib[0] fibret.cg8 cg8
+callgroup("cg13", "fib")
+const n14 2
+sub n15 n-1.0 n14.0
+callsnd fib[1] n15.0 cg13
+retsnd fib[0] fibret.cg13 cg13
+add n18 fibret.cg8 fibret.cg13
+ret n19 [n-1.0, n18.0] [n-1.0, n18.0]

@@ -1,0 +1,7 @@
+callgroup("cg0", "neg")
+const n1 7
+callsnd neg[1] n1.0 cg0
+retsnd neg[0] negret.cg0 cg0
+ret n4 negret.cg0 negret.cg0
+subi n5 n-1.0 0
+ret n6 n5.0 n5.0

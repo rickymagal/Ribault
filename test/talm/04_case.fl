@@ -1,0 +1,13 @@
+callgroup("cg0", "fstPair")
+const n1 10
+const n2 15
+callsnd fstPair[1] [n1.0, n2.0] cg0
+retsnd fstPair[0] fstPairret.cg0 cg0
+ret n5 fstPairret.cg0 fstPairret.cg0
+const n6 1
+steer n7 n6.0 []
+const n8 1
+steer n9 n8.0 []
+const n10 0
+const n11 0
+ret n12 [n-1.0, n10.0, n11.0] [n-1.0, n10.0, n11.0]

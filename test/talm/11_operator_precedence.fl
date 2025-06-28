@@ -1,0 +1,6 @@
+const n0 2
+const n1 3
+const n2 4
+mul n3 n1.0 n2.0
+add n4 n0.0 n3.0
+ret n5 n4.0 n4.0

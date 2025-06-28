@@ -1,0 +1,25 @@
+const n0 1
+const n1 2
+ret n2 [n0.0, n1.0] [n0.0, n1.0]
+const n3 1
+const n4 2
+const n5 3
+const n6 3
+ret n7 n6.0 n6.0
+const n8 108
+const n9 97
+const n10 109
+const n11 98
+const n12 100
+const n13 97
+ret n14 [n8.0, n9.0, n10.0, n11.0, n12.0, n13.0] [n8.0, n9.0, n10.0, n11.0, n12.0, n13.0]
+const n15 122
+ret n16 n15.0 n15.0
+fconst n17 3.14
+ret n18 n17.0 n17.0
+const n19 42
+ret n20 n19.0 n19.0
+const n21 0
+ret n22 n21.0 n21.0
+const n23 1
+ret n24 n23.0 n23.0

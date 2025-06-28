@@ -1,0 +1,9 @@
+callgroup("cg0", "add")
+const n1 10
+callsnd add[1] n1.0 cg0
+const n3 4
+callsnd add[2] n3.0 cg0
+retsnd add[0] addret.cg0 cg0
+ret n6 addret.cg0 addret.cg0
+add n7 n-2.0 n-1.0
+ret n8 n7.0 n7.0

@@ -1,14 +1,11 @@
-digraph G {
-  node [shape=box, style=rounded];
-  node [shape=triangle, style=solid];
-  const0 [label="const#2", shape=box, style=rounded];
-  const1 [label="const#3", shape=box, style=rounded];
-  const2 [label="const#4", shape=box, style=rounded];
-  mul3 [label="*", shape=box, style=rounded];
-  add4 [label="+", shape=box, style=rounded];
-
-  const1 -> mul3 [tailport=s, headport=nw];
-  const2 -> mul3 [tailport=s, headport=ne];
-  const0 -> add4 [tailport=s, headport=nw];
-  mul3 -> add4 [tailport=s, headport=ne];
+digraph G{
+  n0 [shape=box style=rounded label="const #2"];
+  n1 [shape=box style=rounded label="const #3"];
+  n2 [shape=box style=rounded label="const #4"];
+  n3 [shape=box style=rounded label="*"];
+  n4 [shape=box style=rounded label="+"];
+  n1 -> n3 [tailport=s, headport=nw];
+  n2 -> n3 [tailport=s, headport=ne];
+  n0 -> n4 [tailport=s, headport=nw];
+  n3 -> n4 [tailport=s, headport=ne];
 }

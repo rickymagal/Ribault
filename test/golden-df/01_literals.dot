@@ -1,31 +1,19 @@
-digraph G {
-  node [shape=box, style=rounded];
-  node [shape=triangle, style=solid];
-  const0 [label="const#1", shape=box, style=rounded];
-  const1 [label="const#2", shape=box, style=rounded];
-  super2 [label="S2", shape=box, style=rounded];
-  const3 [label="const#3", shape=box, style=rounded];
-  super4 [label="S1", shape=box, style=rounded];
-  const5 [label="const#108", shape=box, style=rounded];
-  const6 [label="const#97", shape=box, style=rounded];
-  const7 [label="const#109", shape=box, style=rounded];
-  const8 [label="const#98", shape=box, style=rounded];
-  const9 [label="const#100", shape=box, style=rounded];
-  super10 [label="S1", shape=box, style=rounded];
-  const11 [label="const#122", shape=box, style=rounded];
-  const12 [label="fconst#3.14", shape=box, style=rounded];
-  const13 [label="const#42", shape=box, style=rounded];
-  const14 [label="const#0", shape=box, style=rounded];
-
-  const0 -> super2 [tailport=s, headport=nw];
-  const1 -> super2 [tailport=s, headport=nw];
-  const0 -> super4 [tailport=s, headport=nw];
-  const1 -> super4 [tailport=s, headport=nw];
-  const3 -> super4 [tailport=s, headport=nw];
-  const5 -> super10 [tailport=s, headport=nw];
-  const6 -> super10 [tailport=s, headport=nw];
-  const7 -> super10 [tailport=s, headport=nw];
-  const8 -> super10 [tailport=s, headport=nw];
-  const9 -> super10 [tailport=s, headport=nw];
-  const6 -> super10 [tailport=s, headport=nw];
+digraph G{
+  n0 [shape=box style=rounded label="const #1"];
+  n1 [shape=box style=rounded label="const #2"];
+  n3 [shape=box style=rounded label="const #1"];
+  n4 [shape=box style=rounded label="const #2"];
+  n5 [shape=box style=rounded label="const #3"];
+  n6 [shape=box style=rounded label="const #3"];
+  n8 [shape=box style=rounded label="const #108"];
+  n9 [shape=box style=rounded label="const #97"];
+  n10 [shape=box style=rounded label="const #109"];
+  n11 [shape=box style=rounded label="const #98"];
+  n12 [shape=box style=rounded label="const #100"];
+  n13 [shape=box style=rounded label="const #97"];
+  n15 [shape=box style=rounded label="const #122"];
+  n17 [shape=box style=rounded label="fconst #3.14"];
+  n19 [shape=box style=rounded label="const #42"];
+  n21 [shape=box style=rounded label="const #0"];
+  n23 [shape=box style=rounded label="const #1"];
 }

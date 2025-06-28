@@ -1,14 +1,9 @@
-digraph G {
-  node [shape=box, style=rounded];
-  node [shape=triangle, style=solid];
-  const0 [label="const#3", shape=box, style=rounded];
-  const1 [label="const#2", shape=box, style=rounded];
-  gt2 [label=">", shape=box, style=rounded];
-  steer3 [label="T   F", shape=triangle, style=solid];
-
-  const1 -> gt2 [tailport=s, headport=nw];
-  const0 -> gt2 [tailport=s, headport=ne];
-  gt2 -> steer3 [tailport=s, headport=n];
-  const1 -> steer3 [tailport=se, headport=ne];
-  const0 -> steer3 [tailport=sw, headport=nw];
+digraph G{
+  n1 [shape=box style=rounded label="const #3"];
+  n3 [shape=box style=rounded label="const #2"];
+  n7 [shape=box style=rounded label=">"];
+  n8 [shape=triangle style=solid label="T   F"];
+  n-2 -> n7 [tailport=s, headport=nw];
+  n-1 -> n7 [tailport=s, headport=ne];
+  n7 -> n8 [tailport=s, headport=n];
 }
