@@ -14,6 +14,8 @@ import Lexer (Token(..), PosnToken, AlexPosn)
 %left "*" "/" "%"
 %right "not" "-"
 %right ";"
+%nonassoc "in"       
+%nonassoc "else"
 %right ":"
 %left APP   
 
