@@ -15,14 +15,25 @@ import           Synthesis.Instruction
 -- ════════════════════════════════════════════════
 render :: [Inst] -> TL.Text
 render allInsts =
-  let called = S.fromList [ f | InstCallGrp{ cgFun = f } <- allInsts ]
-      insts  = filter (keepReturn called) allInsts        -- remove “return res3”
-      idx    = callGrpIndex insts
-      edges  = S.fromList
-                 [ e | i <- insts, e <- normEdges i ++ extraEdges idx i ]
+  let called  = S.fromList [ f | InstCallGrp{ cgFun = f } <- allInsts ]
+      insts   = filter (keepReturn called) allInsts
+
+      idx     = callGrpIndex insts
+      edges   = S.fromList
+                  [ e | i <- insts, e <- normEdges i ++ extraEdges idx i ]
+
+      realIDs = S.fromList (map nodeId insts)
+      -- dummies (parâmetros) = ids negativos que aparecem só nas edges
+      argIDs  = S.filter (\nid@(NodeId n) -> n < 0 && nid `S.notMember` realIDs)
+                         (edgeNodes edges)
+
+      -- numerar arg-nodes  arg1,arg2…
+      argMap  = M.fromList (zip (S.toAscList argIDs) [1..])
+
   in B.toLazyText $
          header
       <> mconcat (map nodeLine insts)
+      <> mconcat (map (argNodeLine argMap) (S.toAscList argIDs))
       <> mconcat (map edgeLine $ S.toList edges)
       <> footer
 
@@ -41,13 +52,16 @@ footer = "}\n"
 -- Helpers
 -- ═══════════════════════════════════════
 nodeName :: NodeId -> String
-nodeName (NodeId n) | n < 0     = 'd' : show (abs n)
+nodeName (NodeId n) | n < 0     = 'd' : show (abs n)   -- parâmetros dummies
                     | otherwise = 'n' : show n
 
 escape :: TL.Text -> B.Builder
 escape = B.fromLazyText . TL.replace "\"" "\\\""
 
 type Edge = (NodeId, NodeId)
+
+edgeNodes :: S.Set Edge -> S.Set NodeId
+edgeNodes = S.foldr (\(a,b) s -> S.insert a (S.insert b s)) S.empty
 
 -- ═══════════════════════════════════════
 -- Nodes
@@ -62,6 +76,14 @@ nodeLine inst =
   where
     nid = B.fromString (nodeName (nodeId inst))
     lbl = escape (labelFor inst)
+
+-- nós para parâmetros formais
+argNodeLine :: M.Map NodeId Int -> NodeId -> B.Builder
+argNodeLine amap nid =
+  case M.lookup nid amap of
+    Just k  -> "  " <> n <> " [label=\"arg" <> B.fromString (show k) <> "\"];\n"
+    Nothing -> mempty
+  where n = B.fromString (nodeName nid)
 
 labelFor :: Inst -> TL.Text
 labelFor InstConst{..}
@@ -85,9 +107,8 @@ normEdges :: Inst -> [Edge]
 normEdges inst = concatMap mk (inputs inst)
   where
     dst = nodeId inst
-    ok  (NodeId k) = k >= 0
-    mk SigInstPort {sigNode = src} | ok src = [(src,dst)]
-    mk SigSteerPort{sigNode = src} | ok src = [(src,dst)]
+    mk SigInstPort {sigNode = src} = [(src,dst)]
+    mk SigSteerPort{sigNode = src} = [(src,dst)]
     mk _ = []
 
 inputs :: Inst -> [Signal]
@@ -103,7 +124,7 @@ inputs InstCallSnd{..}    = csOper
 inputs InstRetSnd{..}     = rsOper
 inputs _                  = []
 
--- arestas extra p/ ligações da chamada
+-- extras p/ ligações da chamada
 extraEdges :: M.Map (String,String) NodeId -> Inst -> [Edge]
 extraEdges idx InstCallSnd{ nodeId = s, csFun = f, csGroup = g } =
   maybe [] (\grp -> [(s,grp)]) (M.lookup (f,g) idx)
