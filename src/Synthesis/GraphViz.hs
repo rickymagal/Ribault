@@ -11,39 +11,35 @@ import qualified Data.Text.Lazy.Builder as B
 import           Synthesis.Instruction
 
 -- ════════════════════════════════════════════════
--- Entrada principal
+-- Render
 -- ════════════════════════════════════════════════
 render :: [Inst] -> TL.Text
 render allInsts =
-  let calledFuns = S.fromList [ f | InstCallGrp{ cgFun = f } <- allInsts ]
-
-      -- descarta returns não-chamados
-      insts      = filter (keepReturn calledFuns) allInsts
-
-      grpIdx     = callGrpIndex insts
-      edges      = S.fromList
-                     [ e | i <- insts
-                         , e <- normEdges i ++ extraEdges grpIdx i ]
+  let called = S.fromList [ f | InstCallGrp{ cgFun = f } <- allInsts ]
+      insts  = filter (keepReturn called) allInsts        -- remove “return res3”
+      idx    = callGrpIndex insts
+      edges  = S.fromList
+                 [ e | i <- insts, e <- normEdges i ++ extraEdges idx i ]
   in B.toLazyText $
          header
       <> mconcat (map nodeLine insts)
-      <> mconcat (map edgeLine . S.toList $ edges)
+      <> mconcat (map edgeLine $ S.toList edges)
       <> footer
 
 keepReturn :: S.Set String -> Inst -> Bool
-keepReturn funSet (InstReturn { funName = f }) = f `S.member` funSet
-keepReturn _       _                           = True
+keepReturn funs InstReturn{ funName = f } = f `S.member` funs
+keepReturn _    _                         = True
 
--- ════════════════════════════════════════════════
+-- ═══════════════════════════════════════
 -- DOT boilerplate
--- ════════════════════════════════════════════════
+-- ═══════════════════════════════════════
 header, footer :: B.Builder
 header = "digraph G {\n  node [shape=box, style=rounded];\n"
 footer = "}\n"
 
--- ════════════════════════════════════════════════
+-- ═══════════════════════════════════════
 -- Helpers
--- ════════════════════════════════════════════════
+-- ═══════════════════════════════════════
 nodeName :: NodeId -> String
 nodeName (NodeId n) | n < 0     = 'd' : show (abs n)
                     | otherwise = 'n' : show n
@@ -51,11 +47,11 @@ nodeName (NodeId n) | n < 0     = 'd' : show (abs n)
 escape :: TL.Text -> B.Builder
 escape = B.fromLazyText . TL.replace "\"" "\\\""
 
-type Edge = (NodeId, NodeId)   -- sem rótulos
+type Edge = (NodeId, NodeId)
 
--- ════════════════════════════════════════════════
--- Nós
--- ════════════════════════════════════════════════
+-- ═══════════════════════════════════════
+-- Nodes
+-- ═══════════════════════════════════════
 nodeLine :: Inst -> B.Builder
 nodeLine inst =
   case inst of
@@ -82,17 +78,16 @@ labelFor InstCallSnd{}    = "callsnd"
 labelFor InstRetSnd{}     = "retsnd"
 labelFor _                = "?"
 
--- ════════════════════════════════════════════════
--- Arestas normais (vindas dos Signals)
--- ════════════════════════════════════════════════
+-- ═══════════════════════════════════════
+-- Edges
+-- ═══════════════════════════════════════
 normEdges :: Inst -> [Edge]
 normEdges inst = concatMap mk (inputs inst)
   where
     dst = nodeId inst
-    valid (NodeId k) = k >= 0
-
-    mk SigInstPort { sigNode = src } | valid src = [(src, dst)]
-    mk SigSteerPort{ sigNode = src } | valid src = [(src, dst)]
+    ok  (NodeId k) = k >= 0
+    mk SigInstPort {sigNode = src} | ok src = [(src,dst)]
+    mk SigSteerPort{sigNode = src} | ok src = [(src,dst)]
     mk _ = []
 
 inputs :: Inst -> [Signal]
@@ -108,32 +103,19 @@ inputs InstCallSnd{..}    = csOper
 inputs InstRetSnd{..}     = rsOper
 inputs _                  = []
 
--- ════════════════════════════════════════════════
--- Arestas extra: callsnd → callgrp   &   callgrp → retsnd
--- ════════════════════════════════════════════════
+-- arestas extra p/ ligações da chamada
 extraEdges :: M.Map (String,String) NodeId -> Inst -> [Edge]
-extraEdges idx InstCallSnd{ nodeId = sndN, csFun = f, csGroup = g } =
-  maybe [] (\grpN -> [(sndN, grpN)]) (M.lookup (f, g) idx)
-extraEdges idx InstRetSnd{ nodeId = retN, rsFun = f, rsGroup = g } =
-  maybe [] (\grpN -> [(grpN, retN)]) (M.lookup (f, g) idx)
+extraEdges idx InstCallSnd{ nodeId = s, csFun = f, csGroup = g } =
+  maybe [] (\grp -> [(s,grp)]) (M.lookup (f,g) idx)
+extraEdges idx InstRetSnd{ nodeId = r, rsFun = f, rsGroup = g } =
+  maybe [] (\grp -> [(grp,r)]) (M.lookup (f,g) idx)
 extraEdges _ _ = []
 
--- índice (fun,grp) → NodeId do callgrp
 callGrpIndex :: [Inst] -> M.Map (String,String) NodeId
-callGrpIndex =
-  M.fromList
-    . map toPair
-    . filter isGrp
-  where
-    isGrp InstCallGrp{} = True
-    isGrp _             = False
+callGrpIndex = M.fromList
+  . map (\InstCallGrp{cgFun = f, cgName = g, nodeId = n} -> ((f,g),n))
+  . filter (\x -> case x of InstCallGrp{} -> True; _ -> False)
 
-    toPair (InstCallGrp{ cgFun = f, cgName = g, nodeId = n }) = ((f,g), n)
-    toPair _ = error "callGrpIndex: unexpected node"
-
--- ════════════════════════════════════════════════
--- Impressão de arestas
--- ════════════════════════════════════════════════
 edgeLine :: Edge -> B.Builder
 edgeLine (src,dst) =
   "  " <> B.fromString (nodeName src)
