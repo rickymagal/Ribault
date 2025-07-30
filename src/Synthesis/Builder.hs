@@ -157,20 +157,16 @@ letExpr binds body = do
 
 ifExpr :: Expr -> Expr -> Expr -> Build [IR.Signal]
 ifExpr c t f = do
-  cond <- expr c
-  sid  <- freshId
-  emit (IR.InstSteer sid cond [])
-  let tGate = [IR.SigSteerPort sid IR.T]
-      fGate = [IR.SigSteerPort sid IR.F]
-  env0 <- gets env
-  remember "__if" tGate
-  tSig <- expr t
-  modify' $ \s -> s{env = env0}
-  remember "__if" fGate
-  fSig <- expr f
-  modify' $ \s -> s{env = env0}
-  pure (tSig ++ fSig)
-
+  condSig <- expr c          -- comparação, p.ex. “>”
+  env0    <- gets env
+  tSig    <- expr t
+  modify' $ \s -> s{ env = env0 }
+  fSig    <- expr f
+  modify' $ \s -> s{ env = env0 }
+  sid <- freshId
+  emit (IR.InstSteer sid condSig (tSig ++ fSig))
+  pure [ IR.SigSteerPort sid IR.T
+       , IR.SigSteerPort sid IR.F ]
 -- ═════════════════════════════════════════════════════════════════════
 -- case  – por enquanto “S1”
 -- ═════════════════════════════════════════════════════════════════════
