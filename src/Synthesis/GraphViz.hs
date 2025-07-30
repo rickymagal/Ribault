@@ -1,61 +1,61 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
--- | Converte a lista linear de 'Inst' (IR) em texto DOT.
---   Robusto: nunca faz pattern-match incompleto nem usa 'error'.
---
---   Exemplos:
---
---   > let dot = Synthesis.GraphViz.render progIR
---   > Data.Text.Lazy.IO.writeFile "g.dot" dot
---   > dot -Tpng g.dot -o g.png
---
 module Synthesis.GraphViz (render) where
 
-import qualified Data.Set                 as S
-import qualified Data.Text.Lazy           as TL
-import qualified Data.Text.Lazy.Builder   as B
+import qualified Data.Map.Strict        as M
+import qualified Data.Set               as S
+import qualified Data.Text.Lazy         as TL
+import qualified Data.Text.Lazy.Builder as B
 
 import           Synthesis.Instruction
 
--- ════════════════════════════════════════════════════════════════════
--- API
--- ════════════════════════════════════════════════════════════════════
-
+-- ════════════════════════════════════════════════
+-- Entrada principal
+-- ════════════════════════════════════════════════
 render :: [Inst] -> TL.Text
-render insts =
-    B.toLazyText $
+render allInsts =
+  let calledFuns = S.fromList [ f | InstCallGrp{ cgFun = f } <- allInsts ]
+
+      -- descarta returns não-chamados
+      insts      = filter (keepReturn calledFuns) allInsts
+
+      grpIdx     = callGrpIndex insts
+      edges      = S.fromList
+                     [ e | i <- insts
+                         , e <- normEdges i ++ extraEdges grpIdx i ]
+  in B.toLazyText $
          header
       <> mconcat (map nodeLine insts)
-      <> mconcat (map edgeLine . S.toList $ allEdges)
+      <> mconcat (map edgeLine . S.toList $ edges)
       <> footer
-  where
-    allEdges = S.fromList (concatMap mkEdges insts)
 
--- ════════════════════════════════════════════════════════════════════
+keepReturn :: S.Set String -> Inst -> Bool
+keepReturn funSet (InstReturn { funName = f }) = f `S.member` funSet
+keepReturn _       _                           = True
+
+-- ════════════════════════════════════════════════
 -- DOT boilerplate
--- ════════════════════════════════════════════════════════════════════
-
+-- ════════════════════════════════════════════════
 header, footer :: B.Builder
 header = "digraph G {\n  node [shape=box, style=rounded];\n"
 footer = "}\n"
 
--- ════════════════════════════════════════════════════════════════════
+-- ════════════════════════════════════════════════
 -- Helpers
--- ════════════════════════════════════════════════════════════════════
-
+-- ════════════════════════════════════════════════
 nodeName :: NodeId -> String
-nodeName (NodeId n)
-  | n < 0     = 'd' : show (abs n)   -- dummy (parâmetro formal)
-  | otherwise = 'n' : show n
+nodeName (NodeId n) | n < 0     = 'd' : show (abs n)
+                    | otherwise = 'n' : show n
 
 escape :: TL.Text -> B.Builder
 escape = B.fromLazyText . TL.replace "\"" "\\\""
 
--- ════════════════════════════════════════════════════════════════════
--- Nodes
--- ════════════════════════════════════════════════════════════════════
+type Edge = (NodeId, NodeId)   -- sem rótulos
 
+-- ════════════════════════════════════════════════
+-- Nós
+-- ════════════════════════════════════════════════
 nodeLine :: Inst -> B.Builder
 nodeLine inst =
   case inst of
@@ -82,31 +82,22 @@ labelFor InstCallSnd{}    = "callsnd"
 labelFor InstRetSnd{}     = "retsnd"
 labelFor _                = "?"
 
--- ════════════════════════════════════════════════════════════════════
--- Edges
--- ════════════════════════════════════════════════════════════════════
-
-type Edge = (NodeId, NodeId, Maybe String)   -- src dst label
-
-mkEdges :: Inst -> [Edge]
-mkEdges inst = concatMap toEdge (inputs inst)
+-- ════════════════════════════════════════════════
+-- Arestas normais (vindas dos Signals)
+-- ════════════════════════════════════════════════
+normEdges :: Inst -> [Edge]
+normEdges inst = concatMap mk (inputs inst)
   where
     dst = nodeId inst
     valid (NodeId k) = k >= 0
 
-    toEdge :: Signal -> [Edge]
-    toEdge SigInstPort{sigNode = n} | valid n = [(n, dst, Nothing)]
-    toEdge SigSteerPort{sigNode = n, sigBranch = br}
-                       | valid n = [(n, dst, Just (showBranch br))]
-    toEdge _ = []   -- ReturnPort ou futuro signal → ignora
+    mk SigInstPort { sigNode = src } | valid src = [(src, dst)]
+    mk SigSteerPort{ sigNode = src } | valid src = [(src, dst)]
+    mk _ = []
 
-    showBranch T = "T"
-    showBranch F = "F"
-
--- | Coleta todas as fontes de dados de uma instrução.
 inputs :: Inst -> [Signal]
 inputs InstConst{}        = []
-inputs InstBinop{..}      = leftSrc  ++ rightSrc
+inputs InstBinop{..}      = leftSrc ++ rightSrc
 inputs InstBinopI{..}     = uniSrc
 inputs InstSteer{..}      = steerExpr ++ steerInp
 inputs InstIncTag{..}     = tagInp
@@ -117,11 +108,35 @@ inputs InstCallSnd{..}    = csOper
 inputs InstRetSnd{..}     = rsOper
 inputs _                  = []
 
+-- ════════════════════════════════════════════════
+-- Arestas extra: callsnd → callgrp   &   callgrp → retsnd
+-- ════════════════════════════════════════════════
+extraEdges :: M.Map (String,String) NodeId -> Inst -> [Edge]
+extraEdges idx InstCallSnd{ nodeId = sndN, csFun = f, csGroup = g } =
+  maybe [] (\grpN -> [(sndN, grpN)]) (M.lookup (f, g) idx)
+extraEdges idx InstRetSnd{ nodeId = retN, rsFun = f, rsGroup = g } =
+  maybe [] (\grpN -> [(grpN, retN)]) (M.lookup (f, g) idx)
+extraEdges _ _ = []
+
+-- índice (fun,grp) → NodeId do callgrp
+callGrpIndex :: [Inst] -> M.Map (String,String) NodeId
+callGrpIndex =
+  M.fromList
+    . map toPair
+    . filter isGrp
+  where
+    isGrp InstCallGrp{} = True
+    isGrp _             = False
+
+    toPair (InstCallGrp{ cgFun = f, cgName = g, nodeId = n }) = ((f,g), n)
+    toPair _ = error "callGrpIndex: unexpected node"
+
+-- ════════════════════════════════════════════════
+-- Impressão de arestas
+-- ════════════════════════════════════════════════
 edgeLine :: Edge -> B.Builder
-edgeLine (src, dst, mLab) =
+edgeLine (src,dst) =
   "  " <> B.fromString (nodeName src)
-  <> " -> " <> B.fromString (nodeName dst)
-  <> case mLab of
-       Nothing -> ""
-       Just t  -> " [label=\"" <> B.fromString t <> "\"]"
-  <> ";\n"
+       <> " -> "
+       <> B.fromString (nodeName dst)
+       <> ";\n"
