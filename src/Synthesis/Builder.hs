@@ -2,8 +2,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
--- | Tradução da AST para a IR de data-flow.
--- | Só depende de 'Syntax' e 'Synthesis.Instruction'.
+-- | Constrói a lista linear de ‘Inst’ a partir da AST.
+-- | Place-holders “S1” são usados para lista / tupla / cons / case,
+--   mas ‘if’ e aplicação 1ª-ordem já estão completos.
 
 module Synthesis.Builder (buildProgram) where
 
@@ -56,7 +57,7 @@ topDecl (FunDecl f ps (Lambda ls body)) =
   topDecl (FunDecl f (ps ++ ls) body)
 
 topDecl (FunDecl f ps body) = do
-  let dummy ix = IR.SigInstPort (IR.NodeId (-ix)) 0 Nothing  -- parâmetros fictícios
+  let dummy ix = IR.SigInstPort (IR.NodeId (-ix)) 0 Nothing
   modify' $ \s -> s{env = M.fromList (zip ps (map (pure . dummy) [1..]))}
   res <- expr body
   nid <- freshId
@@ -83,7 +84,7 @@ expr = \case
   Cons h t     -> consExpr h t
 
 -- ═════════════════════════════════════════════════════════════════════
--- Literais (com placeholder S1 para lista/tupla)
+-- Literais
 -- ═════════════════════════════════════════════════════════════════════
 
 lit :: Literal -> Build [IR.Signal]
@@ -98,9 +99,13 @@ lit = \case
                    emit (IR.InstConst nid v ty)
                    pure [IR.SigInstPort nid 0 Nothing]
 
+-- listas / tuplas / cons ganham “S1” genérica
 listLit, tupleLit :: [Expr] -> Build [IR.Signal]
 listLit  es = superPlaceholder es
 tupleLit es = superPlaceholder es
+
+consExpr :: Expr -> Expr -> Build [IR.Signal]
+consExpr hd tl = superPlaceholder [hd, tl]
 
 superPlaceholder :: [Expr] -> Build [IR.Signal]
 superPlaceholder es = do
@@ -147,7 +152,7 @@ letExpr binds body = do
   bindLocal d@(FunDecl{})      = topDecl d
 
 -- ═════════════════════════════════════════════════════════════════════
--- if-then-else (gera Steer + avalia ramos)
+-- if-then-else  (Steer + ramos)
 -- ═════════════════════════════════════════════════════════════════════
 
 ifExpr :: Expr -> Expr -> Expr -> Build [IR.Signal]
@@ -167,23 +172,11 @@ ifExpr c t f = do
   pure (tSig ++ fSig)
 
 -- ═════════════════════════════════════════════════════════════════════
--- case / cons – placeholder S1 (não aborta)
+-- case  – por enquanto “S1”
 -- ═════════════════════════════════════════════════════════════════════
 
 caseExpr :: Expr -> [(Pattern, Expr)] -> Build [IR.Signal]
-caseExpr scr _alts = do
-  inSig <- expr scr
-  nid   <- freshId
-  emit (IR.InstSuper nid 1 [inSig] 1 [[]])
-  pure [IR.SigInstPort nid 0 Nothing]
-
-consExpr :: Expr -> Expr -> Build [IR.Signal]
-consExpr hd tl = do
-  hSig <- expr hd
-  tSig <- expr tl
-  nid  <- freshId
-  emit (IR.InstSuper nid 1 [hSig, tSig] 1 [[]])
-  pure [IR.SigInstPort nid 0 Nothing]
+caseExpr scr _alts = superPlaceholder [scr]
 
 -- ═════════════════════════════════════════════════════════════════════
 -- Aplicação 1ª-ordem
