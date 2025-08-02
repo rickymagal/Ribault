@@ -162,6 +162,6 @@ clean:
 	@echo "Limpeza completa."
 	@rm -f $(SRC_DIR)/Analysis/*.hi $(SRC_DIR)/Analysis/*.o \
 	        $(SRC_DIR)/Synthesis/*.hi $(SRC_DIR)/Synthesis/*.o \
+		$(SRC_DIR)/Lib/*.o $(SRC_DIR)/Lib/*.hi \
 	        $(EXE_DF) $(EXE_AST) $(EXE_CODE) $(LIB_SUPERS)
 	@rm -f $(LEXER_HS) $(PARSER_HS)
-	@rm -rf $(DF_OUT_DIR) $(AST_OUT_DIR)

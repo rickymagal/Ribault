@@ -1,157 +1,115 @@
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 
--- | Inst → TALM assembly (texto).
---
--- Cobertura:
---   • InstConst  / fconst
---   • InstBinop  (+ – * / % …)
---   • InstBinopI
---   • InstSteer
---   • InstIncTag
---   • InstSuper
---   • InstCallGrp / CallSnd / RetSnd / Return
---
---  Faltando: InstPar, flags de paralelismo avançadas etc.
+-- | Codegen: DFG → TALM code
+module Synthesis.Codegen (generateTALM) where
 
-module Synthesis.Codegen
-  ( assemble        -- :: [Inst] -> Text
-  , saveAsm         -- :: FilePath -> [Inst] -> IO ()
-  ) where
+import           Types                  (DGraph(..), Edge)
+import           Node                   (DNode(..), nId, Literal(..), BinOp(..), UnaryOp(..))
+import           Port                   (Port(..))
+import qualified Data.Text.Lazy.Builder as TB
+import qualified Data.Text.Lazy         as TL
+import           Data.Text              (unpack)
+import           Data.List              (sortOn)
+import qualified Data.Map.Strict        as Map
 
-import           Synthesis.Instruction
-import qualified Data.Text            as T
-import qualified Data.Text.IO         as TIO
-import           Data.List            (intercalate)
+-- | Generate TALM assembly text from a dataflow graph
+generateTALM :: DGraph DNode -> TL.Text
+generateTALM DGraph{dgNodes, dgEdges} =
+  TB.toLazyText $ mconcat (map genNode nodes ++ [genApply dgEdges])
+  where
+    nodes = sortOn nId (Map.elems dgNodes)
 
-------------------------------------------------------------------------
--- API helpers
-------------------------------------------------------------------------
+-- | Emit TALM instruction for each node
+genNode :: DNode -> TB.Builder
+genNode = \case
+  InstConst nid lit ->
+    TB.fromString $ "const c" ++ show nid ++ " " ++ genLit lit ++ "\n"
 
-assemble :: [Inst] -> T.Text
-assemble = T.unlines . concatMap emit
+  InstPar nid name ins nout ->
+    TB.fromString $ "param p" ++ show nid ++ " " ++ unpack name ++ "\n"
 
-saveAsm :: FilePath -> [Inst] -> IO ()
-saveAsm fp = TIO.writeFile fp . assemble
+  InstSuper nid name ins nout ->
+    let insText = concatMap (\nid -> " " ++ show nid ++ ":out0") ins
+    in TB.fromString $
+         "super " ++ unpack name
+      ++ " s" ++ show nid
+      ++ " "  ++ show nout
+      ++ insText ++ "\n"
 
-------------------------------------------------------------------------
--- Core emitter
-------------------------------------------------------------------------
+  InstBinop nid op lhs rhs ->
+    TB.fromString $
+      genOp op ++ " b" ++ show nid
+      ++ " " ++ show lhs ++ ":out0"
+      ++ " " ++ show rhs ++ ":out0\n"
 
-emit :: Inst -> [T.Text]
-emit = \case
-  --------------------------------------------------------------------
-  -- Constantes
-  --------------------------------------------------------------------
-  InstConst{..}
-    | litType == "int"   ->
-        [instr "const"  [nid nodeId, T.pack (show litVal)]]
-    | litType == "float" ->
-        [instr "fconst" [nid nodeId
-                        , T.pack (show (fromIntegral litVal / 100 :: Double))]]
-    | otherwise          -> []
+  InstUnary nid u arg ->
+    TB.fromString $
+      genUn u ++ " u" ++ show nid
+      ++ " " ++ show arg ++ ":out0\n"
 
-  --------------------------------------------------------------------
-  -- Binários
-  --------------------------------------------------------------------
-  InstBinop{..} ->
-        [instr (tyPref typStr <> asmOp binOp)
-               [nid nodeId, srcs leftSrc, srcs rightSrc]]
+  InstTuple nid fields ->
+    TB.fromString $
+      "tuple t" ++ show nid
+      ++ concatMap (\nid -> " " ++ show nid ++ ":out0") fields
+      ++ "\n"
 
-  InstBinopI{..} ->
-        [instr (tyPref typStr <> asmOp binOp <> "i")
-               [nid nodeId, srcs uniSrc, T.pack (show immedVal)]]
+  InstProj nid idx srcNode ->
+    TB.fromString $
+      "proj p" ++ show nid
+      ++ " " ++ show idx
+      ++ " "  ++ show srcNode ++ ":out0\n"
 
-  --------------------------------------------------------------------
-  -- Steer
-  --------------------------------------------------------------------
-  InstSteer{..} ->
-        [instr "steer" [nid nodeId, srcs steerExpr, srcs steerInp]]
+  InstSteer nid srcNode ->
+    TB.fromString $
+      "steer d" ++ show nid
+      ++ " " ++ show srcNode ++ ":out0\n"
 
-  --------------------------------------------------------------------
-  -- IncTag
-  --------------------------------------------------------------------
-  InstIncTag{..} ->
-        [instr "inctag" [nid nodeId, srcs tagInp]]
+  InstIncTag nid srcNode ->
+    TB.fromString $
+      "inctag i" ++ show nid
+      ++ " "    ++ show srcNode ++ ":out0\n"
 
-  --------------------------------------------------------------------
-  -- Super-instruction
-  --------------------------------------------------------------------
-  InstSuper{..} ->
-        let header = [ nid nodeId
-                     , T.pack (show superNum)
-                     , T.pack (show superOutN) ]
-            inputs = map srcs superInp
-        in  [instr "super" (header ++ inputs)]
+-- | Emit apply instructions for each edge in the graph
+genApply :: [Edge] -> TB.Builder
+genApply edges = mconcat
+  [ TB.fromString $
+      "apply "
+      ++ show srcId ++ ":" ++ srcP
+      ++ " -> "
+      ++ show dstId ++ ":" ++ dstP
+      ++ "\n"
+  | (srcId, srcP, dstId, dstP) <- edges
+  ]
 
-  --------------------------------------------------------------------
-  -- Chamadas
-  --------------------------------------------------------------------
-  InstCallGrp{..} ->
-        [T.concat ["callgroup(\"", T.pack cgName
-                  , "\", \"", T.pack cgFun, "\")"]]
+-- Helpers -------------------------------------------------------------
 
-  InstCallSnd{..} ->
-        [instr "callsnd"
-               [T.concat [T.pack csFun, "[", T.pack (show csIdx), "]"]
-               , srcs csOper
-               , T.pack csGroup]]
+-- Convert a Port to "nodeId:portName" string
+portStr :: Port -> String
+portStr (InstPort n p) = show n ++ ":" ++ p
 
-  InstRetSnd{..} ->
-        [instr "retsnd"
-               [T.concat [T.pack rsFun, "[0]"]
-               , srcs rsOper
-               , T.pack rsGroup]]
+-- Convert Literal to its TALM string representation
+genLit :: Literal -> String
+genLit = \case
+  LInt i    -> show i
+  LFloat f  -> show f
+  LBool b   -> if b then "true" else "false"
+  LChar c   -> '\'' : c : "'"
+  LString s -> '"' : unpack s ++ "'"
+  LUnit     -> "()"
 
-  InstReturn{..} ->
-        [instr "ret" [nid nodeId, srcs retExpr, srcs retSend]]
+-- Convert BinOp to its TALM mnemonic
+genOp :: BinOp -> String
+genOp = \case
+  BAdd  -> "add"; BSub -> "sub"; BMul -> "mul"; BDiv -> "div"; BMod -> "mod"
+  BAnd  -> "and"; BOr  -> "or"; BCons-> "cons"
+  BLt   -> "lt" ; BGt  -> "gt" ; BLe  -> "le" ; BGe -> "ge"
+  BEq   -> "eq" ; BNe  -> "neq"; BXor-> "xor"
 
-  -- Ainda não tratados
-  --------------------------------------------------------------------
-  InstPar{} -> ["# TODO InstPar"]
-
-------------------------------------------------------------------------
--- Pretty helpers
-------------------------------------------------------------------------
-
-asmOp :: String -> T.Text
-asmOp = \case
-  "+"  -> "add" ; "-"  -> "sub"
-  "*"  -> "mul" ; "/"  -> "div"
-  "%"  -> "mod"
-  "&&" -> "and"
-  "<"  -> "lthan" ; ">" -> "gthan"
-  "==" -> "eq"    ; "!="-> "neq"
-  other -> T.pack other
-
-tyPref :: String -> T.Text
-tyPref "int"    = ""
-tyPref "float"  = "f"
-tyPref "double" = "d"
-tyPref other    = T.pack other <> "_"
-
-instr :: T.Text -> [T.Text] -> T.Text
-instr m fs = T.intercalate " " (m : fs)
-
-nid :: NodeId -> T.Text
-nid (NodeId i) = T.pack ("n" <> show i)
-
-------------------------------------------------------------------------
--- Signals pretty-print
-------------------------------------------------------------------------
-
-srcs :: [Signal] -> T.Text
-srcs xs = case xs of
-  [s] -> sig s
-  _   -> T.concat ["[", T.intercalate ", " (map sig xs), "]"]
-
-
-sig :: Signal -> T.Text
-sig = \case
-  SigInstPort nId port _ ->
-      nid nId <> "." <> T.pack (show port)          -- ← usa helper nid
-  SigSteerPort nId br    ->
-      nid nId <> "." <> (if br == T then "t" else "f")
-  SigReturnPort f g      ->
-      T.pack f <> "ret." <> T.pack g
+-- Convert UnaryOp to its TALM mnemonic
+genUn :: UnaryOp -> String
+genUn = \case
+  UNeg   -> "neg"
+  UNot   -> "not"
+  UIsNil -> "isNil"

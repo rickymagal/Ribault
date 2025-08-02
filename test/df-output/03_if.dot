@@ -1,0 +1,24 @@
+digraph G {
+  node [fontname="Courier",shape=box];
+  flowInst0 [label="res"];
+  flowInst1 [label="max"];
+  flowInst2 [label="const#2"];
+  flowInst3 [label="const#3"];
+  flowInst4 [label="<apply>"];
+  flowInst5 [label="b"];
+  flowInst6 [label="a"];
+  flowInst7 [label=">"];
+  flowInst8 [shape=triangle,orientation=180,label="T  F",fontsize=10];
+  flowInst9 [label="λ#9"];
+  flowInst9 -> flowInst1;
+  flowInst6 -> flowInst9;
+  flowInst8 -> flowInst5;
+  flowInst8 -> flowInst6;
+  flowInst7 -> flowInst8;
+  flowInst5 -> flowInst7;
+  flowInst6 -> flowInst7;
+  flowInst4 -> flowInst0;
+  flowInst3 -> flowInst4;
+  flowInst2 -> flowInst4;
+  flowInst1 -> flowInst4;
+}

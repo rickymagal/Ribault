@@ -1,0 +1,14 @@
+digraph G {
+  node [fontname="Courier",shape=box];
+  flowInst0 [label="main"];
+  flowInst1 [label="negBool"];
+  flowInst2 [label="const#True"];
+  flowInst3 [label="<apply>"];
+  flowInst4 [label="b"];
+  flowInst5 [label="not"];
+  flowInst5 -> flowInst1;
+  flowInst4 -> flowInst5;
+  flowInst3 -> flowInst0;
+  flowInst2 -> flowInst3;
+  flowInst1 -> flowInst3;
+}
