@@ -2,56 +2,51 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
--- | Constrói a lista linear de ‘Inst’ a partir da AST.
--- | Place-holders “S1” são usados para lista / tupla / cons / case,
---   mas ‘if’ e aplicação 1ª-ordem já estão completos.
-
 module Synthesis.Builder (buildProgram) where
 
 import           Control.Monad.State.Strict
 import qualified Data.Map.Strict            as M
 import           Data.Map.Strict             (Map)
-import           Data.Maybe                  (fromMaybe)
 import           Data.Foldable               (for_)
 
 import           Syntax
 import qualified Synthesis.Instruction      as IR
+import           Synthesis.DFG
 
--- ═════════════════════════════════════════════════════════════════════
--- Estado
--- ═════════════════════════════════════════════════════════════════════
-
+-- ═══════════════════════════════════════
+-- estado
+-- ═══════════════════════════════════════
 type Build = State BS
 data BS = BS { env   :: Map Ident [IR.Signal]  -- variáveis → sinais
-             , acc   :: [IR.Inst]              -- instruções (reverso)
-             , nextN :: Int }                  -- contador de NodeId
+             , gdfg  :: DFG                   -- grafo em construção
+             , nextN :: Int }                 -- gerador de NodeId
 
-empty :: BS
-empty = BS M.empty [] 0
+initSt :: BS
+initSt = BS M.empty emptyDFG 0
 
 freshId :: Build IR.NodeId
 freshId = do s@BS{..} <- get; put s{nextN = nextN + 1}; pure (IR.NodeId nextN)
 
 emit :: IR.Inst -> Build ()
-emit i = modify' $ \st -> st{acc = i : acc st}
+emit inst = modify' $ \s ->
+  let srcs = [ n | IR.SigInstPort{sigNode=n} <- IR.inputs inst ]
+  in s{ gdfg = addNode inst srcs (gdfg s) }
 
 remember :: Ident -> [IR.Signal] -> Build ()
 remember v s = modify' $ \st -> st{env = M.insert v s (env st)}
 
 lookupSig :: Ident -> Build [IR.Signal]
-lookupSig v = gets (fromMaybe (err ("unbound var " <> v)) . M.lookup v . env)
+lookupSig v = gets (maybe (err ("unbound var " ++ v)) id . M.lookup v . env)
 
--- ═════════════════════════════════════════════════════════════════════
--- API
--- ═════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════
+-- interface
+-- ═══════════════════════════════════════
+buildProgram :: Program -> DFG
+buildProgram (Program ds) = gdfg $ execState (mapM_ topDecl ds) initSt
 
-buildProgram :: Program -> [IR.Inst]
-buildProgram (Program ds) = reverse . acc $ execState (mapM_ topDecl ds) empty
-
--- ═════════════════════════════════════════════════════════════════════
--- Declarações topo-nível
--- ═════════════════════════════════════════════════════════════════════
-
+-- ═══════════════════════════════════════
+-- declarações topo-nível
+-- ═══════════════════════════════════════
 topDecl :: Decl -> Build ()
 topDecl (FunDecl f ps (Lambda ls body)) =
   topDecl (FunDecl f (ps ++ ls) body)
@@ -64,10 +59,9 @@ topDecl (FunDecl f ps body) = do
   emit (IR.InstReturn nid f res res)
   modify' $ \s -> s{env = M.empty}
 
--- ═════════════════════════════════════════════════════════════════════
--- Expressões
--- ═════════════════════════════════════════════════════════════════════
-
+-- ═══════════════════════════════════════
+-- expressão → sinais
+-- ═══════════════════════════════════════
 expr :: Expr -> Build [IR.Signal]
 expr = \case
   Var v        -> lookupSig v
@@ -77,52 +71,62 @@ expr = \case
   If c t f     -> ifExpr c t f
   Let ds e     -> letExpr ds e
   App f x      -> app f x
-  Lambda{}     -> err "lambda expression not supported"
-  Case scr as  -> caseExpr scr as
-  List es      -> listLit es
-  Tuple es     -> tupleLit es
-  Cons h t     -> consExpr h t
+  Case s alts  -> caseExpr s alts
+  Tuple es     -> tupleExpr es
+  List  es     -> listExpr  es
+  Cons h t     -> consExpr  h t
+  Lambda{}     -> err "lambda literal not supported"
 
--- ═════════════════════════════════════════════════════════════════════
--- Literais
--- ═════════════════════════════════════════════════════════════════════
-
+-- ═══════════════════════════════════════
+-- literais
+-- ═══════════════════════════════════════
 lit :: Literal -> Build [IR.Signal]
 lit = \case
   LInt n    -> scalar (toInteger n) "int"
   LBool b   -> scalar (if b then 1 else 0) "int"
   LFloat d  -> scalar (floor (d*100)) "float"
-  LChar c   -> scalar (toInteger (fromEnum c)) "int"
-  LString s -> concat <$> mapM (lit . LChar) s
+  LChar  c  -> scalar (toInteger (fromEnum c)) "int"
+  LString s -> listExpr (map (Lit . LChar) s)
  where
   scalar v ty = do nid <- freshId
                    emit (IR.InstConst nid v ty)
                    pure [IR.SigInstPort nid 0 Nothing]
 
--- listas / tuplas / cons ganham “S1” genérica
-listLit, tupleLit :: [Expr] -> Build [IR.Signal]
-listLit  es = superPlaceholder es
-tupleLit es = superPlaceholder es
-
-consExpr :: Expr -> Expr -> Build [IR.Signal]
-consExpr hd tl = superPlaceholder [hd, tl]
-
-superPlaceholder :: [Expr] -> Build [IR.Signal]
-superPlaceholder es = do
-  sigs <- concat <$> mapM expr es
-  nid  <- freshId
-  emit (IR.InstSuper nid 1 [sigs] 1 [[]])   -- “S1”
+-- ═══════════════════════════════════════
+-- tupla
+-- ═══════════════════════════════════════
+tupleExpr :: [Expr] -> Build [IR.Signal]
+tupleExpr es = do
+  ss  <- mapM expr es
+  nid <- freshId
+  emit (IR.InstMkTuple nid (length es) ss)
   pure [IR.SigInstPort nid 0 Nothing]
 
--- ═════════════════════════════════════════════════════════════════════
--- Operadores
--- ═════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════
+-- lista  (string usa este mesmo caminho)
+-- ═══════════════════════════════════════
+listExpr :: [Expr] -> Build [IR.Signal]
+listExpr es = do
+  elemSigs <- concat <$> mapM expr es   -- ACHATA todas as portas
+  nid      <- freshId
+  emit (IR.InstSuper nid 1 [elemSigs] 1 [[]])   -- “super1”
+  pure [IR.SigInstPort nid 0 Nothing]
 
+consExpr :: Expr -> Expr -> Build [IR.Signal]
+consExpr hd tl = do
+  sh <- expr hd
+  st <- expr tl
+  nid <- freshId
+  emit (IR.InstCons nid sh st)
+  pure [IR.SigInstPort nid 0 Nothing]
+
+-- ═══════════════════════════════════════
+-- unário / binário
+-- ═══════════════════════════════════════
 unop :: UnOperator -> Expr -> Build [IR.Signal]
 unop op e = do
-  v <- expr e
-  nid <- freshId
-  let (o,i) = case op of { Neg -> ("sub",0); Not -> ("eq",0) }
+  v <- expr e; nid <- freshId
+  let (o,i) = case op of { Neg->("sub",0); Not->("eq",0) }
   emit (IR.InstBinopI nid o "int" i v)
   pure [IR.SigInstPort nid 0 Nothing]
 
@@ -136,10 +140,23 @@ binop op l r = do
   emit (IR.InstBinop nid o "int" la rb)
   pure [IR.SigInstPort nid 0 Nothing]
 
--- ═════════════════════════════════════════════════════════════════════
--- let-in
--- ═════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════
+-- if-then-else  (Steer T/F)
+-- ═══════════════════════════════════════
+ifExpr :: Expr -> Expr -> Expr -> Build [IR.Signal]
+ifExpr c t f = do
+  cond <- expr c
+  env0 <- gets env
+  ts <- expr t; modify' $ \s -> s{env = env0}
+  fs <- expr f; modify' $ \s -> s{env = env0}
+  sid <- freshId
+  emit (IR.InstSteer sid cond (ts ++ fs))
+  pure [ IR.SigSteerPort sid IR.T
+       , IR.SigSteerPort sid IR.F ]
 
+-- ═══════════════════════════════════════
+-- let-in
+-- ═══════════════════════════════════════
 letExpr :: [Decl] -> Expr -> Build [IR.Signal]
 letExpr binds body = do
   env0 <- gets env
@@ -149,60 +166,44 @@ letExpr binds body = do
   pure res
  where
   bindLocal (FunDecl v [] rhs) = expr rhs >>= remember v
-  bindLocal d@(FunDecl{})      = topDecl d
+  bindLocal d@FunDecl{}        = topDecl d
 
--- ═════════════════════════════════════════════════════════════════════
--- if-then-else  (Steer + ramos)
--- ═════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════
+-- case … of   (super1 matcher)
+-- ═══════════════════════════════════════
+caseExpr :: Expr -> [(Pattern,Expr)] -> Build [IR.Signal]
+caseExpr scr _alts = do
+  s   <- expr scr
+  nid <- freshId
+  emit (IR.InstSuper nid 1 [s] 1 [[]])
+  pure [IR.SigInstPort nid 0 Nothing]
 
-ifExpr :: Expr -> Expr -> Expr -> Build [IR.Signal]
-ifExpr c t f = do
-  condSig <- expr c          -- comparação, p.ex. “>”
-  env0    <- gets env
-  tSig    <- expr t
-  modify' $ \s -> s{ env = env0 }
-  fSig    <- expr f
-  modify' $ \s -> s{ env = env0 }
-  sid <- freshId
-  emit (IR.InstSteer sid condSig (tSig ++ fSig))
-  pure [ IR.SigSteerPort sid IR.T
-       , IR.SigSteerPort sid IR.F ]
--- ═════════════════════════════════════════════════════════════════════
--- case  – por enquanto “S1”
--- ═════════════════════════════════════════════════════════════════════
-
-caseExpr :: Expr -> [(Pattern, Expr)] -> Build [IR.Signal]
-caseExpr scr _alts = superPlaceholder [scr]
-
--- ═════════════════════════════════════════════════════════════════════
--- Aplicação 1ª-ordem
--- ═════════════════════════════════════════════════════════════════════
-
+-- ═══════════════════════════════════════
+-- aplicação 1ª-ordem
+-- ═══════════════════════════════════════
 app :: Expr -> Expr -> Build [IR.Signal]
 app fun arg = do
-  -- desdobra f a b c → (f, [a,b,c])
-  let peel (App f a) xs = peel f (a:xs)
-      peel other xs     = (other, xs)
-      (callee, args)    = peel (App fun arg) []
+  let peel (App f a) xs = peel f (a:xs); peel o xs = (o,xs)
+      (callee,args)    = peel (App fun arg) []
   fn <- case callee of
           Var v -> pure v
-          _     -> err "higher-order application not supported"
-  gid <- freshId
-  let IR.NodeId n = gid
-      grp = "cg" ++ show n
+          _     -> err "higher-order call not supported"
+
+  gid <- freshId; let IR.NodeId n = gid; grp = "cg" ++ show n
   emit (IR.InstCallGrp gid fn grp)
+
   for_ (zip [1..] args) $ \(i,a) -> do
-        sig <- expr a
-        nid <- freshId
-        emit (IR.InstCallSnd nid fn grp i sig)
+    s <- expr a
+    nid <- freshId
+    emit (IR.InstCallSnd nid fn grp i s)
+
   rnid <- freshId
-  let retSig = [IR.SigReturnPort fn grp]
-  emit (IR.InstRetSnd rnid fn grp retSig)
-  pure retSig
+  let ret = [IR.SigReturnPort fn grp]
+  emit (IR.InstRetSnd rnid fn grp ret)
+  pure ret
 
--- ═════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════
 -- util
--- ═════════════════════════════════════════════════════════════════════
-
+-- ═══════════════════════════════════════
 err :: String -> a
 err = error . ("Builder: " ++)
