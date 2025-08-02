@@ -37,9 +37,18 @@ toDot DGraph{..} =
 ----------------------------------------------------------------------
 -- Nó individual ------------------------------------------------------
 ----------------------------------------------------------------------
+-- Mostra um nó em formato DOT
 showNode :: DNode -> Builder
+-- ▸ Steer: triângulo com “T  F”
+showNode n@InstSteer{} =
+  "  flowInst" <> int (nId n)
+  <> " [shape=triangle,orientation=180,label=\"T  F\",fontsize=10];\n"
+  
+-- ▸ Oculta placeholders <fwd:…>
 showNode n@InstSuper{name}
-  | "<fwd:" `T.isPrefixOf` name = mempty        -- oculta forward-declare
+  | "<fwd:" `T.isPrefixOf` name = mempty
+
+-- ▸ Todos os demais
 showNode n =
   "  flowInst" <> int (nId n)
   <> " [label=\"" <> TB.fromString (label n) <> "\"];\n"
@@ -50,7 +59,6 @@ showNode n =
     InstBinop{op}             -> showBin op
     InstBinopI{opI,imm}       -> showBin opI <> "\\n#" <> show imm
     InstUnary{unop}           -> showUn unop
-    InstSteer{}               -> "steer"
     InstIncTag{}              -> "inctag"
     InstTuple{fields}         -> "tuple(" <> show (length fields) <> ")"
     InstProj{idx}             -> "proj#" <> show idx
