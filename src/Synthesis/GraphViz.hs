@@ -1,8 +1,11 @@
+-- src/Synthesis/GraphViz.hs
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 
+-- | Pretty-printer: DGraph → texto DOT/Graphviz
+--   Um único retângulo por nó – sem células extras.
 module Synthesis.GraphViz (toDot) where
 
 ----------------------------------------------------------------------
@@ -20,7 +23,7 @@ import           Node                      ( DNode(..), Literal(..)
                                            , BinOp(..), UnaryOp(..) )
 
 ----------------------------------------------------------------------
--- API
+-- Entrada pública
 ----------------------------------------------------------------------
 toDot :: DGraph DNode -> Text
 toDot DGraph{..} =
@@ -32,16 +35,16 @@ toDot DGraph{..} =
     <> "}\n"
 
 ----------------------------------------------------------------------
--- Nós
+-- Nó individual ------------------------------------------------------
 ----------------------------------------------------------------------
 showNode :: DNode -> Builder
 showNode n@InstSuper{name}
-  | "<fwd:" `T.isPrefixOf` name = mempty        -- ignora placeholders
+  | "<fwd:" `T.isPrefixOf` name = mempty        -- oculta forward-declare
 showNode n =
   "  flowInst" <> int (nId n)
-  <> " [label=\"" <> TB.fromString (centerLabel n) <> "\"];\n"
+  <> " [label=\"" <> TB.fromString (label n) <> "\"];\n"
  where
-  centerLabel = \case
+  label = \case
     InstConst{lit=LUnit}      -> "unit"
     InstConst{lit}            -> "const#" <> showLit lit
     InstBinop{op}             -> showBin op
@@ -55,14 +58,14 @@ showNode n =
     InstPar{name}             -> T.unpack name
 
 ----------------------------------------------------------------------
--- Arestas  (sem ‘:porta’)
+-- Arestas  -----------------------------------------------------------
 ----------------------------------------------------------------------
 showEdge :: Edge -> Builder
 showEdge (s,_,d,_) =
   "  flowInst" <> int s <> " -> flowInst" <> int d <> ";\n"
 
 ----------------------------------------------------------------------
--- Auxiliares de texto
+-- Auxiliares de texto -----------------------------------------------
 ----------------------------------------------------------------------
 showLit :: Literal -> String
 showLit = \case
@@ -77,7 +80,7 @@ showBin :: BinOp -> String
 showBin = \case
   BAdd -> "+"   ; BSub -> "-"   ; BMul -> "*"   ; BDiv -> "/"
   BMod -> "%"   ; BAnd -> "&&"  ; BOr  -> "||"  ; BXor -> "^"
-  BLt  -> "<"   ; BGt  -> ">"   ; BLe  -> "<="  ; BGe  -> ">="
+  BLt  -> "<"   ; BGt  -> ">"   ; BLe -> "<="  ; BGe  -> ">="
   BEq  -> "=="  ; BNe  -> "!="  ; BCons -> ":"
 
 showUn :: UnaryOp -> String
