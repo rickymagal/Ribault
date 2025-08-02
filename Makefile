@@ -24,12 +24,15 @@ LEXER_HS    := $(SRC_DIR)/Analysis/Lexer.hs
 PARSER_HS   := $(SRC_DIR)/Analysis/Parser.hs
 SYNTAX_HS   := $(SRC_DIR)/Analysis/Syntax.hs
 SEMANTIC_HS := $(SRC_DIR)/Analysis/Semantic.hs
-INSTR_HS    := $(SRC_DIR)/Synthesis/Instruction.hs
 BUILDER_HS  := $(SRC_DIR)/Synthesis/Builder.hs
 GRAPHVIZ_HS := $(SRC_DIR)/Synthesis/GraphViz.hs
 ASTGEN_HS   := $(SRC_DIR)/Analysis/AST-gen.hs
 CODEGEN_HS  := $(SRC_DIR)/Synthesis/Codegen.hs
-DFG_HS      := $(SRC_DIR)/Synthesis/DFG.hs
+UNIQUE_HS   := $(SRC_DIR)/Synthesis/Unique.hs
+TYPES_HS    := $(SRC_DIR)/Synthesis/Types.hs
+SSA_HS      := $(SRC_DIR)/Synthesis/SSA.hs
+PORT_HS     := $(SRC_DIR)/Synthesis/Port.hs
+NODE_HS     := $(SRC_DIR)/Synthesis/Node.hs
 
 MAIN_CODE_HS := $(SRC_DIR)/Synthesis/MainCode.hs
 MAIN_DF_HS  := $(SRC_DIR)/Synthesis/MainGraph.hs
@@ -98,22 +101,26 @@ $(PARSER_HS): $(PARSER_SRC)
 # Compilação executáveis
 # ------------------------------------------------------------
 $(EXE_DF): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
-           $(INSTR_HS) $(BUILDER_HS) $(GRAPHVIZ_HS) $(MAIN_DF_HS) $(DFG_HS)
+           $(BUILDER_HS) $(GRAPHVIZ_HS) $(MAIN_DF_HS) $(UNIQUE_HS) \
+	   $(TYPES_HS) $(SSA_HS) $(PORT_HS) $(NODE_HS) 
 	@echo "[GHC  ] $@"
 	$(GHC) -O2 -o $@ $(MAIN_DF_HS) $(LEXER_HS) $(PARSER_HS) \
-	                 $(SYNTAX_HS) $(SEMANTIC_HS) $(DFG_HS) \
-	                 $(INSTR_HS)  $(BUILDER_HS) $(GRAPHVIZ_HS)
+	                 $(SYNTAX_HS) $(SEMANTIC_HS) $(UNIQUE_HS) \
+	                 $(TYPES_HS) $(SSA_HS) $(PORT_HS) $(NODE_HS) \
+	                 $(BUILDER_HS) $(GRAPHVIZ_HS)
 
 $(EXE_AST): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS) $(MAIN_AST_HS)
 	@echo "[GHC  ] $@"
 	$(GHC) -O2 -o $@ $(MAIN_AST_HS) $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS)
 
 $(EXE_CODE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
-             $(INSTR_HS) $(BUILDER_HS) $(CODEGEN_HS) $(MAIN_CODE_HS) $(DFG_HS)
+             $(BUILDER_HS) $(CODEGEN_HS) $(MAIN_CODE_HS) $(UNIQUE_HS) \
+	     $(TYPES_HS) $(SSA_HS) $(PORT_HS) $(NODE_HS)
 	@echo "[GHC  ] $@"
 	$(GHC) -O2 -o $@ $(MAIN_CODE_HS) $(LEXER_HS) $(PARSER_HS) \
 	                 $(SYNTAX_HS) $(SEMANTIC_HS) \
-	                 $(INSTR_HS)  $(BUILDER_HS)  $(CODEGEN_HS) $(DFG_HS)
+	                 $(BUILDER_HS)  $(CODEGEN_HS) $(UNIQUE_HS) \
+	   		 $(TYPES_HS) $(SSA_HS) $(PORT_HS) $(NODE_HS)
 
 # ------------------------------------------------------------
 # Dataflow .dot
