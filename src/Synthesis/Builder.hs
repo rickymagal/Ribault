@@ -2,8 +2,8 @@
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 
--- | Builder – converte a AST tipada (Syntax) em grafo Data-Flow (DGraph DNode)
 module Synthesis.Builder (buildProgram) where
 
 ----------------------------------------------------------------------
@@ -15,6 +15,7 @@ import           Control.Monad           (foldM, forM)
 import           Data.Map.Strict         (Map)
 import qualified Data.Map.Strict         as Map
 import qualified Data.Text               as T
+import qualified Data.Text.Lazy          as TL
 
 import           Types
 import           Node
@@ -23,18 +24,17 @@ import           Unique
 import qualified Syntax                  as S
 
 ----------------------------------------------------------------------
--- Estado interno
+-- Estado + helpers ---------------------------------------------------
 ----------------------------------------------------------------------
-data BState = BState { g   :: !(DGraph DNode)
-                     , env :: !(Map S.Ident Port) }
+data BState = BState
+  { g   :: !(DGraph DNode)
+  , env :: !(Map S.Ident Port)
+  }
 
 type Builder = StateT BState Unique
 emptyB :: BState
 emptyB = BState emptyGraph Map.empty
 
-----------------------------------------------------------------------
--- Auxiliares de grafo
-----------------------------------------------------------------------
 freshNid :: Builder NodeId
 freshNid = lift freshId
 
@@ -64,18 +64,36 @@ boolConst = litNode . LBool
 ----------------------------------------------------------------------
 compileExpr :: S.Expr -> Builder Port
 compileExpr = \case
-  S.Var x        -> lookupVar x
-  S.Lit l        -> litNode (convLit l)
-  S.Lambda _ _   -> litNode (LString "λ")
-  S.BinOp o a b  -> binop (convOp o) a b
-  S.UnOp  o e    -> unop  (convUn o) e
-  S.Cons h t     -> binop BCons h t
-  S.If c t e     -> compileIf c t e
-  S.Tuple es     -> compileTuple es
-  S.List es      -> compileList es
-  S.App f a      -> compileApp f [a]
-  S.Let ds e     -> compileLet ds e
-  S.Case s as    -> compileCase s as
+  S.Var x         -> lookupVar x
+  S.Lit l         -> litNode (convLit l)
+
+  -- λ-expressão vira nó super numerado com nós-parâmetro
+  S.Lambda params body -> do
+    -- nós InstPar para cada argumento
+    pars <- forM params $ \p -> do
+              nid <- freshNid
+              addN (InstPar nid (T.pack p) [] 1)
+              pure (p, InstPort nid "out0")
+    let ins = map snd pars
+    old <- gets env
+    modify' (\s -> s { env = Map.union (Map.fromList pars) (env s)})
+    -- corpo
+    pBody <- compileExpr body
+    nFun  <- freshNid
+    addN (InstSuper nFun ("λ#" <> T.pack (show nFun)) (map portNode ins) 1)
+    addE (pBody --> InstPort nFun "out0")
+    modify' (\s -> s { env = old })
+    pure (InstPort nFun "out0")
+
+  S.BinOp o a b   -> binop (convOp o) a b
+  S.UnOp  o e     -> unop  (convUn o) e
+  S.Cons h t      -> binop BCons h t
+  S.If c t e      -> compileIf c t e
+  S.Tuple es      -> compileTuple es
+  S.List  es      -> compileList es
+  S.App f a       -> compileApp f [a]
+  S.Let ds e      -> compileLet ds e
+  S.Case s alts   -> compileCase s alts
  where
   binop bop a b = do
     pL <- compileExpr a; pR <- compileExpr b; n <- freshNid
@@ -88,9 +106,9 @@ compileExpr = \case
     addN (InstUnary n u (portNode p))
     addE (p --> InstPort n "arg")
     pure (InstPort n outPort)
-
+    
 ----------------------------------------------------------------------
--- IF / TUPLE / LIST
+-- IF / TUPLE / LIST (mesmo de antes) --------------------------------
 ----------------------------------------------------------------------
 compileIf :: S.Expr -> S.Expr -> S.Expr -> Builder Port
 compileIf c t e = do
@@ -243,10 +261,6 @@ patTest pat scrP = case pat of
   S.PCons ph pt ->
     matchCons ph pt
 
-  ------------------------------------------------------------
-  -- Ainda não suportado
-  ------------------------------------------------------------
-
   where
   ------------------------------------------------------------------
   -- Projeta o campo ‘idx’ do valor em análise
@@ -316,23 +330,36 @@ foldM1 f (x:y:xs) = do
 ----------------------------------------------------------------------
 compileTopDecl :: S.Decl -> Builder ()
 compileTopDecl (S.FunDecl f ps body) = do
-  n <- freshNid
-  if null ps
+  if null ps                                          -- binding simples
     then do pVal <- compileExpr body
+            n    <- freshNid
             addN (InstSuper n (T.pack f) [portNode pVal] 1)
             addE (pVal --> InstPort n "in0")
-    else do
-      let ins = [ InstPort n ("in"<>show i) | i <- [0..length ps-1] ]
+    else do                                           -- função com args
+      -- InstPar para cada parâmetro
+      parNodes <- forM ps $ \p -> do
+        pid <- freshNid
+        addN (InstPar pid (T.pack p) [] 1)
+        pure (p, InstPort pid "out0")
+
+      let ins = map snd parNodes
       old <- gets env
-      modify' (\s -> s { env = Map.union (Map.fromList (zip ps ins)) (env s) })
+      modify' (\s -> s { env = Map.union (Map.fromList parNodes) (env s)})
       pBody <- compileExpr body
-      addN (InstSuper n (T.pack f) (map portNode ins) 1)
-      addE (pBody --> InstPort n "out0")
+      nFun  <- freshNid
+      addN (InstSuper nFun (T.pack f) (map portNode ins) 1)
+      addE (pBody --> InstPort nFun "out0")
       modify' (\s -> s { env = old })
-      bindVar f (InstPort n "out0")
+      bindVar f (InstPort nFun "out0")
+
+  -- remove placeholder <fwd:f>
+  modify' $ \s@BState{g} ->
+    let keep (InstSuper{name}) = not ("<fwd:" `T.isPrefixOf` name)
+        keep _                 = True
+    in s { g = g { dgNodes = Map.filter keep (dgNodes g) } }
 
 ----------------------------------------------------------------------
--- Conversão de literais / operadores
+-- Conversão lit / op  (mesmo que antes)
 ----------------------------------------------------------------------
 convLit :: S.Literal -> Literal
 convLit = \case
@@ -355,7 +382,7 @@ convUn = \case
   S.Not -> UNot
 
 ----------------------------------------------------------------------
--- buildProgram: 1ª passo pré-declara nomes, 2ª compila
+-- buildProgram
 ----------------------------------------------------------------------
 buildProgram :: S.Program -> DGraph DNode
 buildProgram (S.Program ds) =
@@ -365,5 +392,5 @@ buildProgram (S.Program ds) =
 predeclare :: [S.Decl] -> Builder ()
 predeclare = mapM_ $ \(S.FunDecl f _ _) -> do
   n <- freshNid
-  addN (InstSuper n ("<fwd:"<>T.pack f<>">") [] 1)
+  addN (InstSuper n ("<fwd:" <> T.pack f <> ">") [] 1)
   bindVar f (InstPort n "out0")
