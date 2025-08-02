@@ -189,30 +189,42 @@ flattenApp = go [] where
 -- CASE + PATTERNS
 ----------------------------------------------------------------------
 compileCase :: S.Expr -> [(S.Pattern,S.Expr)] -> Builder Port
-compileCase scr alts = do
-  pScr <- compileExpr scr
-  compileAlts pScr alts
+compileCase scr alts =
+  compileAlts =<< compileExpr scr
  where
-  compileAlts _ [] = error "[Builder] empty case"
-  compileAlts s ((p,b):rs) = do
-    (cond,envX) <- patTest p s
-    st          <- newSteer cond
-    old <- gets env
-    modify' (\st' -> st' { env = Map.union envX (env st') })
-    pThen <- compileExpr b
-    addE (SteerPort st truePort  --> pThen)
-    modify' (\st' -> st' { env = old })
-    pElse <- if null rs then boolConst False else compileAlts s rs
-    addE (SteerPort st falsePort --> pElse)
-    pure pThen
-  newSteer cP = do n <- freshNid
-                   addN (InstSteer n (portNode cP))
-                   addE (cP --> InstPort n "pred")
-                   pure n
+  compileAlts scrP = go scrP alts
 
-----------------------------------------------------------------------
--- PATTERN TEST
-----------------------------------------------------------------------
+  go scrP [(pat, body)] =    -- Única alternativa: sem steer
+    -- se é coringa, só compila o corpo
+    case pat of
+      S.PWildcard -> compileExpr body
+      _           -> do
+        (condP, envX) <- patTest pat scrP
+        old <- gets env
+        modify' (\s -> s { env = Map.union envX (env s) })
+        pRes <- compileExpr body
+        modify' (\s -> s { env = old })
+        pure pRes
+
+  go scrP ((pat,body):rest) = do
+    (condP, envX) <- patTest pat scrP
+    sId           <- newSteer condP
+    old <- gets env
+    modify' (\s -> s { env = Map.union envX (env s) })
+    pThen <- compileExpr body
+    addE (SteerPort sId truePort --> pThen)
+    modify' (\s -> s { env = old })
+    pElse <- go scrP rest
+    addE (SteerPort sId falsePort --> pElse)
+    pure pThen
+
+newSteer :: Port -> Builder NodeId
+newSteer predP = do
+  n <- freshNid
+  addN (InstSteer n (portNode predP))
+  addE (predP --> InstPort n "pred")
+  pure n
+
 ----------------------------------------------------------------------
 -- PATTERN TEST  (_, Var, Lit, Tuple, Cons)
 ----------------------------------------------------------------------
