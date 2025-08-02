@@ -11,7 +11,7 @@ module Synthesis.Builder (buildProgram) where
 ----------------------------------------------------------------------
 import           Prelude                 hiding (id)
 import           Control.Monad.State.Strict
-import           Control.Monad           (foldM, forM)
+import           Control.Monad           (foldM, forM, zipWithM_)
 import           Data.Map.Strict         (Map)
 import qualified Data.Map.Strict         as Map
 import qualified Data.Text               as T
@@ -67,17 +67,15 @@ compileExpr = \case
   S.Var x         -> lookupVar x
   S.Lit l         -> litNode (convLit l)
 
-  -- λ-expressão vira nó super numerado com nós-parâmetro
+  -- λ-expressão vira nó super numerado com InstPar para args
   S.Lambda params body -> do
-    -- nós InstPar para cada argumento
-    pars <- forM params $ \p -> do
-              nid <- freshNid
-              addN (InstPar nid (T.pack p) [] 1)
-              pure (p, InstPort nid "out0")
-    let ins = map snd pars
+    parList <- forM params $ \p -> do
+                 pid <- freshNid
+                 addN (InstPar pid (T.pack p) [] 1)
+                 pure (p, InstPort pid "out0")
+    let ins = map snd parList
     old <- gets env
-    modify' (\s -> s { env = Map.union (Map.fromList pars) (env s)})
-    -- corpo
+    modify' (\s -> s { env = Map.union (Map.fromList parList) (env s)})
     pBody <- compileExpr body
     nFun  <- freshNid
     addN (InstSuper nFun ("λ#" <> T.pack (show nFun)) (map portNode ins) 1)
@@ -93,22 +91,21 @@ compileExpr = \case
   S.List  es      -> compileList es
   S.App f a       -> compileApp f [a]
   S.Let ds e      -> compileLet ds e
-  S.Case s alts   -> compileCase s alts
+  S.Case s as     -> compileCase s as
  where
   binop bop a b = do
     pL <- compileExpr a; pR <- compileExpr b; n <- freshNid
     addN (InstBinop n bop (portNode pL) (portNode pR))
     addE (pL --> InstPort n "lhs"); addE (pR --> InstPort n "rhs")
     pure (InstPort n outPort)
-
   unop u e = do
     p <- compileExpr e; n <- freshNid
     addN (InstUnary n u (portNode p))
     addE (p --> InstPort n "arg")
     pure (InstPort n outPort)
-    
+
 ----------------------------------------------------------------------
--- IF / TUPLE / LIST (mesmo de antes) --------------------------------
+-- IF / TUPLE / LIST --------------------------------------------------
 ----------------------------------------------------------------------
 compileIf :: S.Expr -> S.Expr -> S.Expr -> Builder Port
 compileIf c t e = do
@@ -122,7 +119,8 @@ compileIf c t e = do
 
 compileTuple :: [S.Expr] -> Builder Port
 compileTuple es = do
-  ps <- mapM compileExpr es; n <- freshNid
+  ps <- mapM compileExpr es
+  n  <- freshNid
   addN (InstTuple n (map portNode ps))
   zipWithM_ (\i p -> addE (p --> InstPort n ("f"<>show i))) [0..] ps
   pure (InstPort n outPort)
@@ -131,12 +129,15 @@ compileList :: [S.Expr] -> Builder Port
 compileList = foldr cons (litNode LUnit)
  where
   cons h tlM = do
-    ph <- compileExpr h; pt <- tlM; n <- freshNid
+    ph <- compileExpr h
+    pt <- tlM
+    n  <- freshNid
     addN (InstBinop n BCons (portNode ph) (portNode pt))
     addE (ph --> InstPort n "lhs"); addE (pt --> InstPort n "rhs")
     pure (InstPort n outPort)
+
 ----------------------------------------------------------------------
--- LET
+-- LET  (sem mudanças) -----------------------------------------------
 ----------------------------------------------------------------------
 compileLet :: [S.Decl] -> S.Expr -> Builder Port
 compileLet ds e = do
@@ -157,7 +158,7 @@ compileLocalDecl (S.FunDecl f ps body)
       n <- freshNid
       let ins = [ InstPort n ("in"<>show i) | i <- [0..length ps-1] ]
       old <- gets env
-      modify' (\s -> s { env = Map.union (Map.fromList (zip ps ins)) (env s) })
+      modify' (\s -> s { env = Map.union (Map.fromList (zip ps ins)) (env s)})
       pBody <- compileExpr body
       addN (InstSuper n ("<local:"<>T.pack f<>">") (map portNode ins) 1)
       addE (pBody --> InstPort n "out0")
@@ -330,36 +331,30 @@ foldM1 f (x:y:xs) = do
 ----------------------------------------------------------------------
 compileTopDecl :: S.Decl -> Builder ()
 compileTopDecl (S.FunDecl f ps body) = do
-  if null ps                                          -- binding simples
+  place <- lookupVar f
+  let nId = case place of
+              InstPort nid _ -> nid
+              _              -> error "[Builder] expected InstPort"
+  if null ps                                   -- binding simples
     then do pVal <- compileExpr body
-            n    <- freshNid
-            addN (InstSuper n (T.pack f) [portNode pVal] 1)
-            addE (pVal --> InstPort n "in0")
-    else do                                           -- função com args
-      -- InstPar para cada parâmetro
-      parNodes <- forM ps $ \p -> do
-        pid <- freshNid
-        addN (InstPar pid (T.pack p) [] 1)
-        pure (p, InstPort pid "out0")
-
+            addN (InstSuper nId (T.pack f) [portNode pVal] 1)
+            addE (pVal --> InstPort nId "in0")
+    else do                                    -- função com parâmetros
+      parNodes <- forM (zip [0..] ps) $ \(i, p) -> do
+                    pid <- freshNid
+                    addN (InstPar pid (T.pack p) [] 1)
+                    pure (p, InstPort pid "out0")
       let ins = map snd parNodes
       old <- gets env
       modify' (\s -> s { env = Map.union (Map.fromList parNodes) (env s)})
       pBody <- compileExpr body
-      nFun  <- freshNid
-      addN (InstSuper nFun (T.pack f) (map portNode ins) 1)
-      addE (pBody --> InstPort nFun "out0")
+      addN (InstSuper nId (T.pack f) (map portNode ins) 1)
+      addE (pBody --> InstPort nId "out0")
       modify' (\s -> s { env = old })
-      bindVar f (InstPort nFun "out0")
-
-  -- remove placeholder <fwd:f>
-  modify' $ \s@BState{g} ->
-    let keep (InstSuper{name}) = not ("<fwd:" `T.isPrefixOf` name)
-        keep _                 = True
-    in s { g = g { dgNodes = Map.filter keep (dgNodes g) } }
+      bindVar f (InstPort nId "out0")
 
 ----------------------------------------------------------------------
--- Conversão lit / op  (mesmo que antes)
+-- Conversão lit / op
 ----------------------------------------------------------------------
 convLit :: S.Literal -> Literal
 convLit = \case
@@ -390,7 +385,8 @@ buildProgram (S.Program ds) =
     fmap g (execStateT (predeclare ds >> mapM_ compileTopDecl ds) emptyB)
 
 predeclare :: [S.Decl] -> Builder ()
-predeclare = mapM_ $ \(S.FunDecl f _ _) -> do
-  n <- freshNid
-  addN (InstSuper n ("<fwd:" <> T.pack f <> ">") [] 1)
-  bindVar f (InstPort n "out0")
+predeclare =
+  mapM_ $ \(S.FunDecl f _ _) -> do
+    n <- freshNid
+    addN (InstSuper n ("<fwd:" <> T.pack f <> ">") [] 1)
+    bindVar f (InstPort n "out0")
