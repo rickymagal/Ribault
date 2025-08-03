@@ -1,0 +1,172 @@
+super main s0 1 39:out0
+super bfs s1 1 40:out0 41:out0
+super bfsAux s2 1 45:out0 46:out0
+super lookupAdj s3 1 58:out0 59:out0
+super append s4 1 73:out0 74:out0
+const c5 1
+const c6 2
+const c7 3
+super nil s8 1
+cons b9 7:out0 8:out0
+cons b10 6:out0 9:out0
+tuple t11 5:out0 10:out0
+const c12 2
+const c13 4
+super nil s14 1
+cons b15 13:out0 14:out0
+tuple t16 12:out0 15:out0
+const c17 3
+const c18 4
+const c19 5
+super nil s20 1
+cons b21 19:out0 20:out0
+cons b22 18:out0 21:out0
+tuple t23 17:out0 22:out0
+const c24 4
+super nil s25 1
+tuple t26 24:out0 25:out0
+const c27 5
+const c28 1
+super nil s29 1
+cons b30 28:out0 29:out0
+tuple t31 27:out0 30:out0
+super nil s32 1
+cons b33 31:out0 32:out0
+cons b34 26:out0 33:out0
+cons b35 23:out0 34:out0
+cons b36 16:out0 35:out0
+cons b37 11:out0 36:out0
+const c38 1
+super <apply> s39 1 1:out0 37:out0 38:out0
+param p40 graph
+param p41 root
+super nil s42 1
+cons b43 41:out0 42:out0
+super <apply> s44 1 2:out0 40:out0 43:out0
+param p45 graph
+param p46 queue
+isNil u47 46:out0
+steer d48 47:out0
+super nil s49 1
+proj p50 0 46:out0
+proj p51 0 50:out0
+proj p52 1 50:out0
+and b53 51:out0 52:out0
+super <apply> s54 1 3:out0 51:out0 45:out0
+super <apply> s55 1 4:out0 54:out0 52:out0
+super <apply> s56 1 2:out0 45:out0 55:out0
+cons b57 51:out0 56:out0
+param p58 u
+param p59 graph
+isNil u60 59:out0
+steer d61 60:out0
+super nil s62 1
+proj p63 0 59:out0
+proj p64 0 63:out0
+proj p65 1 63:out0
+proj p66 0 64:out0
+proj p67 1 64:out0
+and b68 66:out0 67:out0
+and b69 68:out0 65:out0
+eq b70 66:out0 58:out0
+steer d71 70:out0
+super <apply> s72 1 3:out0 58:out0 65:out0
+param p73 xs
+param p74 ys
+isNil u75 74:out0
+steer d76 75:out0
+proj p77 0 74:out0
+proj p78 0 77:out0
+proj p79 1 77:out0
+and b80 78:out0 79:out0
+super <apply> s81 1 4:out0 73:out0 79:out0
+cons b82 78:out0 81:out0
+apply 73:out0 -> 4:out0
+apply 76:f -> 82:out
+apply 81:out0 -> 82:rhs
+apply 78:out -> 82:lhs
+apply 79:out -> 81:in2
+apply 73:out0 -> 81:in1
+apply 4:out0 -> 81:in0
+apply 79:out -> 80:rhs
+apply 78:out -> 80:lhs
+apply 76:t -> 73:out0
+apply 75:out -> 76:pred
+apply 74:out0 -> 75:arg
+apply 62:out -> 3:out0
+apply 61:f -> 67:out
+apply 71:f -> 72:out0
+apply 71:t -> 67:out
+apply 65:out -> 72:in2
+apply 58:out0 -> 72:in1
+apply 3:out0 -> 72:in0
+apply 70:out -> 71:pred
+apply 58:out0 -> 70:rhs
+apply 66:out -> 70:lhs
+apply 65:out -> 69:rhs
+apply 68:out -> 69:lhs
+apply 67:out -> 68:rhs
+apply 66:out -> 68:lhs
+apply 61:t -> 62:out
+apply 60:out -> 61:pred
+apply 59:out0 -> 60:arg
+apply 49:out -> 2:out0
+apply 48:f -> 57:out
+apply 56:out0 -> 57:rhs
+apply 51:out -> 57:lhs
+apply 55:out0 -> 56:in2
+apply 45:out0 -> 56:in1
+apply 2:out0 -> 56:in0
+apply 52:out -> 55:in2
+apply 54:out0 -> 55:in1
+apply 4:out0 -> 55:in0
+apply 45:out0 -> 54:in2
+apply 51:out -> 54:in1
+apply 3:out0 -> 54:in0
+apply 52:out -> 53:rhs
+apply 51:out -> 53:lhs
+apply 48:t -> 49:out
+apply 47:out -> 48:pred
+apply 46:out0 -> 47:arg
+apply 44:out0 -> 1:out0
+apply 43:out -> 44:in2
+apply 40:out0 -> 44:in1
+apply 2:out0 -> 44:in0
+apply 42:out -> 43:rhs
+apply 41:out0 -> 43:lhs
+apply 39:out0 -> 0:in0
+apply 38:out -> 39:in2
+apply 37:out -> 39:in1
+apply 1:out0 -> 39:in0
+apply 36:out -> 37:rhs
+apply 11:out -> 37:lhs
+apply 35:out -> 36:rhs
+apply 16:out -> 36:lhs
+apply 34:out -> 35:rhs
+apply 23:out -> 35:lhs
+apply 33:out -> 34:rhs
+apply 26:out -> 34:lhs
+apply 32:out -> 33:rhs
+apply 31:out -> 33:lhs
+apply 30:out -> 31:f1
+apply 27:out -> 31:f0
+apply 29:out -> 30:rhs
+apply 28:out -> 30:lhs
+apply 25:out -> 26:f1
+apply 24:out -> 26:f0
+apply 22:out -> 23:f1
+apply 17:out -> 23:f0
+apply 21:out -> 22:rhs
+apply 18:out -> 22:lhs
+apply 20:out -> 21:rhs
+apply 19:out -> 21:lhs
+apply 15:out -> 16:f1
+apply 12:out -> 16:f0
+apply 14:out -> 15:rhs
+apply 13:out -> 15:lhs
+apply 10:out -> 11:f1
+apply 5:out -> 11:f0
+apply 9:out -> 10:rhs
+apply 6:out -> 10:lhs
+apply 8:out -> 9:rhs
+apply 7:out -> 9:lhs

@@ -125,16 +125,25 @@ compileTuple es = do
   zipWithM_ (\i p -> addE (p --> InstPort n ("f"<>show i))) [0..] ps
   pure (InstPort n outPort)
 
+-- Em Synthesis/Builder.hs, na seção de LISTS:
 compileList :: [S.Expr] -> Builder Port
-compileList = foldr cons (litNode LUnit)
- where
-  cons h tlM = do
-    ph <- compileExpr h
-    pt <- tlM
-    n  <- freshNid
-    addN (InstBinop n BCons (portNode ph) (portNode pt))
-    addE (ph --> InstPort n "lhs"); addE (pt --> InstPort n "rhs")
-    pure (InstPort n outPort)
+-- caso especial: lista vazia vira um nó InstSuper "nil"
+compileList [] = do
+  n <- freshNid
+  addN (InstSuper n "nil" [] 1)
+  pure (InstPort n outPort)
+
+-- caso geral: cons as before, mas usando compileList [] como base
+compileList (h:ts) = cons h (compileList ts)
+  where
+    cons h tlM = do
+      ph <- compileExpr h
+      pt <- tlM
+      n  <- freshNid
+      addN (InstBinop n BCons (portNode ph) (portNode pt))
+      addE (ph --> InstPort n "lhs")
+      addE (pt --> InstPort n "rhs")
+      pure (InstPort n outPort)
 
 ----------------------------------------------------------------------
 -- LET  (sem mudanças) -----------------------------------------------

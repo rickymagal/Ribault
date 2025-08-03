@@ -1,8 +1,8 @@
--- src/Synthesis/SSA.hs
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections   #-}
 
-module SSA (ssaTransform) where
+-- coloque este arquivo em src/Synthesis/SSA.hs
+module Synthesis.SSA (ssaTransform) where
 
 import           Types
 import           Node
@@ -13,29 +13,29 @@ import           Data.Graph                ( SCC(..), stronglyConnComp )
 import           Control.Monad.State.Strict
 
 ----------------------------------------------------------------------
--- API
+-- | Transforma um DGraph em SSA, inserindo InstIncTag onde houver ciclos
 ----------------------------------------------------------------------
 ssaTransform :: DGraph DNode -> DGraph DNode
-ssaTransform g@DGraph{..}
-  | null backEdges = g
-  | otherwise      = evalUnique $ execStateT (mapM_ insertInc backEdges) g
+ssaTransform g0@DGraph{..}
+  | null backEdges = g0
+  | otherwise      = evalUnique $ execStateT (mapM_ insertInc backEdges) g0
   where
+    -- mapeia cada nó ao seu SCC
     sccMap :: Map.Map NodeId (Map.Map NodeId ())
-    sccMap = nodeToScc g
+    sccMap = nodeToScc g0
 
+    -- toda aresta que permanece dentro de um mesmo SCC (e não é trivial) é "back‐edge"
     backEdges :: [Edge]
     backEdges =
       [ e
       | e@(s, _, d, _) <- dgEdges
-      , let ms = Map.lookup s sccMap
-            md = Map.lookup d sccMap
-      , Just cs <- [ms]
-      , Just cd <- [md]
+      , Just cs <- [Map.lookup s sccMap]
+      , Just cd <- [Map.lookup d sccMap]
       , cs == cd, s /= d, Map.size cs > 1
       ]
 
 ----------------------------------------------------------------------
--- Inserção do InstIncTag
+-- | Insere, para cada back‐edge, um nó InstIncTag (phi‐like)
 ----------------------------------------------------------------------
 type M = StateT (DGraph DNode) Unique
 
@@ -51,7 +51,7 @@ insertInc (src, sp, dst, dp) = do
       }
 
 ----------------------------------------------------------------------
--- Mapa NodeId ↦ SCC
+-- | Constroi mapa NodeId → SCC
 ----------------------------------------------------------------------
 nodeToScc :: DGraph DNode -> Map.Map NodeId (Map.Map NodeId ())
 nodeToScc DGraph{..} = Map.fromList pairs
@@ -60,8 +60,9 @@ nodeToScc DGraph{..} = Map.fromList pairs
     succs v  = [ d | (s, _, d, _) <- dgEdges, s == v ]
     comps    = stronglyConnComp vertices
 
-    pairs = concatMap toPairs comps
     toPairs (AcyclicSCC v) = [(v, Map.singleton v ())]
     toPairs (CyclicSCC vs) =
-      let set = Map.fromList (map (,()) vs)
+      let set = Map.fromList [ (x,()) | x <- vs ]
       in  [ (v, set) | v <- vs ]
+
+    pairs = concatMap toPairs comps

@@ -1,0 +1,27 @@
+-- | Simple breadth‐first traversal over an adjacency‐list graph
+append ys xs = case ys of
+  []        -> xs;
+  (y:ys')   -> y : append ys' xs;;
+
+
+lookupAdj graph u = case graph of
+  []                 -> [];
+  ((v,adj):rest)     -> if v == u
+                         then adj
+                         else lookupAdj rest u;;
+
+
+bfsAux queue graph = case queue of
+  []        -> [];
+  (u:qs)    -> u : bfsAux (append qs (lookupAdj graph u)) graph;;
+
+
+bfs root graph = bfsAux [root] graph;
+
+main = bfs 1
+            [ (1,[2,3])
+            , (2,[4])
+            , (3,[4,5])
+            , (4,[])
+            , (5,[1])
+            ]

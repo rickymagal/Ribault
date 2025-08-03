@@ -1,6 +1,5 @@
 # Ribault - Haskell TALM Compiler
 
-Repository for the final undergraduate project presented at the Department of Computing, **UFES** (2nd semester 2025).  
 **Author**: Ricardo Magalhães Santos Filho
 **Advisor**: Prof. Dr. Alberto Ferreira de Souza  
 **Co-advisor**: Prof. Dr. Tiago Assumpção de Oliveira Alves
