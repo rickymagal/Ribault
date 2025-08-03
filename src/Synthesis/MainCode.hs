@@ -1,9 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
--- | Entry point para gerar **TALM assembly** a partir da mesma pipeline usada no MainGraph.
---   Compile, por exemplo:
---     ghc -O2 -isrc -o lambdaflow-asm src/Synthesis/MainCode.hs
---
+-- | Entry point para gerar TALM assembly (via SSA) a partir da mesma pipeline usada no MainGraph.
 module Main where
 
 import System.Environment (getArgs)
@@ -19,8 +16,9 @@ import Syntax   (Program)
 import Semantic (checkAll)
 
 -- Back-end
-import qualified Synthesis.Builder  as DF
-import qualified Synthesis.Codegen  as CG
+import qualified Synthesis.Builder as DF
+import qualified Synthesis.SSA     as SSA
+import qualified Synthesis.Codegen as CG
 
 main :: IO ()
 main = do
@@ -33,7 +31,12 @@ main = do
   let ast = parse (alexScanTokens src)
   case checkAll ast of
     [] -> do
-      let dfg      = DF.buildProgram ast
-          asmText  = CG.generateTALM dfg
-      TLIO.putStr asmText
-    errs -> mapM_ (hPutStrLn stderr . show) errs >> exitFailure
+      -- 1) monta DFG
+      let dfg0 = DF.buildProgram ast
+      -- 2) aplica transformação SSA (insere InstIncTag onde for preciso)
+          dfg1 = SSA.ssaTransform dfg0
+      -- 3) gera TALM
+          asm  = CG.generateTALM dfg1
+      TLIO.putStr asm
+    errs ->
+      mapM_ (hPutStrLn stderr . show) errs >> exitFailure
