@@ -1,1 +1,197 @@
-TypErr (Mismatch (List [Tuple [Lit (LInt 1),List [Lit (LInt 2),Lit (LInt 3)]],Tuple [Lit (LInt 2),List [Lit (LInt 4)]],Tuple [Lit (LInt 3),List [Lit (LInt 4),Lit (LInt 5)]],Tuple [Lit (LInt 4),List []],Tuple [Lit (LInt 5),List [Lit (LInt 1)]]]) (TList (TTuple [TInt,TList TInt])) (TList (TTuple [TInt,TList TInt])))
+digraph AST {
+  node [shape=box, fontname="Courier"];
+  decl0 [label="FunDecl
+main()"];
+  decl0_body [label="App"];
+  decl0 -> decl0_body;
+  decl0_body_fun [label="App"];
+  decl0_body -> decl0_body_fun;
+  decl0_body_fun_fun [label="Var
+bfs"];
+  decl0_body_fun -> decl0_body_fun_fun;
+  decl0_body_fun_arg [label="Lit"];
+  decl0_body_fun -> decl0_body_fun_arg;
+  decl0_body_arg [label="List"];
+  decl0_body -> decl0_body_arg;
+  decl0_body_arg_e0 [label="Tuple"];
+  decl0_body_arg -> decl0_body_arg_e0;
+  decl0_body_arg_e0_e0 [label="Lit"];
+  decl0_body_arg_e0 -> decl0_body_arg_e0_e0;
+  decl0_body_arg_e0_e1 [label="List"];
+  decl0_body_arg_e0 -> decl0_body_arg_e0_e1;
+  decl0_body_arg_e0_e1_e0 [label="Lit"];
+  decl0_body_arg_e0_e1 -> decl0_body_arg_e0_e1_e0;
+  decl0_body_arg_e0_e1_e1 [label="Lit"];
+  decl0_body_arg_e0_e1 -> decl0_body_arg_e0_e1_e1;
+  decl0_body_arg_e1 [label="Tuple"];
+  decl0_body_arg -> decl0_body_arg_e1;
+  decl0_body_arg_e1_e0 [label="Lit"];
+  decl0_body_arg_e1 -> decl0_body_arg_e1_e0;
+  decl0_body_arg_e1_e1 [label="List"];
+  decl0_body_arg_e1 -> decl0_body_arg_e1_e1;
+  decl0_body_arg_e1_e1_e0 [label="Lit"];
+  decl0_body_arg_e1_e1 -> decl0_body_arg_e1_e1_e0;
+  decl0_body_arg_e2 [label="Tuple"];
+  decl0_body_arg -> decl0_body_arg_e2;
+  decl0_body_arg_e2_e0 [label="Lit"];
+  decl0_body_arg_e2 -> decl0_body_arg_e2_e0;
+  decl0_body_arg_e2_e1 [label="List"];
+  decl0_body_arg_e2 -> decl0_body_arg_e2_e1;
+  decl0_body_arg_e2_e1_e0 [label="Lit"];
+  decl0_body_arg_e2_e1 -> decl0_body_arg_e2_e1_e0;
+  decl0_body_arg_e2_e1_e1 [label="Lit"];
+  decl0_body_arg_e2_e1 -> decl0_body_arg_e2_e1_e1;
+  decl0_body_arg_e3 [label="Tuple"];
+  decl0_body_arg -> decl0_body_arg_e3;
+  decl0_body_arg_e3_e0 [label="Lit"];
+  decl0_body_arg_e3 -> decl0_body_arg_e3_e0;
+  decl0_body_arg_e3_e1 [label="List"];
+  decl0_body_arg_e3 -> decl0_body_arg_e3_e1;
+  decl0_body_arg_e4 [label="Tuple"];
+  decl0_body_arg -> decl0_body_arg_e4;
+  decl0_body_arg_e4_e0 [label="Lit"];
+  decl0_body_arg_e4 -> decl0_body_arg_e4_e0;
+  decl0_body_arg_e4_e1 [label="List"];
+  decl0_body_arg_e4 -> decl0_body_arg_e4_e1;
+  decl0_body_arg_e4_e1_e0 [label="Lit"];
+  decl0_body_arg_e4_e1 -> decl0_body_arg_e4_e1_e0;
+  decl1 [label="FunDecl
+bfs(graph,root)"];
+  decl1_body [label="App"];
+  decl1 -> decl1_body;
+  decl1_body_fun [label="App"];
+  decl1_body -> decl1_body_fun;
+  decl1_body_fun_fun [label="Var
+bfsAux"];
+  decl1_body_fun -> decl1_body_fun_fun;
+  decl1_body_fun_arg [label="List"];
+  decl1_body_fun -> decl1_body_fun_arg;
+  decl1_body_fun_arg_e0 [label="Var
+root"];
+  decl1_body_fun_arg -> decl1_body_fun_arg_e0;
+  decl1_body_arg [label="Var
+graph"];
+  decl1_body -> decl1_body_arg;
+  decl2 [label="FunDecl
+bfsAux(graph,queue)"];
+  decl2_body [label="Case"];
+  decl2 -> decl2_body;
+  decl2_body_scrut [label="Var
+queue"];
+  decl2_body -> decl2_body_scrut;
+  decl2_body_pat0 [label="ListPat"];
+  decl2_body -> decl2_body_pat0;
+  decl2_body_bd0 [label="AltBody"];
+  decl2_body_pat0 -> decl2_body_bd0;
+  decl2_body_pat1 [label="TuplePat"];
+  decl2_body -> decl2_body_pat1;
+  decl2_body_bd1 [label="AltBody"];
+  decl2_body_pat1 -> decl2_body_bd1;
+  decl2_body_bd1_head [label="Var
+u"];
+  decl2_body_bd1 -> decl2_body_bd1_head;
+  decl2_body_bd1_tail [label="App"];
+  decl2_body_bd1 -> decl2_body_bd1_tail;
+  decl2_body_bd1_tail_fun [label="App"];
+  decl2_body_bd1_tail -> decl2_body_bd1_tail_fun;
+  decl2_body_bd1_tail_fun_fun [label="Var
+bfsAux"];
+  decl2_body_bd1_tail_fun -> decl2_body_bd1_tail_fun_fun;
+  decl2_body_bd1_tail_fun_arg [label="App"];
+  decl2_body_bd1_tail_fun -> decl2_body_bd1_tail_fun_arg;
+  decl2_body_bd1_tail_fun_arg_fun [label="App"];
+  decl2_body_bd1_tail_fun_arg -> decl2_body_bd1_tail_fun_arg_fun;
+  decl2_body_bd1_tail_fun_arg_fun_fun [label="Var
+append"];
+  decl2_body_bd1_tail_fun_arg_fun -> decl2_body_bd1_tail_fun_arg_fun_fun;
+  decl2_body_bd1_tail_fun_arg_fun_arg [label="Var
+qs"];
+  decl2_body_bd1_tail_fun_arg_fun -> decl2_body_bd1_tail_fun_arg_fun_arg;
+  decl2_body_bd1_tail_fun_arg_arg [label="App"];
+  decl2_body_bd1_tail_fun_arg -> decl2_body_bd1_tail_fun_arg_arg;
+  decl2_body_bd1_tail_fun_arg_arg_fun [label="App"];
+  decl2_body_bd1_tail_fun_arg_arg -> decl2_body_bd1_tail_fun_arg_arg_fun;
+  decl2_body_bd1_tail_fun_arg_arg_fun_fun [label="Var
+lookupAdj"];
+  decl2_body_bd1_tail_fun_arg_arg_fun -> decl2_body_bd1_tail_fun_arg_arg_fun_fun;
+  decl2_body_bd1_tail_fun_arg_arg_fun_arg [label="Var
+graph"];
+  decl2_body_bd1_tail_fun_arg_arg_fun -> decl2_body_bd1_tail_fun_arg_arg_fun_arg;
+  decl2_body_bd1_tail_fun_arg_arg_arg [label="Var
+u"];
+  decl2_body_bd1_tail_fun_arg_arg -> decl2_body_bd1_tail_fun_arg_arg_arg;
+  decl2_body_bd1_tail_arg [label="Var
+graph"];
+  decl2_body_bd1_tail -> decl2_body_bd1_tail_arg;
+  decl3 [label="FunDecl
+lookupAdj(u,graph)"];
+  decl3_body [label="Case"];
+  decl3 -> decl3_body;
+  decl3_body_scrut [label="Var
+graph"];
+  decl3_body -> decl3_body_scrut;
+  decl3_body_pat0 [label="ListPat"];
+  decl3_body -> decl3_body_pat0;
+  decl3_body_bd0 [label="AltBody"];
+  decl3_body_pat0 -> decl3_body_bd0;
+  decl3_body_pat1 [label="TuplePat"];
+  decl3_body -> decl3_body_pat1;
+  decl3_body_bd1 [label="AltBody"];
+  decl3_body_pat1 -> decl3_body_bd1;
+  decl3_body_bd1_cond [label="BinOp
+Eq"];
+  decl3_body_bd1 -> decl3_body_bd1_cond;
+  decl3_body_bd1_cond_l [label="Var
+v"];
+  decl3_body_bd1_cond -> decl3_body_bd1_cond_l;
+  decl3_body_bd1_cond_r [label="Var
+u"];
+  decl3_body_bd1_cond -> decl3_body_bd1_cond_r;
+  decl3_body_bd1_then [label="Var
+adj"];
+  decl3_body_bd1 -> decl3_body_bd1_then;
+  decl3_body_bd1_else [label="App"];
+  decl3_body_bd1 -> decl3_body_bd1_else;
+  decl3_body_bd1_else_fun [label="App"];
+  decl3_body_bd1_else -> decl3_body_bd1_else_fun;
+  decl3_body_bd1_else_fun_fun [label="Var
+lookupAdj"];
+  decl3_body_bd1_else_fun -> decl3_body_bd1_else_fun_fun;
+  decl3_body_bd1_else_fun_arg [label="Var
+rest"];
+  decl3_body_bd1_else_fun -> decl3_body_bd1_else_fun_arg;
+  decl3_body_bd1_else_arg [label="Var
+u"];
+  decl3_body_bd1_else -> decl3_body_bd1_else_arg;
+  decl4 [label="FunDecl
+append(xs,ys)"];
+  decl4_body [label="Case"];
+  decl4 -> decl4_body;
+  decl4_body_scrut [label="Var
+ys"];
+  decl4_body -> decl4_body_scrut;
+  decl4_body_pat0 [label="ListPat"];
+  decl4_body -> decl4_body_pat0;
+  decl4_body_bd0 [label="AltBody"];
+  decl4_body_pat0 -> decl4_body_bd0;
+  decl4_body_pat1 [label="TuplePat"];
+  decl4_body -> decl4_body_pat1;
+  decl4_body_bd1 [label="AltBody"];
+  decl4_body_pat1 -> decl4_body_bd1;
+  decl4_body_bd1_head [label="Var
+y"];
+  decl4_body_bd1 -> decl4_body_bd1_head;
+  decl4_body_bd1_tail [label="App"];
+  decl4_body_bd1 -> decl4_body_bd1_tail;
+  decl4_body_bd1_tail_fun [label="App"];
+  decl4_body_bd1_tail -> decl4_body_bd1_tail_fun;
+  decl4_body_bd1_tail_fun_fun [label="Var
+append"];
+  decl4_body_bd1_tail_fun -> decl4_body_bd1_tail_fun_fun;
+  decl4_body_bd1_tail_fun_arg [label="Var
+ys'"];
+  decl4_body_bd1_tail_fun -> decl4_body_bd1_tail_fun_arg;
+  decl4_body_bd1_tail_arg [label="Var
+xs"];
+  decl4_body_bd1_tail -> decl4_body_bd1_tail_arg;
+}

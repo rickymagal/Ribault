@@ -1,27 +1,27 @@
--- concatena duas listas
-append xs ys = case xs of
-  []      -> ys;
-  (h:t)   -> h : append t ys;;
+-- | Simple breadth‐first traversal over an adjacency‐list graph
+append ys xs = case ys of
+  []        -> xs;
+  (y:ys')   -> y : append ys' xs;;
 
--- lookupAdj: busca lista de adjacência de u em graph
-lookupAdj u graph = case graph of
-  []             -> [];
-  ((v,adj):rs)   -> if u == v then adj else lookupAdj u rs;;
 
--- bfsAux: percorre a fila em largura sem checar duplicados
-bfsAux graph queue = case queue of
-  []      -> [];
-  (u:qs)  -> u : bfsAux graph (append qs (lookupAdj u graph));;
+lookupAdj graph u = case graph of
+  []                 -> [];
+  ((v,adj):rest)     -> if v == u
+                         then adj
+                         else lookupAdj rest u;;
 
--- entry point
-bfs graph root = bfsAux graph [root];
 
--- exemplo de grafo e chamada
-main = bfs
-  [ (1,[2,3])
-  , (2,[4])
-  , (3,[4,5])
-  , (4,[])
-  , (5,[1])
-  ]
-  1
+bfsAux queue graph = case queue of
+  []        -> [];
+  (u:qs)    -> u : bfsAux (append qs (lookupAdj graph u)) graph;;
+
+
+bfs root graph = bfsAux [root] graph;
+
+main = bfs 1
+            [ (1,[2,3])
+            , (2,[4])
+            , (3,[4,5])
+            , (4,[])
+            , (5,[1])
+            ]

@@ -1,0 +1,90 @@
+super main s0 1 16:out0
+super insertionSort s1 1 17:out0
+super insert s2 1 27:out0 28:out0
+const c3 34
+const c4 7
+const c5 23
+const c6 32
+const c7 5
+const c8 62
+super nil s9 1
+cons b10 8:out0 9:out0
+cons b11 7:out0 10:out0
+cons b12 6:out0 11:out0
+cons b13 5:out0 12:out0
+cons b14 4:out0 13:out0
+cons b15 3:out0 14:out0
+super <apply> s16 1 1:out0 15:out0
+param p17 lst
+isNil u18 17:out0
+steer d19 18:out0
+super nil s20 1
+proj p21 0 17:out0
+proj p22 0 21:out0
+proj p23 1 21:out0
+and b24 22:out0 23:out0
+super <apply> s25 1 1:out0 23:out0
+super <apply> s26 1 2:out0 25:out0 22:out0
+param p27 xs
+param p28 x
+isNil u29 27:out0
+steer d30 29:out0
+super nil s31 1
+cons b32 28:out0 31:out0
+proj p33 0 27:out0
+proj p34 0 33:out0
+proj p35 1 33:out0
+and b36 34:out0 35:out0
+le b37 28:out0 34:out0
+steer d38 37:out0
+cons b39 28:out0 27:out0
+super <apply> s40 1 2:out0 35:out0 28:out0
+cons b41 34:out0 40:out0
+apply 32:out -> 2:out0
+apply 30:f -> 39:out
+apply 38:f -> 41:out
+apply 38:t -> 39:out
+apply 40:out0 -> 41:rhs
+apply 34:out -> 41:lhs
+apply 28:out0 -> 40:in2
+apply 35:out -> 40:in1
+apply 2:out0 -> 40:in0
+apply 27:out0 -> 39:rhs
+apply 28:out0 -> 39:lhs
+apply 37:out -> 38:pred
+apply 34:out -> 37:rhs
+apply 28:out0 -> 37:lhs
+apply 35:out -> 36:rhs
+apply 34:out -> 36:lhs
+apply 30:t -> 32:out
+apply 31:out -> 32:rhs
+apply 28:out0 -> 32:lhs
+apply 29:out -> 30:pred
+apply 27:out0 -> 29:arg
+apply 20:out -> 1:out0
+apply 19:f -> 26:out0
+apply 22:out -> 26:in2
+apply 25:out0 -> 26:in1
+apply 2:out0 -> 26:in0
+apply 23:out -> 25:in1
+apply 1:out0 -> 25:in0
+apply 23:out -> 24:rhs
+apply 22:out -> 24:lhs
+apply 19:t -> 20:out
+apply 18:out -> 19:pred
+apply 17:out0 -> 18:arg
+apply 16:out0 -> 0:in0
+apply 15:out -> 16:in1
+apply 1:out0 -> 16:in0
+apply 14:out -> 15:rhs
+apply 3:out -> 15:lhs
+apply 13:out -> 14:rhs
+apply 4:out -> 14:lhs
+apply 12:out -> 13:rhs
+apply 5:out -> 13:lhs
+apply 11:out -> 12:rhs
+apply 6:out -> 12:lhs
+apply 10:out -> 11:rhs
+apply 7:out -> 11:lhs
+apply 9:out -> 10:rhs
+apply 8:out -> 10:lhs
