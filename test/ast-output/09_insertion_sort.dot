@@ -1,0 +1,108 @@
+digraph AST {
+  node [shape=box, fontname="Courier"];
+  decl0 [label="FunDecl
+main()"];
+  decl0_body [label="App"];
+  decl0 -> decl0_body;
+  decl0_body_fun [label="Var
+insertionSort"];
+  decl0_body -> decl0_body_fun;
+  decl0_body_arg [label="List"];
+  decl0_body -> decl0_body_arg;
+  decl0_body_arg_e0 [label="Lit"];
+  decl0_body_arg -> decl0_body_arg_e0;
+  decl0_body_arg_e1 [label="Lit"];
+  decl0_body_arg -> decl0_body_arg_e1;
+  decl0_body_arg_e2 [label="Lit"];
+  decl0_body_arg -> decl0_body_arg_e2;
+  decl0_body_arg_e3 [label="Lit"];
+  decl0_body_arg -> decl0_body_arg_e3;
+  decl0_body_arg_e4 [label="Lit"];
+  decl0_body_arg -> decl0_body_arg_e4;
+  decl0_body_arg_e5 [label="Lit"];
+  decl0_body_arg -> decl0_body_arg_e5;
+  decl1 [label="FunDecl
+insertionSort(lst)"];
+  decl1_body [label="Case"];
+  decl1 -> decl1_body;
+  decl1_body_scrut [label="Var
+lst"];
+  decl1_body -> decl1_body_scrut;
+  decl1_body_pat0 [label="ListPat"];
+  decl1_body -> decl1_body_pat0;
+  decl1_body_bd0 [label="AltBody"];
+  decl1_body_pat0 -> decl1_body_bd0;
+  decl1_body_pat1 [label="TuplePat"];
+  decl1_body -> decl1_body_pat1;
+  decl1_body_bd1 [label="AltBody"];
+  decl1_body_pat1 -> decl1_body_bd1;
+  decl1_body_bd1_fun [label="App"];
+  decl1_body_bd1 -> decl1_body_bd1_fun;
+  decl1_body_bd1_fun_fun [label="Var
+insert"];
+  decl1_body_bd1_fun -> decl1_body_bd1_fun_fun;
+  decl1_body_bd1_fun_arg [label="Var
+h"];
+  decl1_body_bd1_fun -> decl1_body_bd1_fun_arg;
+  decl1_body_bd1_arg [label="App"];
+  decl1_body_bd1 -> decl1_body_bd1_arg;
+  decl1_body_bd1_arg_fun [label="Var
+insertionSort"];
+  decl1_body_bd1_arg -> decl1_body_bd1_arg_fun;
+  decl1_body_bd1_arg_arg [label="Var
+t"];
+  decl1_body_bd1_arg -> decl1_body_bd1_arg_arg;
+  decl2 [label="FunDecl
+insert(xs,x)"];
+  decl2_body [label="Case"];
+  decl2 -> decl2_body;
+  decl2_body_scrut [label="Var
+xs"];
+  decl2_body -> decl2_body_scrut;
+  decl2_body_pat0 [label="ListPat"];
+  decl2_body -> decl2_body_pat0;
+  decl2_body_bd0 [label="AltBody"];
+  decl2_body_pat0 -> decl2_body_bd0;
+  decl2_body_bd0_e0 [label="Var
+x"];
+  decl2_body_bd0 -> decl2_body_bd0_e0;
+  decl2_body_pat1 [label="TuplePat"];
+  decl2_body -> decl2_body_pat1;
+  decl2_body_bd1 [label="AltBody"];
+  decl2_body_pat1 -> decl2_body_bd1;
+  decl2_body_bd1_cond [label="BinOp
+Le"];
+  decl2_body_bd1 -> decl2_body_bd1_cond;
+  decl2_body_bd1_cond_l [label="Var
+x"];
+  decl2_body_bd1_cond -> decl2_body_bd1_cond_l;
+  decl2_body_bd1_cond_r [label="Var
+y"];
+  decl2_body_bd1_cond -> decl2_body_bd1_cond_r;
+  decl2_body_bd1_then [label="Cons"];
+  decl2_body_bd1 -> decl2_body_bd1_then;
+  decl2_body_bd1_then_head [label="Var
+x"];
+  decl2_body_bd1_then -> decl2_body_bd1_then_head;
+  decl2_body_bd1_then_tail [label="Var
+xs"];
+  decl2_body_bd1_then -> decl2_body_bd1_then_tail;
+  decl2_body_bd1_else [label="Cons"];
+  decl2_body_bd1 -> decl2_body_bd1_else;
+  decl2_body_bd1_else_head [label="Var
+y"];
+  decl2_body_bd1_else -> decl2_body_bd1_else_head;
+  decl2_body_bd1_else_tail [label="App"];
+  decl2_body_bd1_else -> decl2_body_bd1_else_tail;
+  decl2_body_bd1_else_tail_fun [label="App"];
+  decl2_body_bd1_else_tail -> decl2_body_bd1_else_tail_fun;
+  decl2_body_bd1_else_tail_fun_fun [label="Var
+insert"];
+  decl2_body_bd1_else_tail_fun -> decl2_body_bd1_else_tail_fun_fun;
+  decl2_body_bd1_else_tail_fun_arg [label="Var
+x"];
+  decl2_body_bd1_else_tail_fun -> decl2_body_bd1_else_tail_fun_arg;
+  decl2_body_bd1_else_tail_arg [label="Var
+ys"];
+  decl2_body_bd1_else_tail -> decl2_body_bd1_else_tail_arg;
+}
