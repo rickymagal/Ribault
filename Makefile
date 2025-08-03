@@ -164,4 +164,4 @@ clean:
 	        $(SRC_DIR)/Synthesis/*.hi $(SRC_DIR)/Synthesis/*.o \
 	        $(EXE_DF) $(EXE_AST) $(EXE_CODE) $(LIB_SUPERS)
 	@rm -f $(LEXER_HS) $(PARSER_HS)
-	@rm -rf $(DF_OUT_DIR) $(AST_OUT_DIR)
+	@rm -rf $(DF_OUT_DIR) $(AST_OUT_DIR) $(CODE_OUT_DIR)
