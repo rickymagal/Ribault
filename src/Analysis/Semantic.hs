@@ -131,37 +131,102 @@ checkDecl sig (FunDecl _ ps b) =
 -- | Recursively check an expression for semantic errors given current signature and environment.
 checkExpr :: Sig -> Env -> Expr -> [SemanticError]
 checkExpr sig env expr = case expr of
+
+  -- 1) Variável ou função top-level
   Var x
-    | Set.member x env || Map.member x sig -> []
-    | otherwise                            -> [UndefinedVar x]
-  Lit _       -> []
-  Lambda ps e ->
-    let dup  = [ DuplicateParam p | p <- ps, length (filter (==p) ps) > 1 ]
-        env' = Set.union env (Set.fromList ps)
-    in dup ++ checkExpr sig env' e
-  If c t e    -> concatMap (checkExpr sig env) [c,t,e]
-  Cons x xs -> checkExpr sig env x ++ checkExpr sig env xs
-  Case s alts -> checkExpr sig env s ++ concatMap (checkAlt sig env) alts
-  Let ds e    ->
-    let sig' = Map.union (buildSig ds) sig
-        errsD = concatMap (\(FunDecl _ ps bd) ->
-                  checkExpr sig' (Set.union env (Set.fromList ps)) bd
-                ) ds
-        env'  = Set.union env (Set.fromList (concatMap (\(FunDecl _ ps _) -> ps) ds))
-    in errsD ++ checkExpr sig' env' e
-  App{}       ->
-    let (fn, args) = flattenApp expr
-        e1 = checkExpr sig env fn
-        e2 = concatMap (checkExpr sig env) args
-        ar = case fn of
-          Var f | Just ar <- Map.lookup f sig, ar /= length args
-                -> [ArityMismatch f ar (length args)]
-          _ -> []
-    in e1 ++ e2 ++ ar
-  BinOp _ l r  -> checkExpr sig env l ++ checkExpr sig env r
-  UnOp _ x     -> checkExpr sig env x
-  List xs      -> concatMap (checkExpr sig env) xs
-  Tuple xs     -> concatMap (checkExpr sig env) xs
+    | Set.member x env
+      || Map.member x sig
+      -> []
+    | otherwise
+      -> [UndefinedVar x]
+
+  -- 2) Literal nunca dá erro semântico
+  Lit _ 
+    -> []
+
+  -- 3) Lambda: detecta parâmetros duplicados, depois checa o corpo
+  Lambda ps body
+    -> let
+         -- parâmetros repetidos
+         dupParams = [ p | p <- ps
+                         , length (filter (==p) ps) > 1
+                         ]
+         -- ambiente com os parâmetros em escopo
+         env'      = Set.union env (Set.fromList ps)
+         -- erros do corpo
+         errsBody  = checkExpr sig env' body
+       in
+         -- primeiro os DuplicateParam, depois os erros do corpo
+         map DuplicateParam dupParams ++ errsBody
+
+  -- 4) If: condição e ambos os ramos
+  If c t e
+    -> checkExpr sig env c
+    ++ checkExpr sig env t
+    ++ checkExpr sig env e
+
+  -- 5) Cons: cabeça e cauda
+  Cons x xs
+    -> checkExpr sig env x
+    ++ checkExpr sig env xs
+
+  -- 6) Case: scrutinee e cada alternativa
+  Case scr alts
+    -> checkExpr sig env scr
+    ++ concatMap (checkAlt sig env) alts
+
+  -- 7) Let-in: inclui nomes e parâmetros locais no ambiente
+  Let ds body
+    -> let
+         -- 7a) estende a assinatura com as local decls
+         sig' = Map.union (buildSig ds) sig
+
+         -- 7b) para cada FunDecl f ps fBody, cria ambiente local
+         decls    = [ (f,ps,fBody) | FunDecl f ps fBody <- ds ]
+         errsDecl = concat
+           [ checkExpr sig' ( Set.union env (Set.fromList (f:ps)) )
+                         fBody
+           | (f,ps,fBody) <- decls
+           ]
+
+         -- 7c) ambiente do corpo let: todas as funções e parâmetros locais
+         fnames = [ f  | (f,_,_) <- decls ]
+         params = concat [ ps | (_,ps,_) <- decls ]
+         env'   = Set.union env (Set.fromList (fnames ++ params))
+
+       in
+         errsDecl ++ checkExpr sig' env' body
+
+  -- 8) Application: achata, checa fn e args, depois aridade
+  App{}  
+    -> let
+         (fn,args) = flattenApp expr
+         eFn       = checkExpr sig env fn
+         eAs       = concatMap (checkExpr sig env) args
+         arErr     = case fn of
+           Var f
+             | Just ar <- Map.lookup f sig
+             , ar /= length args
+               -> [ArityMismatch f ar (length args)]
+           _ -> []
+       in
+         eFn ++ eAs ++ arErr
+
+  -- 9) BinOp: esquerda e direita
+  BinOp _ l r
+    -> checkExpr sig env l ++ checkExpr sig env r
+
+  -- 10) UnOp: operando
+  UnOp _ x
+    -> checkExpr sig env x
+
+  -- 11) Lista literal: checa cada elemento
+  List xs
+    -> concatMap (checkExpr sig env) xs
+
+  -- 12) Tupla literal: checa cada componente
+  Tuple xs
+    -> concatMap (checkExpr sig env) xs
 
 -- | Check a case alternative for duplicate pattern variables and nested errors.
 checkAlt :: Sig -> Env -> (Pattern, Expr) -> [SemanticError]
@@ -324,14 +389,30 @@ inferExpr fenv tenv expr = case expr of
           | otherwise               -> throwError (UnOpTypeErr op te)
 
   List xs -> do
-    ts <- mapM (inferExpr fenv tenv) xs
-    case ts of
-      [] -> freshTypeVar
-      (t:ts') | all (match t) ts' -> return (TList t)
-      _ -> throwError (Mismatch expr (TList (head ts)) (TList (last ts)))
+    ts    <- mapM (inferExpr fenv tenv) xs
+    eltTy <- case ts of
+      []      -> freshTypeVar
+      (t:ts') -> foldM (unifyTypes expr) t ts'
+    return (TList eltTy)
 
   Tuple xs -> TTuple <$> mapM (inferExpr fenv tenv) xs
 
+  where
+    -- unifica dois tipos, descendo em listas e tuplas
+    unifyTypes :: Expr -> Type -> Type -> Infer Type
+    unifyTypes e t1 t2 = case (t1,t2) of
+      (TVar _, t)            -> return t
+      (t, TVar _)            -> return t
+
+      (TList a, TList b)     -> TList <$> unifyTypes e a b
+
+      (TTuple as, TTuple bs)
+        | length as == length bs -> do
+            cs <- zipWithM (unifyTypes e) as bs
+            return (TTuple cs)
+
+      _ | t1 == t2           -> return t1
+      _                      -> throwError (Mismatch e t1 t2)
 -- | Match two types, allowing type variables.
 match :: Type -> Type -> Bool
 match (TVar _) _ = True
@@ -407,8 +488,9 @@ compBin op a b = throwError (BinOpTypeErr op a b)
 
 -- | Ensure an expression has boolean type.
 ensureBool :: Expr -> Type -> Infer ()
-ensureBool _ TBool = return ()
-ensureBool e t     = throwError (CondNotBool e t)
+ensureBool _ TBool    = return ()
+ensureBool _ (TVar _) = return ()    -- aceita variável de tipo como “bool”
+ensureBool e t        = throwError (CondNotBool e t)
 
 -- | Generate a fresh type variable.
 freshTypeVar :: Infer Type
