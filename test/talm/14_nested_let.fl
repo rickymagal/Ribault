@@ -1,5 +1,0 @@
-const n0 2
-const n1 1
-add n2 n1.0 n0.0
-mul n3 n2.0 n2.0
-ret n4 n3.0 n3.0

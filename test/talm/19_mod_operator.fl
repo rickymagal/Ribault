@@ -1,8 +1,0 @@
-callgroup("cg0", "rem7")
-const n1 15
-callsnd rem7[1] n1.0 cg0
-retsnd rem7[0] rem7ret.cg0 cg0
-ret n4 rem7ret.cg0 rem7ret.cg0
-const n5 7
-mod n6 n-1.0 n5.0
-ret n7 n6.0 n6.0
