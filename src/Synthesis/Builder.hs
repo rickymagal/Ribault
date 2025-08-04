@@ -17,6 +17,10 @@ import qualified Data.Map.Strict         as Map
 import qualified Data.Text               as T
 import qualified Data.Text.Lazy          as TL
 
+import           GHC.Conc                  (getNumCapabilities)
+import           Control.Monad.IO.Class    (liftIO)
+import System.IO.Unsafe (unsafePerformIO)
+
 import           Types
 import           Node
 import           Port
@@ -29,11 +33,12 @@ import qualified Syntax                  as S
 data BState = BState
   { g   :: !(DGraph DNode)
   , env :: !(Map S.Ident Port)
+  , totalNodes :: Int 
   }
 
 type Builder = StateT BState Unique
 emptyB :: BState
-emptyB = BState emptyGraph Map.empty
+emptyB = BState emptyGraph Map.empty 0
 
 freshNid :: Builder NodeId
 freshNid = lift freshId
@@ -62,36 +67,62 @@ boolConst = litNode . LBool
 ----------------------------------------------------------------------
 -- EXPRESSÕES
 ----------------------------------------------------------------------
+numCaps :: Int
+numCaps = unsafePerformIO getNumCapabilities
+
+countNodes :: S.Expr -> Int
+countNodes = \case
+  S.Var _       -> 1
+  S.Lit _       -> 1
+  S.Lambda _ e  -> 1 + countNodes e
+  S.If c t e    -> 1 + countNodes c + countNodes t + countNodes e
+  S.Case s alts -> 1 + countNodes s + sum [countNodes bd | (_,bd) <- alts]
+  S.Let ds e    -> 1 + sum [ countNodes bd | S.FunDecl _ _ bd <- ds ] + countNodes e
+  S.App f a     -> 1 + countNodes f + countNodes a
+  S.BinOp _ l r -> 1 + countNodes l + countNodes r
+  S.UnOp _ x    -> 1 + countNodes x
+  S.List xs     -> 1 + sum (map countNodes xs)
+  S.Tuple xs    -> 1 + sum (map countNodes xs)
+  S.Cons h t    -> 1 + countNodes h + countNodes t
+
 compileExpr :: S.Expr -> Builder Port
-compileExpr = \case
-  S.Var x         -> lookupVar x
-  S.Lit l         -> litNode (convLit l)
+compileExpr expr = do
+  total    <- gets totalNodes
+  let grain = countNodes expr
+  let threshold = fromIntegral total / fromIntegral numCaps
+  if fromIntegral grain >= threshold
+       then do
+         n <- freshNid            -- usa freshNid (lift freshId)
+         addN (InstSuper n "runHscCached" [] 1)
+         pure (InstPort n "out0")
+       else case expr of
+         S.Var x         -> lookupVar x
+         S.Lit l         -> litNode (convLit l)
 
-  -- λ-expressão vira nó super numerado com InstPar para args
-  S.Lambda params body -> do
-    parList <- forM params $ \p -> do
-                 pid <- freshNid
-                 addN (InstPar pid (T.pack p) [] 1)
-                 pure (p, InstPort pid "out0")
-    let ins = map snd parList
-    old <- gets env
-    modify' (\s -> s { env = Map.union (Map.fromList parList) (env s)})
-    pBody <- compileExpr body
-    nFun  <- freshNid
-    addN (InstSuper nFun ("λ#" <> T.pack (show nFun)) (map portNode ins) 1)
-    addE (pBody --> InstPort nFun "out0")
-    modify' (\s -> s { env = old })
-    pure (InstPort nFun "out0")
+         S.Lambda params body -> do
+           parList <- forM params $ \p -> do
+                        pid <- freshNid
+                        addN (InstPar pid (T.pack p) [] 1)
+                        pure (p, InstPort pid "out0")
+           let ins = map snd parList
+           oldEnv <- gets env
+           modify' (\s -> s { env = Map.union (Map.fromList parList) oldEnv })
+           pBody <- compileExpr body
+           nFun  <- freshNid
+           addN (InstSuper nFun ("λ#" <> T.pack (show nFun)) (map portNode ins) 1)
+           addE (pBody --> InstPort nFun "out0")
+           modify' (\s -> s { env = oldEnv })
+           pure (InstPort nFun "out0")
 
-  S.BinOp o a b   -> binop (convOp o) a b
-  S.UnOp  o e     -> unop  (convUn o) e
-  S.Cons h t      -> binop BCons h t
-  S.If c t e      -> compileIf c t e
-  S.Tuple es      -> compileTuple es
-  S.List  es      -> compileList es
-  S.App f a       -> compileApp f [a]
-  S.Let ds e      -> compileLet ds e
-  S.Case s as     -> compileCase s as
+         S.BinOp o a b   -> binop (convOp o) a b
+         S.UnOp  o e     -> unop  (convUn o) e
+         S.Cons h t      -> binop BCons h t
+         S.If c t e      -> compileIf c t e
+         S.Tuple es      -> compileTuple es
+         S.List  es      -> compileList es
+         S.App f a       -> compileApp f [a]
+         S.Let ds e      -> compileLet ds e
+         S.Case s as     -> compileCase s as
  where
   binop bop a b = do
     pL <- compileExpr a; pR <- compileExpr b; n <- freshNid
@@ -393,8 +424,41 @@ convUn = \case
 ----------------------------------------------------------------------
 buildProgram :: S.Program -> DGraph DNode
 buildProgram (S.Program ds) =
-  evalUnique $
-    fmap g (execStateT (predeclare ds >> mapM_ compileTopDecl ds) emptyB)
+  -- avalia o Builder no monad Unique e retorna apenas o grafo
+  evalUnique $ do
+    -- executa o StateT, produzindo o estado final
+    st <- execStateT setup emptyB
+    -- extrai o grafo do estado
+    pure (g st)
+  where
+    -- passos iniciais do Builder
+    setup :: Builder ()
+    setup = do
+      -- 1) soma todos os nós do programa
+      let total = sum [ countNodes bd | S.FunDecl _ _ bd <- ds ]
+      modify' (\s -> s { totalNodes = total })
+
+      -- 2) pré-declarações (foward declarations)
+      predeclare ds
+
+      -- 3) compila cada definição top-level
+      mapM_ compileTopDecl ds
+
+    -- contagem de nós (já existente em seu módulo)
+    countNodes :: S.Expr -> Int
+    countNodes = \case
+      S.Var _         -> 1
+      S.Lit _         -> 1
+      S.Lambda _ e    -> 1 + countNodes e
+      S.If c t e      -> 1 + countNodes c + countNodes t + countNodes e
+      S.Case s alts   -> 1 + countNodes s + sum [ countNodes bd | (_, bd) <- alts ]
+      S.Let ds e      -> 1 + sum [ countNodes bd | S.FunDecl _ _ bd <- ds ] + countNodes e
+      S.App f a       -> 1 + countNodes f + countNodes a
+      S.BinOp _ l r   -> 1 + countNodes l + countNodes r
+      S.UnOp _ x      -> 1 + countNodes x
+      S.List xs       -> 1 + sum (map countNodes xs)
+      S.Tuple xs      -> 1 + sum (map countNodes xs)
+      S.Cons h t      -> 1 + countNodes h + countNodes t
 
 predeclare :: [S.Decl] -> Builder ()
 predeclare =
