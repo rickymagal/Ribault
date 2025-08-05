@@ -1,16 +1,11 @@
--- src/Synthesis/GraphViz.hs
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 
 -- | Pretty-printer: DGraph → texto DOT/Graphviz
---   Um único retângulo por nó – sem células extras.
 module Synthesis.GraphViz (toDot) where
 
-----------------------------------------------------------------------
--- Imports
-----------------------------------------------------------------------
 import           Data.Text.Lazy            (Text)
 import qualified Data.Text.Lazy            as TL
 import           Data.Text.Lazy.Builder    (Builder)
@@ -37,16 +32,28 @@ toDot DGraph{..} =
 ----------------------------------------------------------------------
 -- Nó individual ------------------------------------------------------
 ----------------------------------------------------------------------
--- Mostra um nó em formato DOT
 showNode :: DNode -> Builder
 -- ▸ Steer: triângulo com “T  F”
 showNode n@InstSteer{} =
   "  flowInst" <> int (nId n)
   <> " [shape=triangle,orientation=180,label=\"T  F\",fontsize=10];\n"
-  
+
 -- ▸ Oculta placeholders <fwd:…>
 showNode n@InstSuper{name}
   | "<fwd:" `T.isPrefixOf` name = mempty
+
+-- ▸ DEPRECADO: não mostrar InstPar (parâmetros explícitos)
+showNode InstPar{} = mempty
+
+-- ▸ Novos nós TALM
+showNode InstCallGroup{nId, groupName} =
+  "  flowInst" <> int nId <> " [label=\"callgroup(" <> TB.fromString (T.unpack groupName) <> ")\"];\n"
+showNode InstCallSnd{nId, groupName} =
+  "  flowInst" <> int nId <> " [label=\"callsnd(" <> TB.fromString (T.unpack groupName) <> ")\"];\n"
+showNode InstRetSnd{nId, groupName} =
+  "  flowInst" <> int nId <> " [label=\"retsnd(" <> TB.fromString (T.unpack groupName) <> ")\"];\n"
+showNode InstRet{nId} =
+  "  flowInst" <> int nId <> " [label=\"ret\"];\n"
 
 -- ▸ Todos os demais
 showNode n =
@@ -63,18 +70,16 @@ showNode n =
     InstTuple{fields}         -> "tuple(" <> show (length fields) <> ")"
     InstProj{idx}             -> "proj#" <> show idx
     InstSuper{name}           -> T.unpack name
-    InstPar{name}             -> T.unpack name
+    _                        -> "?"
 
 ----------------------------------------------------------------------
 -- Arestas  -----------------------------------------------------------
-----------------------------------------------------------------------
 showEdge :: Edge -> Builder
 showEdge (s,_,d,_) =
   "  flowInst" <> int s <> " -> flowInst" <> int d <> ";\n"
 
 ----------------------------------------------------------------------
 -- Auxiliares de texto -----------------------------------------------
-----------------------------------------------------------------------
 showLit :: Literal -> String
 showLit = \case
   LInt i    -> show i
