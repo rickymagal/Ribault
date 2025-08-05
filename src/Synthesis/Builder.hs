@@ -67,21 +67,18 @@ compileExpr = \case
   S.Var x         -> lookupVar x
   S.Lit l         -> litNode (convLit l)
 
-  -- λ-expressão vira nó super numerado com InstPar para args
   S.Lambda params body -> do
+    -- Cria parâmetros como antes, mas não gera InstSuper! Só insere no env.
     parList <- forM params $ \p -> do
                  pid <- freshNid
-                 addN (InstPar pid (T.pack p) [] 1)
+                 -- Não adiciona nó!
                  pure (p, InstPort pid "out0")
     let ins = map snd parList
     old <- gets env
     modify' (\s -> s { env = Map.union (Map.fromList parList) (env s)})
     pBody <- compileExpr body
-    nFun  <- freshNid
-    addN (InstSuper nFun ("λ#" <> T.pack (show nFun)) (map portNode ins) 1)
-    addE (pBody --> InstPort nFun "out0")
     modify' (\s -> s { env = old })
-    pure (InstPort nFun "out0")
+    pure pBody  -- retorna o corpo, não cria InstSuper nem nada!
 
   S.BinOp o a b   -> binop (convOp o) a b
   S.UnOp  o e     -> unop  (convUn o) e
@@ -89,7 +86,10 @@ compileExpr = \case
   S.If c t e      -> compileIf c t e
   S.Tuple es      -> compileTuple es
   S.List  es      -> compileList es
-  S.App f a       -> compileApp f [a]
+
+  -- Chamada de função: GERA CALLGROUP, CALLSND, RETSND direto!
+  S.App f a       -> compileFuncApp f [a]
+
   S.Let ds e      -> compileLet ds e
   S.Case s as     -> compileCase s as
  where
@@ -137,7 +137,7 @@ compileList = foldr cons (litNode LUnit)
     pure (InstPort n outPort)
 
 ----------------------------------------------------------------------
--- LET  (sem mudanças) -----------------------------------------------
+-- LET ---------------------------------------------------------------
 ----------------------------------------------------------------------
 compileLet :: [S.Decl] -> S.Expr -> Builder Port
 compileLet ds e = do
@@ -150,35 +150,43 @@ compileLet ds e = do
 compileLocalDecl :: S.Decl -> Builder ()
 compileLocalDecl (S.FunDecl f ps body)
   | null ps   = do
-      p <- compileExpr body; n <- freshNid
-      addN (InstSuper n ("<local:"<>T.pack f<>">") [portNode p] 1)
-      addE (p --> InstPort n "in0")
-      bindVar f (InstPort n "out0")
+      p <- compileExpr body
+      bindVar f p
   | otherwise = do
+      -- como no lambda, só insere ins no env, não gera InstSuper
       n <- freshNid
       let ins = [ InstPort n ("in"<>show i) | i <- [0..length ps-1] ]
       old <- gets env
       modify' (\s -> s { env = Map.union (Map.fromList (zip ps ins)) (env s)})
       pBody <- compileExpr body
-      addN (InstSuper n ("<local:"<>T.pack f<>">") (map portNode ins) 1)
-      addE (pBody --> InstPort n "out0")
       modify' (\s -> s { env = old })
-      bindVar f (InstPort n "out0")
+      bindVar f pBody
 
 ----------------------------------------------------------------------
--- APPLICATION
+-- FUNÇÃO DE CHAMADA DE FUNÇÃO (gera nós TALM direto)
 ----------------------------------------------------------------------
-compileApp :: S.Expr -> [S.Expr] -> Builder Port
-compileApp fn args0 = do
+compileFuncApp :: S.Expr -> [S.Expr] -> Builder Port
+compileFuncApp fn args0 = do
   let (f0, as0) = flattenApp (foldl S.App fn args0)
-  pFun  <- compileExpr f0
-  pArgs <- mapM compileExpr as0
-  n <- freshNid
-  let ins = portNode pFun : map portNode pArgs
-  addN (InstSuper n "<apply>" ins 1)
-  addE (pFun --> InstPort n "in0")
-  zipWithM_ (\i p -> addE (p --> InstPort n ("in"<>show (i+1)))) [0..] pArgs
-  pure (InstPort n "out0")
+  -- Nome base para a callgroup
+  callN <- freshNid
+  let funName = case f0 of
+        S.Var s -> s
+        S.Lambda _ _ -> "<lambda>"
+        _            -> "<apply>"
+      groupName = T.pack (funName ++ show callN)
+  addN (InstCallGroup callN groupName)
+  -- Compile os argumentos
+  argPorts <- mapM compileExpr as0
+  -- Chame cada argumento (gera callsnd)
+  forM_ (zip [1..] argPorts) $ \(i,p) -> do
+    sndN <- freshNid
+    addN (InstCallSnd sndN groupName callN (portNode p))
+    addE (p --> InstPort sndN "in0")
+  -- retsnd: resultado da chamada, output 0
+  retN <- freshNid
+  addN (InstRetSnd retN groupName callN (portNode (last argPorts)))
+  pure (InstPort retN outPort)
 
 flattenApp :: S.Expr -> (S.Expr,[S.Expr])
 flattenApp = go [] where
@@ -307,6 +315,7 @@ patTest pat scrP = case pat of
     (cT, envT) <- patTest pt pTail
     condAll    <- mkAnd cH cT
     pure (condAll, Map.union envH envT)
+
 ----------------------------------------------------------------------
 -- HELPERS p/ patterns
 ----------------------------------------------------------------------
@@ -338,32 +347,19 @@ foldM1 _ [x]      = pure x
 foldM1 f (x:y:xs) = do
   z <- f x y
   foldM f z xs
+
 ----------------------------------------------------------------------
 -- Declarações top-level
 ----------------------------------------------------------------------
 compileTopDecl :: S.Decl -> Builder ()
 compileTopDecl (S.FunDecl f ps body) = do
-  place <- lookupVar f
-  let nId = case place of
-              InstPort nid _ -> nid
-              _              -> error "[Builder] expected InstPort"
-  if null ps                                   -- binding simples
-    then do pVal <- compileExpr body
-            addN (InstSuper nId (T.pack f) [portNode pVal] 1)
-            addE (pVal --> InstPort nId "in0")
-    else do                                    -- função com parâmetros
-      parNodes <- forM (zip [0..] ps) $ \(i, p) -> do
-                    pid <- freshNid
-                    addN (InstPar pid (T.pack p) [] 1)
-                    pure (p, InstPort pid "out0")
-      let ins = map snd parNodes
-      old <- gets env
-      modify' (\s -> s { env = Map.union (Map.fromList parNodes) (env s)})
-      pBody <- compileExpr body
-      addN (InstSuper nId (T.pack f) (map portNode ins) 1)
-      addE (pBody --> InstPort nId "out0")
-      modify' (\s -> s { env = old })
-      bindVar f (InstPort nId "out0")
+  n <- freshNid
+  let paramPorts = [ InstPort n ("in"<>show i) | i <- [0..length ps-1] ]
+  old <- gets env
+  modify' (\s -> s { env = Map.union (Map.fromList (zip ps paramPorts)) (env s)})
+  bodyPort <- compileExpr body
+  modify' (\s -> s { env = old })
+  bindVar f bodyPort
 
 ----------------------------------------------------------------------
 -- Conversão lit / op
@@ -387,9 +383,8 @@ convUn :: S.UnOperator -> UnaryOp
 convUn = \case
   S.Neg -> UNeg
   S.Not -> UNot
-
 ----------------------------------------------------------------------
--- buildProgram
+-- buildProgram (igual ao anterior)
 ----------------------------------------------------------------------
 buildProgram :: S.Program -> DGraph DNode
 buildProgram (S.Program ds) =
@@ -400,5 +395,4 @@ predeclare :: [S.Decl] -> Builder ()
 predeclare =
   mapM_ $ \(S.FunDecl f _ _) -> do
     n <- freshNid
-    addN (InstSuper n ("<fwd:" <> T.pack f <> ">") [] 1)
     bindVar f (InstPort n "out0")

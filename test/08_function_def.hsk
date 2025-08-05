@@ -1,4 +1,4 @@
 -- Function declaration with currying
 addThree x y z = x + y + z;
 
-res = addThree 1 2 3
+main = addThree 1 2 3
