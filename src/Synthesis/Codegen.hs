@@ -1,157 +1,143 @@
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
--- | Inst → TALM assembly (texto).
---
--- Cobertura:
---   • InstConst  / fconst
---   • InstBinop  (+ – * / % …)
---   • InstBinopI
---   • InstSteer
---   • InstIncTag
---   • InstSuper
---   • InstCallGrp / CallSnd / RetSnd / Return
---
---  Faltando: InstPar, flags de paralelismo avançadas etc.
+module Synthesis.Codegen (assemble) where
 
-module Synthesis.Codegen
-  ( assemble        -- :: [Inst] -> Text
-  , saveAsm         -- :: FilePath -> [Inst] -> IO ()
-  ) where
+import qualified Data.Text as T
+import qualified Data.Text.Lazy.Builder as TB
+import qualified Data.Text.Lazy as TL
+import qualified Data.Map.Strict as Map
+import           Types
+import           Node
+import           Data.Text (Text)
+import           Data.Graph (topSort, buildG)
+import           Data.Maybe (fromMaybe)
 
-import           Synthesis.Instruction
-import qualified Data.Text            as T
-import qualified Data.Text.IO         as TIO
-import           Data.List            (intercalate)
+assemble :: DGraph DNode -> T.Text
+assemble g =
+  let
+    nodes = Map.toAscList (dgNodes g)
+    idNodeMap = Map.fromList nodes
+    edges :: [(NodeId, [NodeId])]
+    edges = [ (nId, nodeDeps node) | (nId, node) <- nodes ]
+    nodeIds = map fst nodes
+    nodeIndexMap = Map.fromList $ zip nodeIds [0..]
+    idxNodeMap = Map.fromList $ zip [0..] nodeIds
+    getIdx nid = fromMaybe (error $ "Node id not found: " ++ show nid) (Map.lookup nid nodeIndexMap)
+    getNid idx = fromMaybe (error $ "Node idx not found: " ++ show idx) (Map.lookup idx idxNodeMap)
+    graphEdges = [ (getIdx n, map getIdx ds) | (n, ds) <- edges ]
+    numNodes = length nodes
+    gr = buildG (0, numNodes - 1) [ (i, d) | (i, ds) <- graphEdges, d <- ds ]
+    order = map getNid $ reverse $ topSort gr
+    orderedNodes = map (\nid -> (nid, idNodeMap Map.! nid)) order
+  in TL.toStrict . TB.toLazyText $ mconcat (map (emitNode . snd) orderedNodes)
 
-------------------------------------------------------------------------
--- API helpers
-------------------------------------------------------------------------
+nodeDeps :: DNode -> [NodeId]
+nodeDeps = \case
+  InstConst{} -> []
+  InstBinop{lhs, rhs} -> [lhs, rhs]
+  InstBinopI{lhs} -> [lhs]
+  InstUnary{arg} -> [arg]
+  InstSteer{predN} -> [predN]
+  InstIncTag{base} -> [base]
+  InstTuple{fields} -> fields
+  InstProj{tuple} -> [tuple]
+  InstSuper{ins} -> ins
+  InstPar{} -> []
 
-assemble :: [Inst] -> T.Text
-assemble = T.unlines . concatMap emit
+emitNode :: DNode -> TB.Builder
+emitNode n = case n of
+  -- Constante: inteiro, float, char (ascii), bool (0/1), string (lista de ints ascii), unit
+  InstConst{nId, lit} -> TB.fromText $ "const " <> cgNodeName nId <> ", " <> showLit lit <> "\n"
 
-saveAsm :: FilePath -> [Inst] -> IO ()
-saveAsm fp = TIO.writeFile fp . assemble
+  -- Binários e unários
+  InstBinop{nId, op, lhs, rhs} -> TB.fromText $
+    showBin op <> " " <> cgNodeName nId <> ", " <> cgNodeName lhs <> ", " <> cgNodeName rhs <> "\n"
+  InstBinopI{nId, opI, lhs, imm} -> TB.fromText $
+    showBinI opI <> " " <> cgNodeName nId <> ", " <> cgNodeName lhs <> ", " <> T.pack (show imm) <> "\n"
+  InstUnary{nId, unop, arg} -> TB.fromText $
+    showUn unop <> " " <> cgNodeName nId <> ", " <> cgNodeName arg <> "\n"
+  InstSteer{nId, predN} -> TB.fromText $
+    "steer " <> cgNodeName nId <> ", " <> cgNodeName predN <> "\n"
 
-------------------------------------------------------------------------
--- Core emitter
-------------------------------------------------------------------------
+  -- IGNORE os nós de lista, wrappers e infra-estrutura AST!
+  InstSuper{nId, name, ins, outs}
+    | name `elem`
+        [ "intVal", "charVal", "floatVal", "falseBool", "trueBool"
+        , "stringVal", "unit", "tupleVal", "listVal"
+        , ":" -- cons
+        , "cons", "isNil", "head", "tail"
+        ]
+    -> mempty
+    | "λ#" `T.isPrefixOf` name || "<local:" `T.isPrefixOf` name || "<fwd:" `T.isPrefixOf` name
+    -> mempty
+    | name == "<apply>" || otherwise
+    -> lowerCall n
 
-emit :: Inst -> [T.Text]
-emit = \case
-  --------------------------------------------------------------------
-  -- Constantes
-  --------------------------------------------------------------------
-  InstConst{..}
-    | litType == "int"   ->
-        [instr "const"  [nid nodeId, T.pack (show litVal)]]
-    | litType == "float" ->
-        [instr "fconst" [nid nodeId
-                        , T.pack (show (fromIntegral litVal / 100 :: Double))]]
-    | otherwise          -> []
+  InstTuple{} -> mempty
+  InstProj{} -> mempty
+  InstIncTag{} -> mempty
+  InstPar{} -> mempty
 
-  --------------------------------------------------------------------
-  -- Binários
-  --------------------------------------------------------------------
-  InstBinop{..} ->
-        [instr (tyPref typStr <> asmOp binOp)
-               [nid nodeId, srcs leftSrc, srcs rightSrc]]
+-- Nome do nó no código TALM
+cgNodeName :: NodeId -> Text
+cgNodeName i = "flowInst" <> T.pack (show i)
 
-  InstBinopI{..} ->
-        [instr (tyPref typStr <> asmOp binOp <> "i")
-               [nid nodeId, srcs uniSrc, T.pack (show immedVal)]]
+showLit :: Literal -> Text
+showLit (LInt i)    = T.pack (show i)
+showLit (LFloat d)  = T.pack (show d)
+showLit (LBool b)   = if b then "1" else "0"
+showLit (LChar c)   = T.pack (show $ fromEnum c)
+showLit (LString s) = T.intercalate ", " (map (T.pack . show . fromEnum) $ T.unpack s)
+showLit LUnit       = "()"
 
-  --------------------------------------------------------------------
-  -- Steer
-  --------------------------------------------------------------------
-  InstSteer{..} ->
-        [instr "steer" [nid nodeId, srcs steerExpr, srcs steerInp]]
+showBin :: BinOp -> Text
+showBin = \case
+  BAdd -> "add"
+  BSub -> "sub"
+  BMul -> "mul"
+  BDiv -> "div"
+  BMod -> "mod"
+  BAnd -> "band"
+  BOr  -> "bor"
+  BXor -> "bxor"
+  BLt  -> "lthan"
+  BGt  -> "gthan"
+  BLe  -> "leq"
+  BGe  -> "geq"
+  BEq  -> "equal"
+  BNe  -> "nequal"
+  BCons -> "cons"
 
-  --------------------------------------------------------------------
-  -- IncTag
-  --------------------------------------------------------------------
-  InstIncTag{..} ->
-        [instr "inctag" [nid nodeId, srcs tagInp]]
+showBinI :: BinOp -> Text
+showBinI = \case
+  BAdd -> "addi"
+  BSub -> "subi"
+  BMul -> "muli"
+  BDiv -> "divi"
+  BMod -> "modi"
+  op   -> showBin op <> "I"
 
-  --------------------------------------------------------------------
-  -- Super-instruction
-  --------------------------------------------------------------------
-  InstSuper{..} ->
-        let header = [ nid nodeId
-                     , T.pack (show superNum)
-                     , T.pack (show superOutN) ]
-            inputs = map srcs superInp
-        in  [instr "super" (header ++ inputs)]
+showUn :: UnaryOp -> Text
+showUn = \case
+  UNeg   -> "neg"
+  UNot   -> "not"
+  UIsNil -> "isNil"
 
-  --------------------------------------------------------------------
-  -- Chamadas
-  --------------------------------------------------------------------
-  InstCallGrp{..} ->
-        [T.concat ["callgroup(\"", T.pack cgName
-                  , "\", \"", T.pack cgFun, "\")"]]
-
-  InstCallSnd{..} ->
-        [instr "callsnd"
-               [T.concat [T.pack csFun, "[", T.pack (show csIdx), "]"]
-               , srcs csOper
-               , T.pack csGroup]]
-
-  InstRetSnd{..} ->
-        [instr "retsnd"
-               [T.concat [T.pack rsFun, "[0]"]
-               , srcs rsOper
-               , T.pack rsGroup]]
-
-  InstReturn{..} ->
-        [instr "ret" [nid nodeId, srcs retExpr, srcs retSend]]
-
-  -- Ainda não tratados
-  --------------------------------------------------------------------
-  InstPar{} -> ["# TODO InstPar"]
-
-------------------------------------------------------------------------
--- Pretty helpers
-------------------------------------------------------------------------
-
-asmOp :: String -> T.Text
-asmOp = \case
-  "+"  -> "add" ; "-"  -> "sub"
-  "*"  -> "mul" ; "/"  -> "div"
-  "%"  -> "mod"
-  "&&" -> "and"
-  "<"  -> "lthan" ; ">" -> "gthan"
-  "==" -> "eq"    ; "!="-> "neq"
-  other -> T.pack other
-
-tyPref :: String -> T.Text
-tyPref "int"    = ""
-tyPref "float"  = "f"
-tyPref "double" = "d"
-tyPref other    = T.pack other <> "_"
-
-instr :: T.Text -> [T.Text] -> T.Text
-instr m fs = T.intercalate " " (m : fs)
-
-nid :: NodeId -> T.Text
-nid (NodeId i) = T.pack ("n" <> show i)
-
-------------------------------------------------------------------------
--- Signals pretty-print
-------------------------------------------------------------------------
-
-srcs :: [Signal] -> T.Text
-srcs xs = case xs of
-  [s] -> sig s
-  _   -> T.concat ["[", T.intercalate ", " (map sig xs), "]"]
-
-
-sig :: Signal -> T.Text
-sig = \case
-  SigInstPort nId port _ ->
-      nid nId <> "." <> T.pack (show port)          -- ← usa helper nid
-  SigSteerPort nId br    ->
-      nid nId <> "." <> (if br == T then "t" else "f")
-  SigReturnPort f g      ->
-      T.pack f <> "ret." <> T.pack g
+-- Função para gerar callgroup/callsnd/retsnd (padrão geral)
+lowerCall :: DNode -> TB.Builder
+lowerCall InstSuper{nId, name, ins, outs} =
+  let groupName = name <> T.pack (show nId)
+      -- callgroup sempre gerado
+      callgroupLine = TB.fromText $ "callgroup('" <> groupName <> "', '" <> name <> "')\n"
+      -- callsnds: cada argumento vira callsnd name[i]
+      callsnds = [ TB.fromText $ "callsnd " <> name <> "[" <> T.pack (show i) <> "], " <> cgNodeName aid <> ", " <> groupName <> "\n"
+                 | (i, aid) <- zip [1..] ins
+                 ]
+      -- retsnd: sempre retorna para o primeiro argumento (padrão, pode ajustar)
+      retsndLine = case ins of
+        (x:_) -> TB.fromText $ "retsnd " <> name <> "[0], " <> cgNodeName x <> ", " <> groupName <> "\n"
+        []    -> mempty
+  in mconcat (callgroupLine : callsnds ++ [retsndLine])
