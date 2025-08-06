@@ -6,9 +6,6 @@
 
 module Synthesis.Builder (buildProgram) where
 
-----------------------------------------------------------------------
--- Imports
-----------------------------------------------------------------------
 import           Prelude                 hiding (id)
 import           Control.Monad.State.Strict
 import           Control.Monad           (foldM, forM, zipWithM_)
@@ -23,17 +20,15 @@ import           Port
 import           Unique
 import qualified Syntax                  as S
 
-----------------------------------------------------------------------
--- Estado + helpers ---------------------------------------------------
-----------------------------------------------------------------------
 data BState = BState
-  { g   :: !(DGraph DNode)
-  , env :: !(Map S.Ident Port)
+  { g      :: !(DGraph DNode)
+  , env    :: !(Map S.Ident Port)
+  , funEnv :: !(Map S.Ident ([S.Ident], S.Expr))  -- nome da função -> (params, body)
   }
 
 type Builder = StateT BState Unique
 emptyB :: BState
-emptyB = BState emptyGraph Map.empty
+emptyB = BState emptyGraph Map.empty Map.empty
 
 freshNid :: Builder NodeId
 freshNid = lift freshId
@@ -51,6 +46,11 @@ lookupVar :: S.Ident -> Builder Port
 lookupVar x =
   gets (Map.lookup x . env) >>= maybe (error ("[Builder] unbound: " <> x)) pure
 
+-- Para função, busca na tabela de funções
+lookupFun :: S.Ident -> Builder ([S.Ident], S.Expr)
+lookupFun x =
+  gets (Map.lookup x . funEnv) >>= maybe (error ("[Builder] undefined function: " <> x)) pure
+
 litNode :: Literal -> Builder Port
 litNode lit = do n <- freshNid
                  addN (InstConst n lit)
@@ -59,26 +59,24 @@ litNode lit = do n <- freshNid
 boolConst :: Bool -> Builder Port
 boolConst = litNode . LBool
 
-----------------------------------------------------------------------
+-----------------------------------------------------------
 -- EXPRESSÕES
-----------------------------------------------------------------------
+-----------------------------------------------------------
 compileExpr :: S.Expr -> Builder Port
 compileExpr = \case
   S.Var x         -> lookupVar x
   S.Lit l         -> litNode (convLit l)
 
   S.Lambda params body -> do
-    -- Cria parâmetros como antes, mas não gera InstSuper! Só insere no env.
+    -- não gera nó, só põe no env se algum dia usar função anônima
+    old <- gets env
     parList <- forM params $ \p -> do
                  pid <- freshNid
-                 -- Não adiciona nó!
                  pure (p, InstPort pid "out0")
-    let ins = map snd parList
-    old <- gets env
     modify' (\s -> s { env = Map.union (Map.fromList parList) (env s)})
     pBody <- compileExpr body
     modify' (\s -> s { env = old })
-    pure pBody  -- retorna o corpo, não cria InstSuper nem nada!
+    pure pBody
 
   S.BinOp o a b   -> binop (convOp o) a b
   S.UnOp  o e     -> unop  (convUn o) e
@@ -87,9 +85,7 @@ compileExpr = \case
   S.Tuple es      -> compileTuple es
   S.List  es      -> compileList es
 
-  -- Chamada de função: GERA CALLGROUP, CALLSND, RETSND direto!
   S.App f a       -> compileFuncApp f [a]
-
   S.Let ds e      -> compileLet ds e
   S.Case s as     -> compileCase s as
  where
@@ -98,15 +94,16 @@ compileExpr = \case
     addN (InstBinop n bop (portNode pL) (portNode pR))
     addE (pL --> InstPort n "lhs"); addE (pR --> InstPort n "rhs")
     pure (InstPort n outPort)
-  unop u e = do
-    p <- compileExpr e; n <- freshNid
-    addN (InstUnary n u (portNode p))
-    addE (p --> InstPort n "arg")
-    pure (InstPort n outPort)
+ unop u e = do
+  p <- compileExpr e; n <- freshNid
+  addN (InstUnary n u (portNode p))
+  addE (p --> InstPort n "arg")
+  pure (InstPort n outPort)
 
-----------------------------------------------------------------------
--- IF / TUPLE / LIST --------------------------------------------------
-----------------------------------------------------------------------
+
+-----------------------------------------------------------
+-- IF / TUPLE / LIST
+-----------------------------------------------------------
 compileIf :: S.Expr -> S.Expr -> S.Expr -> Builder Port
 compileIf c t e = do
   pC <- compileExpr c; s <- freshNid
@@ -136,9 +133,9 @@ compileList = foldr cons (litNode LUnit)
     addE (ph --> InstPort n "lhs"); addE (pt --> InstPort n "rhs")
     pure (InstPort n outPort)
 
-----------------------------------------------------------------------
--- LET ---------------------------------------------------------------
-----------------------------------------------------------------------
+-----------------------------------------------------------
+-- LET
+-----------------------------------------------------------
 compileLet :: [S.Decl] -> S.Expr -> Builder Port
 compileLet ds e = do
   old <- gets env
@@ -148,44 +145,40 @@ compileLet ds e = do
   pure p
 
 compileLocalDecl :: S.Decl -> Builder ()
-compileLocalDecl (S.FunDecl f ps body)
-  | null ps   = do
-      p <- compileExpr body
-      bindVar f p
-  | otherwise = do
-      -- como no lambda, só insere ins no env, não gera InstSuper
-      n <- freshNid
-      let ins = [ InstPort n ("in"<>show i) | i <- [0..length ps-1] ]
-      old <- gets env
-      modify' (\s -> s { env = Map.union (Map.fromList (zip ps ins)) (env s)})
-      pBody <- compileExpr body
-      modify' (\s -> s { env = old })
-      bindVar f pBody
+compileLocalDecl (S.FunDecl f ps body) = do
+  s <- get
+  put s { funEnv = Map.insert f (ps, body) (funEnv s) }
 
-----------------------------------------------------------------------
--- FUNÇÃO DE CHAMADA DE FUNÇÃO (gera nós TALM direto)
-----------------------------------------------------------------------
+-----------------------------------------------------------
+-- CHAMADA DE FUNÇÃO
+-----------------------------------------------------------
 compileFuncApp :: S.Expr -> [S.Expr] -> Builder Port
 compileFuncApp fn args0 = do
   let (f0, as0) = flattenApp (foldl S.App fn args0)
-  -- Nome base para a callgroup
+  funName <- case f0 of
+    S.Var s -> pure s
+    _       -> error "Só suporta chamada de função nomeada"
+  (params, funBody) <- lookupFun funName
+  -- Criar callgroup com nome único
   callN <- freshNid
-  let funName = case f0 of
-        S.Var s -> s
-        S.Lambda _ _ -> "<lambda>"
-        _            -> "<apply>"
-      groupName = T.pack (funName ++ show callN)
+  let groupName = T.pack (funName ++ show callN)
   addN (InstCallGroup callN groupName)
-  -- Compile os argumentos
+  -- Compile argumentos e gere callsnd para cada parâmetro
   argPorts <- mapM compileExpr as0
-  -- Chame cada argumento (gera callsnd)
-  forM_ (zip [1..] argPorts) $ \(i,p) -> do
+  callsnds <- forM (zip [0..] argPorts) $ \(i, p) -> do
     sndN <- freshNid
     addN (InstCallSnd sndN groupName callN (portNode p))
     addE (p --> InstPort sndN "in0")
-  -- retsnd: resultado da chamada, output 0
+    pure (InstPort sndN outPort)
+  -- Mapear parâmetros da função para os callsnd dessa instância
+  old <- gets env
+  modify' (\s -> s { env = Map.union (Map.fromList (zip params callsnds)) (env s)})
+  res <- compileExpr funBody
+  modify' (\s -> s { env = old })
+  -- retsnd para resultado da chamada
   retN <- freshNid
-  addN (InstRetSnd retN groupName callN (portNode (last argPorts)))
+  addN (InstRetSnd retN groupName callN (portNode res))
+  addE (res --> InstPort retN "in0")
   pure (InstPort retN outPort)
 
 flattenApp :: S.Expr -> (S.Expr,[S.Expr])
@@ -193,9 +186,9 @@ flattenApp = go [] where
   go acc (S.App f a) = go (a:acc) f
   go acc f           = (f,reverse acc)
 
-----------------------------------------------------------------------
+-----------------------------------------------------------
 -- CASE + PATTERNS
-----------------------------------------------------------------------
+-----------------------------------------------------------
 compileCase :: S.Expr -> [(S.Pattern,S.Expr)] -> Builder Port
 compileCase scr alts =
   compileAlts =<< compileExpr scr
@@ -203,7 +196,6 @@ compileCase scr alts =
   compileAlts scrP = go scrP alts
 
   go scrP [(pat, body)] =    -- Única alternativa: sem steer
-    -- se é coringa, só compila o corpo
     case pat of
       S.PWildcard -> compileExpr body
       _           -> do
@@ -234,67 +226,55 @@ newSteer predP = do
   pure n
 
 ----------------------------------------------------------------------
--- PATTERN TEST  (_, Var, Lit, Tuple, Cons)
+-- Conversão lit / op
 ----------------------------------------------------------------------
+convLit :: S.Literal -> Literal
+convLit = \case
+  S.LInt n    -> LInt n
+  S.LFloat d  -> LFloat d
+  S.LBool b   -> LBool b
+  S.LChar c   -> LChar c
+  S.LString s -> LString (T.pack s)
+
+convOp :: S.BinOperator -> BinOp
+convOp = \case
+  S.Add -> BAdd; S.Sub -> BSub; S.Mul -> BMul; S.Div -> BDiv; S.Mod -> BMod
+  S.And -> BAnd; S.Or  -> BOr
+  S.Lt  -> BLt ; S.Gt  -> BGt; S.Le -> BLe;  S.Ge  -> BGe
+  S.Eq  -> BEq ; S.Neq -> BNe
+
+convUn :: S.UnOperator -> UnaryOp
+convUn = \case
+  S.Neg -> UNeg
+  S.Not -> UNot
+
+-----------------------------------------------------------
+-- PATTERN TEST
+-----------------------------------------------------------
 patTest :: S.Pattern -> Port -> Builder (Port, Map S.Ident Port)
 patTest pat scrP = case pat of
-  ------------------------------------------------------------
-  -- Coringa _
-  ------------------------------------------------------------
   S.PWildcard ->
     (, Map.empty) <$> boolConst True
-
-  ------------------------------------------------------------
-  -- Variável vinculada
-  ------------------------------------------------------------
   S.PVar x ->
     pure (scrP, Map.singleton x scrP)
-
-  ------------------------------------------------------------
-  -- Literal
-  ------------------------------------------------------------
   S.PLit l -> do
     litP <- compileExpr (S.Lit l)
     eqP  <- mkEq scrP litP
     pure (eqP, Map.empty)
-
-  ------------------------------------------------------------
-  -- Lista vazia []
-  ------------------------------------------------------------
   S.PList [] ->
     (, Map.empty) <$> mkIsNil scrP
-
-  ------------------------------------------------------------
-  -- Lista com elementos  [h, t1, t2, …]  -->  h : [t1,t2,…]
-  ------------------------------------------------------------
   S.PList (h:ts) ->
     patTest (S.PCons h (S.PList ts)) scrP
-
-  ------------------------------------------------------------
-  -- Tupla  (p1, p2, ...)
-  ------------------------------------------------------------
   S.PTuple pats ->
     matchTuple pats
-
-  ------------------------------------------------------------
-  -- Cons  h : t
-  ------------------------------------------------------------
   S.PCons ph pt ->
     matchCons ph pt
-
   where
-  ------------------------------------------------------------------
-  -- Projeta o campo ‘idx’ do valor em análise
-  ------------------------------------------------------------------
   proj :: Int -> Builder Port
   proj idx = do
     n <- freshNid
     addN (InstProj n idx (portNode scrP))
     pure (InstPort n outPort)
-
-  ------------------------------------------------------------------
-  -- Casamento de tupla
-  ------------------------------------------------------------------
   matchTuple :: [S.Pattern] -> Builder (Port, Map S.Ident Port)
   matchTuple pats = do
     results <- forM (zip [0 ..] pats) $ \(i, p) -> do
@@ -303,10 +283,6 @@ patTest pat scrP = case pat of
     let (conds, envs) = unzip results
     condAll <- foldM1 mkAnd conds
     pure (condAll, Map.unions envs)
-
-  ------------------------------------------------------------------
-  -- Casamento de Cons  (h : t)
-  ------------------------------------------------------------------
   matchCons :: S.Pattern -> S.Pattern -> Builder (Port, Map S.Ident Port)
   matchCons ph pt = do
     pHead <- proj 0
@@ -316,9 +292,6 @@ patTest pat scrP = case pat of
     condAll    <- mkAnd cH cT
     pure (condAll, Map.union envH envT)
 
-----------------------------------------------------------------------
--- HELPERS p/ patterns
-----------------------------------------------------------------------
 mkEq, mkAnd :: Port -> Port -> Builder Port
 mkEq  = mkBin BEq
 mkAnd = mkBin BAnd
@@ -348,51 +321,22 @@ foldM1 f (x:y:xs) = do
   z <- f x y
   foldM f z xs
 
-----------------------------------------------------------------------
--- Declarações top-level
-----------------------------------------------------------------------
-compileTopDecl :: S.Decl -> Builder ()
-compileTopDecl (S.FunDecl f ps body) = do
-  n <- freshNid
-  let paramPorts = [ InstPort n ("in"<>show i) | i <- [0..length ps-1] ]
-  old <- gets env
-  modify' (\s -> s { env = Map.union (Map.fromList (zip ps paramPorts)) (env s)})
-  bodyPort <- compileExpr body
-  modify' (\s -> s { env = old })
-  bindVar f bodyPort
-
-----------------------------------------------------------------------
--- Conversão lit / op
-----------------------------------------------------------------------
-convLit :: S.Literal -> Literal
-convLit = \case
-  S.LInt n    -> LInt n
-  S.LFloat d  -> LFloat d
-  S.LBool b   -> LBool b
-  S.LChar c   -> LChar c
-  S.LString s -> LString (T.pack s)
-
-convOp :: S.BinOperator -> BinOp
-convOp = \case
-  S.Add -> BAdd; S.Sub -> BSub; S.Mul -> BMul; S.Div -> BDiv; S.Mod -> BMod
-  S.And -> BAnd; S.Or  -> BOr
-  S.Lt  -> BLt ; S.Gt  -> BGt; S.Le -> BLe;  S.Ge  -> BGe
-  S.Eq  -> BEq ; S.Neq -> BNe
-
-convUn :: S.UnOperator -> UnaryOp
-convUn = \case
-  S.Neg -> UNeg
-  S.Not -> UNot
-----------------------------------------------------------------------
--- buildProgram (igual ao anterior)
-----------------------------------------------------------------------
+-----------------------------------------------------------
+-- buildProgram
+-----------------------------------------------------------
 buildProgram :: S.Program -> DGraph DNode
 buildProgram (S.Program ds) =
-  evalUnique $
-    fmap g (execStateT (predeclare ds >> mapM_ compileTopDecl ds) emptyB)
+  evalUnique $ execStateT (predeclare ds >> compileMain ds) emptyB >>= pure . g
 
+-- Só adiciona funções à funEnv
 predeclare :: [S.Decl] -> Builder ()
-predeclare =
-  mapM_ $ \(S.FunDecl f _ _) -> do
-    n <- freshNid
-    bindVar f (InstPort n "out0")
+predeclare ds =
+  mapM_ (\(S.FunDecl f ps body) -> do
+    modify' $ \s -> s { funEnv = Map.insert f (ps, body) (funEnv s) }) ds
+
+-- Só compila a main (e nada mais!)
+compileMain :: [S.Decl] -> Builder ()
+compileMain ds = case [ (ps, body) | S.FunDecl "main" ps body <- ds ] of
+  ((_, body):_) -> void (compileExpr body)
+  []            -> error "[Builder] Não existe função main no programa."
+
