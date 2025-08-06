@@ -15,6 +15,10 @@ tokens :-
 $white+                  ;
 "--"[^\n]*               ;
 
+"#BEGINSUPER"."#ENDSUPER"   { \p s ->
+      let body = take (length s - 20) (drop 11 s)   -- descarta "#BEGINSUPER" (11) e "#ENDSUPER" (9)
+      in (p, TokenSuperBody body)
+  }
 "let"                    { \p _ -> (p, TokenLet) }
 "in"                     { \p _ -> (p, TokenIn) }
 "if"                     { \p _ -> (p, TokenIf) }
@@ -54,7 +58,11 @@ $white+                  ;
 ","                      { \p _ -> (p, TokenComma) }
 ";"                      { \p _ ->   (p, TokenSemi) }
 ":"                      { \p _ -> (p, TokenColon) }
-
+"super"                  { \p _ -> (p, TokenSuper) }
+"single"                 { \p _ -> (p, TokenSingle) }
+"parallel"               { \p _ -> (p, TokenParallel) }
+"input"                  { \p _ -> (p, TokenInput) }
+"output"                 { \p _ -> (p, TokenOutput) }
 
 $digit+ "." $digit+     { \p s -> (p, TokenFloat (read s)) }
 $digit+                 { \p s -> (p, TokenInt (read s)) }
@@ -73,7 +81,11 @@ data Token
   | TokenCase | TokenOf
   | TokenNot
   | TokenBool Bool
-
+  
+  -- Palavras-chave do modo super
+  | TokenSuper | TokenSingle | TokenParallel
+  | TokenInput | TokenOutput   | TokenSuperBody String
+  
   -- Operadores
   | TokenArrow
   | TokenEq | TokenNeq | TokenLe | TokenGe | TokenLt | TokenGt
@@ -139,4 +151,4 @@ instance Show Token where
 type PosnToken = (AlexPosn, Token)
 alexScanTokens :: String -> [PosnToken]
 
-} 
+}
