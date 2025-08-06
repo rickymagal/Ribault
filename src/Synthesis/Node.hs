@@ -5,7 +5,7 @@ module Node
   ( -- * Literais e operadores
     Literal(..)
   , BinOp(..)
-  , UnaryOp(..)
+  , UnOp(..)
 
     -- * Nó
   , DNode(..)
@@ -17,10 +17,9 @@ module Node
 
 import           Types            (NodeId)
 import           Data.Text        (Text)
-import qualified Data.Text        as T
 
 ----------------------------------------------------------------------
--- Literais
+-- Literais (para const)
 ----------------------------------------------------------------------
 data Literal
   = LInt    Int
@@ -28,43 +27,76 @@ data Literal
   | LBool   Bool
   | LChar   Char
   | LString Text
-  | LUnit
   deriving (Eq, Show)
 
 ----------------------------------------------------------------------
--- Operadores
+-- Operadores binários
 ----------------------------------------------------------------------
 data BinOp
-  = BAdd | BSub | BMul | BDiv | BMod
-  | BAnd | BOr  | BXor
-  | BLt  | BGt  | BLe  | BGe | BEq | BNe
-  | BCons
+  = BAdd | BSub | BMul | BDiv
+  | BAddI | BSubI | BMulI | BDivI
+  | BAnd | BOr | BXor | BNot
+  | BEq | BNeq
+  | BLt | BLeq | BGt | BGeq
   deriving (Eq, Show)
 
-data UnaryOp = UNeg | UNot | UIsNil
+----------------------------------------------------------------------
+-- Operador unário (só not, se quiser mais adicione aqui)
+----------------------------------------------------------------------
+data UnOp = UNot
   deriving (Eq, Show)
 
 ----------------------------------------------------------------------
 -- Nós de instrução TALM/DFG
 ----------------------------------------------------------------------
 data DNode
-  = InstConst   { nId :: NodeId, lit   :: Literal }
-  | InstBinop   { nId :: NodeId, op    :: BinOp,  lhs, rhs :: NodeId }
-  | InstBinopI  { nId :: NodeId, opI   :: BinOp,  lhs :: NodeId, imm :: Int }
-  | InstUnary   { nId :: NodeId, unop  :: UnaryOp, arg :: NodeId }
-  | InstSteer   { nId :: NodeId, predN :: NodeId }
-  | InstIncTag  { nId :: NodeId, base  :: NodeId }
-  | InstTuple   { nId :: NodeId, fields :: [NodeId] }
-  | InstProj    { nId :: NodeId, idx :: Int, tuple :: NodeId }
-  -- | DEPRECATED: Só usado para transição, não mais emitido
-  | InstSuper   { nId :: NodeId, name :: Text, ins :: [NodeId], outs :: Int }
-  | InstPar     { nId :: NodeId, name :: Text, ins :: [NodeId], outs :: Int }
+  = InstConst     { nId :: NodeId, lit :: Literal }
 
-  -- Novos nós TALM para chamadas de função!
-  | InstCallGroup { nId :: NodeId, groupName :: Text }   -- callgroup('foo12', 'foo')
-  | InstCallSnd   { nId :: NodeId, groupName :: Text, callGroupId :: NodeId, argId :: NodeId } -- callsnd foo[1], flowInst9, foo12
-  | InstRetSnd    { nId :: NodeId, groupName :: Text, callGroupId :: NodeId, retValId :: NodeId } -- retsnd foo[0], flowInst10, foo12
+  -- Aritméticos
+  | InstAdd       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstSub       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstMul       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstDiv       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+
+  | InstAddI      { nId :: NodeId, lhs :: NodeId, imm :: Int }
+  | InstSubI      { nId :: NodeId, lhs :: NodeId, imm :: Int }
+  | InstMulI      { nId :: NodeId, lhs :: NodeId, imm :: Int }
+  | InstDivI      { nId :: NodeId, lhs :: NodeId, imm :: Int }
+
+  -- Booleanos e lógica
+  | InstAnd       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstOr        { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstXor       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstNot       { nId :: NodeId, arg :: NodeId }
+
+  -- Comparação
+  | InstEq        { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstNeq       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstLt        { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstLeq       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstGt        { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  | InstGeq       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+
+  -- Fluxo de controle
+  | InstSteer     { nId :: NodeId, predN :: NodeId }
+
+  -- Chamadas de função/dataflow
+  | InstCallGroup { nId :: NodeId, groupName :: Text }
+  | InstCallSnd   { nId :: NodeId, groupName :: Text, callGroupId :: NodeId, argId :: NodeId }
+  | InstRetSnd    { nId :: NodeId, groupName :: Text, callGroupId :: NodeId, retValId :: NodeId }
   | InstRet       { nId :: NodeId, valId :: NodeId, retSndIds :: [NodeId] }
+
+  -- Tags/dataflow
+  | InstIncTag    { nId :: NodeId, base :: NodeId }
+  | InstTagOp     { nId :: NodeId, arg :: NodeId }
+
+  -- Superinstrução
+  | InstSuper     { nId :: NodeId, name :: Text, ins :: [NodeId], outs :: Int }
+  | InstSuperInst { nId :: NodeId, name :: Text, ins :: [NodeId], outs :: Int }
+
+  -- Composição e paralelismo
+  | InstMerge     { nId :: NodeId, inputs :: [NodeId] }
+  | InstSplit     { nId :: NodeId, input :: NodeId, n :: Int }
   deriving (Eq, Show)
 
 ----------------------------------------------------------------------
@@ -73,20 +105,36 @@ data DNode
 nodeName :: DNode -> String
 nodeName n = prefix n ++ show (nId n)
   where
-    prefix InstConst{}     = "flowInstConst"
-    prefix InstBinop{}     = "flowInstBinop"
-    prefix InstBinopI{}    = "flowInstBinopI"
-    prefix InstUnary{}     = "flowInstUnary"
-    prefix InstSteer{}     = "flowInstSteer"
-    prefix InstIncTag{}    = "flowInstIncTag"
-    prefix InstTuple{}     = "flowInstTuple"
-    prefix InstProj{}      = "flowInstProj"
-    prefix InstSuper{}     = "flowInstSuper"     -- (DEPRECATED)
-    prefix InstPar{}       = "flowInstPar"       -- (DEPRECATED)
-    prefix InstCallGroup{} = "flowInstCallGroup"
-    prefix InstCallSnd{}   = "flowInstCallSnd"
-    prefix InstRetSnd{}    = "flowInstRetSnd"
-    prefix InstRet{}       = "flowInstRet"
+    prefix InstConst{}     = "const"
+    prefix InstAdd{}       = "add"
+    prefix InstSub{}       = "sub"
+    prefix InstMul{}       = "mul"
+    prefix InstDiv{}       = "div"
+    prefix InstAddI{}      = "addi"
+    prefix InstSubI{}      = "subi"
+    prefix InstMulI{}      = "muli"
+    prefix InstDivI{}      = "divi"
+    prefix InstAnd{}       = "and"
+    prefix InstOr{}        = "or"
+    prefix InstXor{}       = "xor"
+    prefix InstNot{}       = "not"
+    prefix InstEq{}        = "eq"
+    prefix InstNeq{}       = "neq"
+    prefix InstLt{}        = "lt"
+    prefix InstLeq{}       = "leq"
+    prefix InstGt{}        = "gt"
+    prefix InstGeq{}       = "geq"
+    prefix InstSteer{}     = "steer"
+    prefix InstCallGroup{} = "callgroup"
+    prefix InstCallSnd{}   = "callsnd"
+    prefix InstRetSnd{}    = "retsnd"
+    prefix InstRet{}       = "ret"
+    prefix InstIncTag{}    = "inctag"
+    prefix InstTagOp{}     = "tagop"
+    prefix InstSuper{}     = "super"
+    prefix InstSuperInst{} = "superinst"
+    prefix InstMerge{}     = "merge"
+    prefix InstSplit{}     = "split"
 
 outPort, truePort, falsePort :: String
 outPort  = "out"
