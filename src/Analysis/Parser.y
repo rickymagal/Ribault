@@ -25,6 +25,7 @@ import Lexer (Token(..), PosnToken, AlexPosn)
 %error { parseError }
 
 %token
+  superbody     { (_, TokenSuperBody $$) }
   ";"           { (_, TokenSemi) }
   ":"           { (_, TokenColon) }
   "let"         { (_, TokenLet) }
@@ -64,6 +65,12 @@ import Lexer (Token(..), PosnToken, AlexPosn)
   "True"        { (_, TokenBool True) }
   "False"       { (_, TokenBool False) }
   ident         { (_, TokenIdent $$) }
+  "super"        { (_, TokenSuper) }
+  "single"       { (_, TokenSingle) }
+  "parallel"     { (_, TokenParallel) }
+  "input"        { (_, TokenInput) }
+  "output"       { (_, TokenOutput) }
+
 
 %%
 
@@ -197,6 +204,11 @@ Atom :: { Expr }
     | "(" Expr ")"                  { $2 }
     | List                          { $1 }
     | Tuple                         { $1 }
+    | "super" SuperKind "input" "(" ident ")" "output" "(" ident ")" superbody  { Super $2 $5 $9 $11 }
+
+SuperKind :: { SuperKind }
+    : "single"     { SuperSingle }
+    | "parallel"   { SuperParallel }
 
 Literal :: { Literal }
     : int                           { LInt $1 }
