@@ -1,0 +1,101 @@
+-- Game of Life (0 = morto, 1 = vivo)
+-- Todas as declarações terminam com ';'. Em 'case', cada alternativa termina com ';'.
+
+-- comprimento de lista
+len xs = case xs of
+  []      -> 0;
+  (_:ys)  -> 1 + len ys;
+;
+
+-- map (função de alta ordem)
+map f xs = case xs of
+  []     -> [];
+  (h:t)  -> (f h) : map f t;
+;
+
+-- soma de uma lista de inteiros
+sumList xs = case xs of
+  []     -> 0;
+  (h:t)  -> h + sumList t;
+;
+
+-- intervalo fechado [i..j]; vazio se i > j
+fromTo i j = if i > j
+             then []
+             else i : fromTo (i + 1) j
+;
+
+-- acesso seguro: retorna 'def' se fora do intervalo; aceita índices negativos
+safeNth xs k def =
+  if k < 0
+  then def
+  else case xs of
+    []     -> def;
+    (h:t)  -> if k == 0 then h else safeNth t (k - 1) def;
+;
+
+-- dimensões da grade
+rowsOf grid = len grid;
+
+colsOf grid = case grid of
+  []     -> 0;
+  (r:_)  -> len r;
+;
+
+-- pega célula (i,j); fora retorna 0
+getCell grid i j = let row = safeNth grid i [] in safeNth row j 0;
+
+-- conta vizinhos de (i,j)
+neighbors grid i j =
+  sumList
+    [ getCell grid (i-1) (j-1)
+    , getCell grid (i-1) (j  )
+    , getCell grid (i-1) (j+1)
+    , getCell grid (i  ) (j-1)
+    , getCell grid (i  ) (j+1)
+    , getCell grid (i+1) (j-1)
+    , getCell grid (i+1) (j  )
+    , getCell grid (i+1) (j+1)
+    ]
+;
+
+nextCell c n =
+  if c == 1
+  then if (n == 2) || (n == 3) then 1 else 0
+  else if n == 3 then 1 else 0
+;
+
+-- constrói uma linha i da próxima geração
+makeRow grid i cols =
+  map (\j -> nextCell (getCell grid i j) (neighbors grid i j))
+      (fromTo 0 (cols - 1))
+;
+
+-- próxima geração inteira
+nextGridFromDims grid rows cols =
+  map (\i -> makeRow grid i cols)
+      (fromTo 0 (rows - 1))
+;
+nextGrid grid = nextGridFromDims grid (rowsOf grid) (colsOf grid);
+
+
+-- simula N passos
+simulate grid steps =
+  if steps == 0
+  then grid
+  else simulate (nextGrid grid) (steps - 1)
+;
+
+-- exemplo: glider em 6x6
+start =
+  [ [0,1,0,0,0,0]
+  , [0,0,1,0,0,0]
+  , [1,1,1,0,0,0]
+  , [0,0,0,0,0,0]
+  , [0,0,0,0,0,0]
+  , [0,0,0,0,0,0]
+  ]
+;
+
+-- rode algumas gerações
+main = simulate start 4;
