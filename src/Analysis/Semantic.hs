@@ -93,7 +93,7 @@ semanticCheck :: Program -> [Error]
 semanticCheck prog =
   let Program ds = desugarProgram prog
       sig0       = buildSig ds
-      -- detecta funções duplicadas propriamente
+      -- detecta funções duplicadas
       counts     = foldr (\f m -> Map.insertWith (+) f 1 m)
                          Map.empty
                          [f | FunDecl f _ _ <- ds]
@@ -166,7 +166,7 @@ checkExpr sig env expr = case expr of
     concatMap (checkExpr sig env) xs
 
   -- Super node: precisa que o identificador de entrada exista
-  Super _ inId _ _ ->
+  Super _ _ inId _ _ ->
     [UndefinedVar inId | not (Set.member inId env || Map.member inId sig)]
 
 checkAlt :: Sig -> Env -> (Pattern, Expr) -> [SemanticError]
@@ -332,12 +332,13 @@ inferExpr fenv tenv expr = case expr of
 
   -- Super node: treat as an opaque call that returns the same type as its input var.
   -- If the input ident is unknown, assume a fresh type variable.
-  Super _ inId _ _ ->
+  Super _ _ inId _ _ ->
     case Map.lookup inId tenv of
       Just t  -> return t
       Nothing -> freshTypeVar
 
   where
+    -- unifica dois tipos, descendo em listas e tuplas
     unifyTypes :: Expr -> Type -> Type -> Infer Type
     unifyTypes e t1 t2 = case (t1,t2) of
       (TVar _, t)            -> return t
@@ -437,3 +438,37 @@ isPoly _        = False
 
 checkAll :: Program -> [Error]
 checkAll p = semanticCheck p ++ checkProgram p
+
+-- Atribui nomes s# às supers (feito na main, quando você quiser).
+assignSuperNames :: Program -> Program
+assignSuperNames (Program ds) =
+  Program (evalState (mapM goDecl ds) (1 :: Int))
+  where
+    goDecl (FunDecl f ps e) = FunDecl f ps <$> goExpr e
+
+    goExpr :: Expr -> State Int Expr
+    goExpr = \case
+      Var x       -> pure (Var x)
+      Lit l       -> pure (Lit l)
+      Lambda ps b -> Lambda ps <$> goExpr b
+      If c t e    -> If <$> goExpr c <*> goExpr t <*> goExpr e
+      Cons h t    -> Cons <$> goExpr h <*> goExpr t
+      Case s as   -> do
+        s'  <- goExpr s
+        as' <- mapM (\(p,e) -> do e' <- goExpr e; pure (p,e')) as
+        pure (Case s' as')
+      Let ds e    -> do
+        ds' <- mapM (\(FunDecl f ps b) -> FunDecl f ps <$> goExpr b) ds
+        e'  <- goExpr e
+        pure (Let ds' e')
+      App f x     -> App <$> goExpr f <*> goExpr x
+      BinOp o l r -> BinOp o <$> goExpr l <*> goExpr r
+      UnOp  o e   -> UnOp  o <$> goExpr e
+      List xs     -> List  <$> mapM goExpr xs
+      Tuple xs    -> Tuple <$> mapM goExpr xs
+      -- injeta o nome s#
+      Super _nm kind inp out body -> do
+        i <- get
+        put (i + 1)
+        let nm = "s" ++ show i
+        pure (Super nm kind inp out body)
