@@ -34,7 +34,7 @@ data Expr
   | Tuple [Expr]
   | Cons  Expr Expr
   -- --------------- NOVO ----------------
-  | Super SuperKind Ident Ident String   -- ^ super <kind> input(x) output(y) BODY
+  | Super Ident SuperKind Ident Ident String   -- ^ super <kind> input(x) output(y) BODY
   ----------------------------------------
   deriving (Show)
 

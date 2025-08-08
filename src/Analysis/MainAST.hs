@@ -16,7 +16,7 @@ import qualified Data.Text.Lazy.IO as TLIO
 import Lexer    (alexScanTokens)  -- ^ Generate tokens from input text
 import Parser   (parse)           -- ^ Build the AST from the token stream
 import Syntax   (Program)         -- ^ AST data types
-import Semantic (checkAll)        -- ^ Perform semantic and type checks
+import Semantic (checkAll, assignSuperNames)        -- ^ Perform semantic and type checks
 import ASTGen   (programToDot)    -- ^ Render Program AST as DOT graph
 
 -- | Main entry point.
@@ -34,8 +34,8 @@ main = do
     []     -> getContents
     _      -> putStrLn "Usage: lambdaflow-ast [file]" >> exitFailure
 
-  let ast = parse (alexScanTokens input)
-
+  let ast0 = parse (alexScanTokens input)
+  let ast  = assignSuperNames ast0
   case checkAll ast of
     []   -> TLIO.putStr $ programToDot ast
     errs -> mapM_ print errs >> exitFailure

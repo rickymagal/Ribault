@@ -207,7 +207,7 @@ Atom :: { Expr }
     | "(" Expr ")"                  { $2 }
     | List                          { $1 }
     | Tuple                         { $1 }
-    | "super" SuperKind "input" "(" ident ")" "output" "(" ident ")" superbody  { Super $2 $5 $9 $11 }
+    | "super" SuperKind "input" "(" ident ")" "output" "(" ident ")" superbody  { Super "" $2 $5 $9 $11 }
 
 SuperKind :: { SuperKind }
     : "single"     { SuperSingle }
