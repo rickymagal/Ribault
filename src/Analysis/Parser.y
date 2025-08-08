@@ -79,8 +79,12 @@ Program :: { Program }
 
 -- DeclList: declarações separadas por ';' (com trailing opcional)
 DeclList :: { [Decl] }
-    : Decl                           { [$1] }
-    | Decl ";" DeclList             { $1 : $3 }
+    : Decl DeclRest          { $1 : $2 }
+
+DeclRest :: { [Decl] }
+    :                           { [] }
+    | ";"                       { [] }
+    | ";" Decl DeclRest         { $2 : $3 }
 
 Decl :: { Decl }
     : ident Params "=" Expr         { FunDecl $1 (reverse $2) $4 }
@@ -115,18 +119,17 @@ IfExpr :: { Expr }
                                     { If $2 $4 $6 }
 
 CaseExpr :: { Expr }
-    -- case com branches separados por ';'
     : "case" Expr "of" Alts         { Case $2 $4 }
 
 Alts :: { [(Pattern,Expr)] }
     : AltList                       { $1 }
 
 AltList :: { [(Pattern,Expr)] }
-    : Alt                           { [$1] }
-    | AltList Alt                  { $1 ++ [ $2 ] }
+    : Alt ";"                 { [$1] }
+    | Alt ";" AltList   { $1 : $3 }
 
 Alt :: { (Pattern,Expr) }
-    : Pattern "->" Expr ";"        { ($1,$3) }
+    : Pattern "->" Expr       { ($1,$3) }
 
 
 LetExpr :: { Expr }

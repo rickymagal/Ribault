@@ -1,120 +1,256 @@
-{-# LANGUAGE LambdaCase, OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 
--- | ASTGen provides a function to render the program’s Abstract Syntax Tree
---   as a Graphviz DOT graph, incluindo suporte a listas formadas por cons (:).
+-- Gera DOT para a AST.
+-- Cobre TODOS os construtores usados:
+--  - Patterns: PWildcard, PVar, PLit, PList, PTuple, PCons
+--  - Expr: Var, Lit, Lambda, If, Cons, Case, Let, App, BinOp, UnOp, List, Tuple, Super
+
 module ASTGen
-  ( programToDot
+  ( astToDot       -- Program -> Text
+  , programToDot   -- sinônimo
   ) where
 
-import Data.Text.Lazy (Text)
-import qualified Data.Text.Lazy as T
-import Syntax (Program(..), Decl(..), Expr(..), Pattern(..))
+import Syntax
+import Data.List (intercalate)
+import Control.Monad.State
+import Control.Monad (when)
+import qualified Data.Text.Lazy as TL
 
--- | Convert an entire 'Program' AST into a DOT-formatted graph.
-programToDot :: Program -> Text
-programToDot (Program decls) =
-     "digraph AST {\n"
-  <> "  node [shape=box, fontname=\"Courier\"];\n"
-  <> T.concat (zipWith (\i d -> declToDot ("decl" <> T.pack (show i)) d) [0..] decls)
-  <> "}\n"
+-- -----------------------------------------------------------------------------
+-- Infra de geração de DOT
+-- -----------------------------------------------------------------------------
 
--- | Render a single function declaration as a DOT subgraph.
-declToDot :: Text -> Decl -> Text
-declToDot name (FunDecl f ps b) =
-    let lbl   = "FunDecl\n" <> T.pack f
-             <> "(" <> T.intercalate "," (map T.pack ps) <> ")"
-        bodyN = name <> "_body"
-    in  node name lbl
-     <> node bodyN (exprLabel b)
-     <> edge name bodyN
-     <> exprToDot bodyN b
+type NodeId = Int
 
--- | Human-readable label for an expression node.
-exprLabel :: Expr -> Text
-exprLabel = \case
-  Var x         -> "Var\n" <> T.pack x
-  Lit _         -> "Lit"
-  Lambda ps _   -> "Lambda(" <> T.intercalate "," (map T.pack ps) <> ")"
-  If{}          -> "If"
-  Case{}        -> "Case"
-  Let{}         -> "Let"
-  App{}         -> "App"
-  BinOp op _ _  -> "BinOp\n" <> T.pack (show op)
-  UnOp op _     -> "UnOp\n" <> T.pack (show op)
-  Cons{}        -> "Cons"        -- <:> construtor de lista
-  List{}        -> "List"
-  Tuple{}       -> "Tuple"
+data G = G { gid :: !Int, out :: [String] }
 
--- | Recursively render the children of an expression node.
-exprToDot :: Text -> Expr -> Text
-exprToDot prefix expr = case expr of
-  Var{}       -> ""
-  Lit{}       -> ""
-  Lambda _ b  -> child prefix "body" b
+type M a = State G a
 
-  If c t e    -> children prefix ["cond","then","else"] [c,t,e]
+push :: String -> M ()
+push s = modify $ \g -> g{ out = s : out g }
 
-  Case s alts -> child prefix "scrut" s
-               <> T.concat [ altToDot prefix i pat bd
-                           | (i,(pat,bd)) <- zip [0..] alts ]
+fresh :: M NodeId
+fresh = do
+  i <- gets gid
+  modify $ \g -> g{ gid = i + 1 }
+  pure i
 
-  Let ds e    ->
-    T.concat [ declToDot (prefix <> "_let" <> T.pack (show i)) d
-             | (i,d) <- zip [0..] ds ]
-    <> child prefix "in" e
+emitNode :: NodeId -> String -> M ()
+emitNode n label =
+  push $ show n ++ " [shape=box,label=\"" ++ esc label ++ "\"];"
 
-  App f x     -> children prefix ["fun","arg"] [f,x]
+emitEdge :: NodeId -> NodeId -> M ()
+emitEdge a b = push $ show a ++ " -> " ++ show b ++ ";"
 
-  BinOp _ l r -> children prefix ["l","r"] [l,r]
+esc :: String -> String
+esc = concatMap f
+  where
+    f '"'  = "\\\""
+    f '\\' = "\\\\"
+    f '\n' = "\\n"
+    f c    = [c]
 
-  UnOp _ x    -> child prefix "arg" x
+runM :: M NodeId -> TL.Text
+runM m =
+  let g0  = G 0 []
+      (_root, g1) = runState m g0
+      ls = [ "digraph AST {"
+           , "  rankdir=TB;"
+           , "  node [shape=box,fontname=\"monospace\"];"
+           ] ++ map ("  "++) (reverse (out g1))
+             ++ ["}"]
+  in TL.unlines (map TL.pack ls)
 
-  Cons h t    -> children prefix ["head","tail"] [h,t]  -- cons
+-- -----------------------------------------------------------------------------
+-- API
+-- -----------------------------------------------------------------------------
 
-  List xs     ->
-    T.concat [ child prefix (T.pack $ "e" ++ show i) x
-             | (i,x) <- zip [0..] xs ]
+astToDot :: Program -> TL.Text
+astToDot = programToDot
 
-  Tuple xs    ->
-    T.concat [ child prefix (T.pack $ "e" ++ show i) x
-             | (i,x) <- zip [0..] xs ]
+programToDot :: Program -> TL.Text
+programToDot p = runM (visitProgram p)
+
+-- -----------------------------------------------------------------------------
+-- Visitantes
+-- -----------------------------------------------------------------------------
+
+visitProgram :: Program -> M NodeId
+visitProgram (Program ds) = do
+  me <- fresh
+  emitNode me "Program"
+  mapM_ (\d -> visitDecl d >>= emitEdge me) ds
+  pure me
+
+visitDecl :: Decl -> M NodeId
+visitDecl (FunDecl f ps e) = do
+  me <- fresh
+  emitNode me ("FunDecl " ++ f)
+  -- params
+  when (not (null ps)) $ do
+    pnode <- fresh
+    emitNode pnode ("Params " ++ intercalate " " ps)
+    emitEdge me pnode
+  -- body
+  be <- visitExpr e
+  emitEdge me be
+  pure me
+
+visitExpr :: Expr -> M NodeId
+visitExpr = \case
+  Var x -> leaf ("Var " ++ x)
+  Lit l -> leaf ("Lit " ++ showLit l)
+
+  Lambda ps b -> do
+    me <- fresh
+    emitNode me ("Lambda " ++ intercalate " " ps)
+    b' <- visitExpr b
+    emitEdge me b'
+    pure me
+
+  If c t e -> do
+    me <- fresh
+    emitNode me "If"
+    c' <- visitExpr c; emitEdge me c'
+    t' <- visitExpr t; emitEdge me t'
+    e' <- visitExpr e; emitEdge me e'
+    pure me
+
+  Cons h t -> do
+    me <- fresh
+    emitNode me "Cons (:)"
+    h' <- visitExpr h; emitEdge me h'
+    t' <- visitExpr t; emitEdge me t'
+    pure me
+
+  Case scr alts -> do
+    me <- fresh
+    emitNode me "Case"
+    s' <- visitExpr scr
+    emitEdge me s'
+    -- alternativas
+    mapM_ (\(p,bd) -> do
+              altN <- fresh
+              emitNode altN "Alt"
+              pn <- visitPat p
+              bn <- visitExpr bd
+              emitEdge altN pn
+              emitEdge altN bn
+              emitEdge me altN
+          ) alts
+    pure me
+
+  Let ds e -> do
+    me <- fresh
+    emitNode me "Let"
+    dsN <- fresh
+    emitNode dsN "Decls"
+    emitEdge me dsN
+    mapM_ (\d -> visitDecl d >>= emitEdge dsN) ds
+    e' <- visitExpr e
+    emitEdge me e'
+    pure me
+
+  -- aplicação n-ária achatada
+  e0@(App _ _) -> do
+    let (f, xs) = flattenApp e0
+    me <- fresh
+    emitNode me "App"
+    fn <- visitExpr f
+    emitEdge me fn
+    mapM_ (\a -> visitExpr a >>= emitEdge me) xs
+    pure me
+
+  BinOp op l r -> do
+    me <- fresh
+    emitNode me ("BinOp " ++ showBin op)
+    l' <- visitExpr l; emitEdge me l'
+    r' <- visitExpr r; emitEdge me r'
+    pure me
+
+  UnOp op x -> do
+    me <- fresh
+    emitNode me ("UnOp " ++ showUn op)
+    x' <- visitExpr x
+    emitEdge me x'
+    pure me
+
+  List xs -> do
+    me <- fresh
+    emitNode me "List"
+    mapM_ (\a -> visitExpr a >>= emitEdge me) xs
+    pure me
+
+  Tuple xs -> do
+    me <- fresh
+    emitNode me ("Tuple/" ++ show (length xs))
+    mapM_ (\a -> visitExpr a >>= emitEdge me) xs
+    pure me
+
+  -- <<< SUPORTE À SUPER INSTRUCTION >>>
+  Super kind inp out _body -> do
+    me <- fresh
+    let k = case kind of
+              SuperSingle   -> "single"
+              SuperParallel -> "parallel"
+    emitNode me ("Super[" ++ k ++ "]\\ninput=" ++ inp ++ "\\noutput=" ++ out)
+    pure me
 
   where
-    child p role e =
-      let n = p <> "_" <> role
-      in  node n (exprLabel e)
-       <> edge p n
-       <> exprToDot n e
+    leaf :: String -> M NodeId
+    leaf s = do n <- fresh; emitNode n s; pure n
 
-    children p rs es = T.concat $ zipWith (\r e -> child p r e) rs es
+-- ajuda: achatar árvore de aplicação em (função, args)
+flattenApp :: Expr -> (Expr, [Expr])
+flattenApp (App f x) = let (fn, xs) = flattenApp f in (fn, xs ++ [x])
+flattenApp e         = (e, [])
 
--- | Render a case alternative (pattern and corresponding body) as DOT.
-altToDot :: Text -> Int -> Pattern -> Expr -> Text
-altToDot prefix i pat bd =
-  let pn = prefix <> "_pat" <> T.pack (show i)
-      bn = prefix <> "_bd"  <> T.pack (show i)
-  in  node pn (patternLabel pat)
-   <> edge prefix pn
-   <> node bn "AltBody"
-   <> edge pn bn
-   <> exprToDot bn bd
+visitPat :: Pattern -> M NodeId
+visitPat = \case
+  PWildcard   -> leaf "PWildcard"
+  PVar x      -> leaf ("PVar " ++ x)
+  PLit l      -> leaf ("PLit " ++ showLit l)
+  PList ps    -> do
+    me <- fresh
+    emitNode me "PList"
+    mapM_ (\p -> visitPat p >>= emitEdge me) ps
+    pure me
+  PTuple ps   -> do
+    me <- fresh
+    emitNode me ("PTuple/" ++ show (length ps))
+    mapM_ (\p -> visitPat p >>= emitEdge me) ps
+    pure me
+  -- padrão cons (x:xs)
+  PCons p ps  -> do
+    me <- fresh
+    emitNode me "PCons (:)"
+    a <- visitPat p
+    b <- visitPat ps
+    emitEdge me a
+    emitEdge me b
+    pure me
+  where
+    leaf s = do n <- fresh; emitNode n s; pure n
 
--- | Generate a label for a pattern node, incluindo PCons.
-patternLabel :: Pattern -> Text
-patternLabel = \case
-  PWildcard     -> "_"
-  PVar x        -> T.pack x
-  PLit _        -> "LitPat"
-  PList _       -> "ListPat"
-  PTuple _      -> "TuplePat"
-  PCons _ _     -> ":"       -- padrão cons
+-- -----------------------------------------------------------------------------
+-- impressão de literais e operadores
+-- -----------------------------------------------------------------------------
 
--- | Define a DOT node with the given name and label.
-node :: Text -> Text -> Text
-node name label =
-  "  " <> name <> " [label=\"" <> label <> "\"];\n"
+showLit :: Literal -> String
+showLit = \case
+  LInt n    -> show n
+  LFloat f  -> show f
+  LBool b   -> show b
+  LChar c   -> show c
+  LString s -> show s
 
--- | Define a DOT edge between two nodes.
-edge :: Text -> Text -> Text
-edge from to =
-  "  " <> from <> " -> " <> to <> ";\n"
+showBin :: BinOperator -> String
+showBin = \case
+  Add -> "+"; Sub -> "-"; Mul -> "*"; Div -> "/"; Mod -> "%"
+  Eq  -> "=="; Neq -> "/="; Lt  -> "<"; Le -> "<="; Gt -> ">"; Ge -> ">="
+  And -> "&&"; Or  -> "||"
+
+showUn :: UnOperator -> String
+showUn = \case
+  Neg -> "negate"
+  Not -> "not"

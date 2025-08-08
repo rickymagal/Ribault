@@ -1,6 +1,6 @@
 -- Case expression with tuple pattern
 fstPair = \p -> case p of
-  (x, _) -> x;
-  _ -> 0;
-;
-main = fstPair (10,15)
+  	(x, _) -> x;
+  	_ -> 0;;
+	
+main = fstPair (10,15);
