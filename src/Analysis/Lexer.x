@@ -15,7 +15,7 @@ tokens :-
 $white+                  ;
 "--"[^\n]*               ;
 
-"#BEGINSUPER"."#ENDSUPER"   { \p s ->
+"#BEGINSUPER"(.|\r|\n)*"#ENDSUPER"   { \p s ->
       let body = take (length s - 20) (drop 11 s)   -- descarta "#BEGINSUPER" (11) e "#ENDSUPER" (9)
       in (p, TokenSuperBody body)
   }
