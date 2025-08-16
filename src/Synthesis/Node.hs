@@ -1,142 +1,132 @@
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE OverloadedStrings #-}
-
+{-# LANGUAGE LambdaCase #-}
+-- | Declaração dos nós do grafo dataflow (payload por NodeId).
+--   Cada construtor corresponde diretamente a um mnemônico do assembler.
+--   Convenções de portas:
+--     - Saída padrão: "0"
+--     - Segunda saída (quando houver): "1"
+--     - Steer: "t" e "f"
+--   Use os helpers 'outPort', 'out1Port', 'truePort', 'falsePort'.
 module Node
-  ( -- * Literais e operadores
-    Literal(..)
-  , BinOp(..)
-  , UnOp(..)
+  ( -- * Nó do grafo
+    DNode(..)
 
-    -- * Nó
-  , DNode(..)
-
-    -- * Helpers
+    -- * Metadados
   , nodeName
-  , outPort, truePort, falsePort
+  , nOutputs
+
+    -- * Port helpers (para construir arestas)
+  , outPort
+  , out1Port
+  , truePort
+  , falsePort
   ) where
 
-import           Types            (NodeId)
-import           Data.Text        (Text)
+import           Types (NodeId)
+import           Port  (Port(..))
 
-----------------------------------------------------------------------
--- Literais (para const)
-----------------------------------------------------------------------
-data Literal
-  = LInt    Int
-  | LFloat  Double
-  | LBool   Bool
-  | LChar   Char
-  | LString Text
-  deriving (Eq, Show)
+--------------------------------------------------------------------------------
+-- Tipo de nó (payload)
+--------------------------------------------------------------------------------
 
-----------------------------------------------------------------------
--- Operadores binários
-----------------------------------------------------------------------
-data BinOp
-  = BAdd | BSub | BMul | BDiv
-  | BAddI | BSubI | BMulI | BDivI
-  | BAnd | BOr | BXor | BNot
-  | BEq | BNeq
-  | BLt | BLeq | BGt | BGeq
-  deriving (Eq, Show)
-
-----------------------------------------------------------------------
--- Operador unário (só not, se quiser mais adicione aqui)
-----------------------------------------------------------------------
-data UnOp = UNot
-  deriving (Eq, Show)
-
-----------------------------------------------------------------------
--- Nós de instrução TALM/DFG
-----------------------------------------------------------------------
+-- | Nó de dataflow correspondente aos mnemônicos do assembler.
+--   Campos de nome (nName) existem para rótulo humano; o 'NodeId' vem do grafo.
 data DNode
-  = InstConst     { nId :: NodeId, lit :: Literal }
+  -- Constantes
+  = NConstI  { nName :: !String, cInt   :: !Int }      -- const
+  | NConstF  { nName :: !String, cFloat :: !Float }    -- fconst
+  | NConstD  { nName :: !String, cDouble:: !Double }   -- dconst
 
-  -- Aritméticos
-  | InstAdd       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstSub       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstMul       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstDiv       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  -- ALU binárias (1 saída)
+  | NAdd     { nName :: !String }  -- add (int)
+  | NSub     { nName :: !String }  -- sub (int)
+  | NMul     { nName :: !String }  -- mul (int)
+  | NFAdd    { nName :: !String }  -- fadd (float)
+  | NDAdd    { nName :: !String }  -- dadd (double)
+  | NBand    { nName :: !String }  -- band (bitwise AND)
 
-  | InstAddI      { nId :: NodeId, lhs :: NodeId, imm :: Int }
-  | InstSubI      { nId :: NodeId, lhs :: NodeId, imm :: Int }
-  | InstMulI      { nId :: NodeId, lhs :: NodeId, imm :: Int }
-  | InstDivI      { nId :: NodeId, lhs :: NodeId, imm :: Int }
+  -- ALU binárias (2 saídas)
+  | NDiv     { nName :: !String }  -- div (int -> quociente e resto/seg. saída)
 
-  -- Booleanos e lógica
-  | InstAnd       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstOr        { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstXor       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstNot       { nId :: NodeId, arg :: NodeId }
+  -- ALU com imediato (1 fonte + immed)
+  | NAddI    { nName :: !String, iImm :: !Int   } -- addi
+  | NSubI    { nName :: !String, iImm :: !Int   } -- subi
+  | NMulI    { nName :: !String, iImm :: !Int   } -- muli
+  | NFMulI   { nName :: !String, fImm :: !Float } -- fmuli
+  | NDivI    { nName :: !String, iImm :: !Int   } -- divi (2 saídas)
 
-  -- Comparação
-  | InstEq        { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstNeq       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstLt        { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstLeq       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstGt        { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
-  | InstGeq       { nId :: NodeId, lhs :: NodeId, rhs :: NodeId }
+  -- Comparações e steer
+  | NLThan   { nName :: !String }                 -- lthan
+  | NGThan   { nName :: !String }                 -- gthan
+  | NEqual   { nName :: !String }                 -- equal
+  | NLThanI  { nName :: !String, iImm :: !Int }   -- lthani
+  | NGThanI  { nName :: !String, iImm :: !Int }   -- gthani
+  | NSteer   { nName :: !String }                 -- steer (2 saídas: t/f)
 
-  -- Fluxo de controle
-  | InstSteer     { nId :: NodeId, predN :: NodeId }
+  -- Controle de tags / retorno / call
+  | NIncTag  { nName :: !String }                 -- inctag
+  | NIncTagI { nName :: !String, iImm :: !Int }   -- inctagi
+  | NCallSnd { nName :: !String, taskId :: !Int } -- callsnd (imm = task id)
+  | NRetSnd  { nName :: !String, taskId :: !Int } -- retsnd (imm = task id)
+  | NRet     { nName :: !String }                 -- ret
 
-  -- Chamadas de função/dataflow
-  | InstCallGroup { nId :: NodeId, groupName :: Text }
-  | InstCallSnd   { nId :: NodeId, groupName :: Text, callGroupId :: NodeId, argId :: NodeId }
-  | InstRetSnd    { nId :: NodeId, groupName :: Text, callGroupId :: NodeId, retValId :: NodeId }
-  | InstRet       { nId :: NodeId, valId :: NodeId, retSndIds :: [NodeId] }
+  -- Converters tag<->val
+  | NTagVal  { nName :: !String }                 -- tagval
+  | NValTag  { nName :: !String }                 -- valtag
 
-  -- Tags/dataflow
-  | InstIncTag    { nId :: NodeId, base :: NodeId }
-  | InstTagOp     { nId :: NodeId, arg :: NodeId }
+  -- Cópias GPU/host
+  | NCpHToDev  { nName :: !String }               -- cphtodev (size, dst, src)
+  | NCpDevToH  { nName :: !String }               -- cpdevtoh (size, dst, src)
 
-  -- Superinstrução
-  | InstSuper     { nId :: NodeId, name :: Text, ins :: [NodeId], outs :: Int }
-  | InstSuperInst { nId :: NodeId, name :: Text, ins :: [NodeId], outs :: Int }
+  -- Commit / especulação
+  | NCommit    { nName :: !String }               -- commit (2 saídas)
+  | NStopSpec  { nName :: !String }               -- stopspec (2 saídas)
 
-  -- Composição e paralelismo
-  | InstMerge     { nId :: NodeId, inputs :: [NodeId] }
-  | InstSplit     { nId :: NodeId, input :: NodeId, n :: Int }
+  -- Super-instruções
+  | NSuper
+      { nName      :: !String
+      , superNum   :: !Int          -- ^ número da super-instrução (soma ao opcode base)
+      , superOuts  :: !Int          -- ^ quantidade de saídas
+      , superImm   :: !(Maybe Int)  -- ^ imediato opcional (presente em 'superi' / 'specsuperi')
+      , superSpec  :: !Bool         -- ^ especulativa? (specsuper/specsuperi)
+      }
   deriving (Eq, Show)
 
-----------------------------------------------------------------------
--- Helpers
-----------------------------------------------------------------------
-nodeName :: DNode -> String
-nodeName n = prefix n ++ show (nId n)
-  where
-    prefix InstConst{}     = "const"
-    prefix InstAdd{}       = "add"
-    prefix InstSub{}       = "sub"
-    prefix InstMul{}       = "mul"
-    prefix InstDiv{}       = "div"
-    prefix InstAddI{}      = "addi"
-    prefix InstSubI{}      = "subi"
-    prefix InstMulI{}      = "muli"
-    prefix InstDivI{}      = "divi"
-    prefix InstAnd{}       = "and"
-    prefix InstOr{}        = "or"
-    prefix InstXor{}       = "xor"
-    prefix InstNot{}       = "not"
-    prefix InstEq{}        = "eq"
-    prefix InstNeq{}       = "neq"
-    prefix InstLt{}        = "lt"
-    prefix InstLeq{}       = "leq"
-    prefix InstGt{}        = "gt"
-    prefix InstGeq{}       = "geq"
-    prefix InstSteer{}     = "steer"
-    prefix InstCallGroup{} = "callgroup"
-    prefix InstCallSnd{}   = "callsnd"
-    prefix InstRetSnd{}    = "retsnd"
-    prefix InstRet{}       = "ret"
-    prefix InstIncTag{}    = "inctag"
-    prefix InstTagOp{}     = "tagop"
-    prefix InstSuper{}     = "super"
-    prefix InstSuperInst{} = "superinst"
-    prefix InstMerge{}     = "merge"
-    prefix InstSplit{}     = "split"
+--------------------------------------------------------------------------------
+-- Metadados
+--------------------------------------------------------------------------------
 
-outPort, truePort, falsePort :: String
-outPort  = "out"
-truePort = "t"
-falsePort = "f"
+-- | Nome legível do nó (rótulo).
+nodeName :: DNode -> String
+nodeName = nName
+
+-- | Quantidade de saídas desse nó (para nomear portas corretamente).
+nOutputs :: DNode -> Int
+nOutputs = \case
+  NDiv{}      -> 2
+  NDivI{}     -> 2
+  NSteer{}    -> 2
+  NCommit{}   -> 2
+  NStopSpec{} -> 2
+  NSuper{..}  -> superOuts
+  _           -> 1
+
+--------------------------------------------------------------------------------
+-- Helpers de porta (para usar com Port.(-->))
+--------------------------------------------------------------------------------
+
+-- | Porta de saída padrão ("0").
+outPort :: NodeId -> Port
+outPort nid = InstPort nid "0"
+
+-- | Segunda saída ("1") — para nós com duas saídas (Div/DivI/Commit/StopSpec).
+out1Port :: NodeId -> Port
+out1Port nid = InstPort nid "1"
+
+-- | Saída verdadeira ("t") — exclusiva de 'NSteer'.
+truePort :: NodeId -> Port
+truePort nid = SteerPort nid "t"
+
+-- | Saída falsa ("f") — exclusiva de 'NSteer'.
+falsePort :: NodeId -> Port
+falsePort nid = SteerPort nid "f"
