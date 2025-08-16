@@ -30,7 +30,6 @@ ASTGEN_HS    := $(SRC_DIR)/Analysis/AST-gen.hs
 CODEGEN_HS   := $(SRC_DIR)/Synthesis/Codegen.hs
 UNIQUE_HS    := $(SRC_DIR)/Synthesis/Unique.hs
 TYPES_HS     := $(SRC_DIR)/Synthesis/Types.hs
-SSA_HS       := $(SRC_DIR)/Synthesis/SSA.hs
 PORT_HS      := $(SRC_DIR)/Synthesis/Port.hs
 NODE_HS      := $(SRC_DIR)/Synthesis/Node.hs
 
@@ -103,7 +102,7 @@ $(PARSER_HS): $(PARSER_SRC)
 # ------------------------------------------------------------
 $(EXE_DF): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
            $(BUILDER_HS) $(GRAPHVIZ_HS) $(MAIN_DF_HS) $(UNIQUE_HS) \
-           $(TYPES_HS) $(SSA_HS) $(PORT_HS) $(NODE_HS)
+           $(TYPES_HS) $(PORT_HS) $(NODE_HS)
 	@echo "[GHC  ] $@"
 	@mkdir -p $(EXE_DF).obj $(EXE_DF).hi
 	$(GHC) -O2 \
@@ -111,7 +110,7 @@ $(EXE_DF): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
 	      -o $@ \
 	      $(MAIN_DF_HS) $(LEXER_HS) $(PARSER_HS) \
 	      $(SYNTAX_HS) $(SEMANTIC_HS) $(UNIQUE_HS) \
-	      $(TYPES_HS) $(SSA_HS) $(PORT_HS) $(NODE_HS) \
+	      $(TYPES_HS) $(PORT_HS) $(NODE_HS) \
 	      $(BUILDER_HS) $(GRAPHVIZ_HS)
 
 $(EXE_AST): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS) $(MAIN_AST_HS)
@@ -125,7 +124,7 @@ $(EXE_AST): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS) $(
 
 $(EXE_CODE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
              $(BUILDER_HS) $(CODEGEN_HS) $(MAIN_CODE_HS) $(UNIQUE_HS) \
-             $(TYPES_HS) $(SSA_HS) $(PORT_HS) $(NODE_HS)
+             $(TYPES_HS) $(PORT_HS) $(NODE_HS)
 	@echo "[GHC  ] $@"
 	@mkdir -p $(EXE_CODE).obj $(EXE_CODE).hi
 	$(GHC) -O2 \
@@ -134,7 +133,7 @@ $(EXE_CODE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
 	      $(MAIN_CODE_HS) $(LEXER_HS) $(PARSER_HS) \
 	      $(SYNTAX_HS) $(SEMANTIC_HS) \
 	      $(BUILDER_HS) $(CODEGEN_HS) $(UNIQUE_HS) \
-	      $(TYPES_HS) $(SSA_HS) $(PORT_HS) $(NODE_HS)
+	      $(TYPES_HS) $(PORT_HS) $(NODE_HS)
 
 # ------------------------------------------------------------
 # Dataflow .dot
