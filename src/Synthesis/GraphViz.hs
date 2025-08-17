@@ -1,131 +1,105 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+
 module Synthesis.GraphViz
-  ( toDot  -- :: DGraph DNode -> Data.Text.Lazy.Text
+  ( toDot  -- :: DGraph DNode -> LazyText
   ) where
 
-----------------------------------------------------------------------
--- Imports do projeto
-----------------------------------------------------------------------
-import           Types                 (DGraph(..))
-import           Node                  (DNode(..), nodeName)
-import qualified Data.Map              as M
+import qualified Data.Map       as M
+import           Data.Char      (isDigit)
+import           Data.List      (sortOn)
+import qualified Data.Text      as T
+import qualified Data.Text.Lazy as TL
+import           Data.Text      (Text)
 
-----------------------------------------------------------------------
--- Imports padrão
-----------------------------------------------------------------------
-import           Data.Char             (isDigit, toUpper)
-import qualified Data.Text.Lazy        as TL
-import           Data.Text.Lazy        (Text)
+import           Types          (DGraph(..), NodeId)
+import           Node           (DNode(..), nodeName)
 
-----------------------------------------------------------------------
--- API
-----------------------------------------------------------------------
-toDot :: DGraph DNode -> Text
+-- ---------------------------------------------------------------------
+
+toDot :: DGraph DNode -> TL.Text
 toDot g =
-  TL.unlines $
-    [ "digraph G {" ] ++
-    concatMap renderNode (M.toList (dgNodes g)) ++
-    concatMap (renderEdge nameOf) (reverse (dgEdges g)) ++
-    [ "}" ]
-  where
-    nameOf nid = case M.lookup nid (dgNodes g) of
-                   Just n  -> nodeName n
-                   Nothing -> "unknown_" ++ show nid
+  TL.fromStrict . T.unlines $
+    [ "digraph G {"
+    , "  rankdir=LR;"
+    , "  node [shape=box, style=rounded, fontsize=12];"
+    ]
+    ++ map (ppNode g) (sortedNodes g)
+    ++ map ppEdge        (sortedEdges g)
+    ++ [ "}" ]
 
-----------------------------------------------------------------------
--- Renderização de nós (idêntico ao script do assembler)
-----------------------------------------------------------------------
-renderNode :: (Int, DNode) -> [Text]
-renderNode (_nid, n) =
-  [ "node [shape=box, style=rounded, fontsize=12];"
-  , TL.pack $
-      "node [label=\"" ++ opcode n ++ " " ++ nodeName n
-      ++ "\"] " ++ safeId (nodeName n) ++ ";"
-  ]
+-- ---------------- order & helpers ------------------------------------
 
-----------------------------------------------------------------------
--- Renderização de arestas (duas linhas por aresta)
--- <SRC> -> <DST>
--- [label = "(PORT,IDX)", fontsize=10]
-----------------------------------------------------------------------
-renderEdge :: (Int -> String) -> (Int, String, Int, String) -> [Text]
-renderEdge nameOf (srcId, srcPort, dstId, dstPort) =
-  [ TL.pack (safeId (nameOf srcId) ++ " -> " ++ safeId (nameOf dstId))
-  , TL.pack ("[label = \"(" ++ portLabel ++ "," ++ idxLabel ++ ")\", fontsize=10]")
-  ]
-  where
-    portLabel = map toUpper (if null srcPort then "0" else srcPort)
-    idxLabel  = if all isDigit dstPort && not (null dstPort) then dstPort else "0"
+sortedNodes :: DGraph a -> [(NodeId, a)]
+sortedNodes g = sortOn fst (M.toList (dgNodes g))
 
-----------------------------------------------------------------------
--- Mnemônicos (iguais aos do assembler)
-----------------------------------------------------------------------
-opcode :: DNode -> String
-opcode = \case
-  -- Constantes
-  NConstI{}    -> "const"
-  NConstF{}    -> "fconst"
-  NConstD{}    -> "dconst"
+sortedEdges :: DGraph n -> [(NodeId, Text, NodeId, Text)]
+sortedEdges g =
+  let es = [ (s, T.pack sp, d, T.pack dp) | (s,sp,d,dp) <- dgEdges g ]
+  in sortOn (\(s,_sp,d,dp) -> (d, toInt dp, s)) es
 
-  -- ALU binárias 1 saída
-  NAdd{}       -> "add"
-  NSub{}       -> "sub"
-  NMul{}       -> "mul"
-  NFAdd{}      -> "fadd"
-  NDAdd{}      -> "dadd"
-  NBand{}      -> "band"
+toInt :: Text -> Int
+toInt t | T.all isDigit t && not (T.null t) = read (T.unpack t)
+toInt _ = 0
 
-  -- ALU binária 2 saídas
-  NDiv{}       -> "div"
+-- ---------------- nodes ------------------------------------------------
 
-  -- ALU com imediato
-  NAddI{}      -> "addi"
-  NSubI{}      -> "subi"
-  NMulI{}      -> "muli"
-  NFMulI{}     -> "fmuli"
-  NDivI{}      -> "divi"
+ppNode :: DGraph DNode -> (NodeId, DNode) -> Text
+ppNode _ (nid, dn) =
+  T.concat
+    [ "  ", nodeId nid, " [label=\""
+    , opSymbol dn
+    , "\"];"
+    ]
 
-  -- Comparações e steer
-  NLThan{}     -> "lthan"
-  NGThan{}     -> "gthan"
-  NEqual{}     -> "equal"
-  NLThanI{}    -> "lthani"
-  NGThanI{}    -> "gthani"
-  NSteer{}     -> "steer"
+nodeId :: NodeId -> Text
+nodeId n = T.pack ("n" ++ show n)
 
-  -- Controle/tag/call/ret
-  NIncTag{}    -> "inctag"
-  NIncTagI{}   -> "inctagi"
-  NCallSnd{}   -> "callsnd"
-  NRetSnd{}    -> "retsnd"
-  NRet{}       -> "ret"
+opSymbol :: DNode -> Text
+opSymbol = \case
+  NConstI{}   -> "const"
+  NConstF{}   -> "fconst"
+  NConstD{}   -> "dconst"
+  NAdd{}      -> "+"
+  NSub{}      -> "-"
+  NMul{}      -> "*"
+  NDiv{}      -> "/"
+  NFAdd{}     -> "f+"
+  NDAdd{}     -> "d+"
+  NBand{}     -> "band"
+  NSteer{}    -> "steer"
+  NLThan{}    -> "<"
+  NGThan{}    -> ">"
+  NEqual{}    -> "=="
+  NLThanI{}   -> "<i"
+  NGThanI{}   -> ">i"
+  NAddI{}     -> "+i"
+  NSubI{}     -> "-i"
+  NMulI{}     -> "*i"
+  NFMulI{}    -> "*fi"
+  NDivI{}     -> "/i"
+  NIncTag{}   -> "inctag"
+  NIncTagI{}  -> "inctagi"
+  NCallSnd{}  -> "callsnd"
+  NRetSnd{}   -> "retsnd"
+  NRet{}      -> "ret"
+  NTagVal{}   -> "tagval"
+  NValTag{}   -> "valtag"
+  NCpHToDev{} -> "cphtodev"
+  NCpDevToH{} -> "cpdevtoh"
+  NCommit{}   -> "commit"
+  NStopSpec{} -> "stopspec"
+  NSuper{}    -> "super"
 
-  -- Converters
-  NTagVal{}    -> "tagval"
-  NValTag{}    -> "valtag"
+-- ---------------- edges ------------------------------------------------
 
-  -- GPU copies
-  NCpHToDev{}  -> "cphtodev"
-  NCpDevToH{}  -> "cpdevtoh"
+ppEdge :: (NodeId, Text, NodeId, Text) -> Text
+ppEdge (s, sp, d, dp) =
+  T.concat
+    [ "  ", nodeId s, " -> ", nodeId d
+    , " [label=\"(", tPort sp, ",", dp, ")\", fontsize=10];"
+    ]
 
-  -- Commit/especulação (2 saídas)
-  NCommit{}    -> "commit"
-  NStopSpec{}  -> "stopspec"
-
-  -- Super-instruções
-  NSuper{ superSpec = True,  superImm = Just{} } -> "specsuperi"
-  NSuper{ superSpec = True,  superImm = Nothing }-> "specsuper"
-  NSuper{ superSpec = False, superImm = Just{} } -> "superi"
-  NSuper{ superSpec = False, superImm = Nothing }-> "super"
-
-----------------------------------------------------------------------
--- IDs seguros para DOT
-----------------------------------------------------------------------
-safeId :: String -> String
-safeId s =
-  if null s then "_"
-  else map (\c -> if c `elem` bad then '_' else c) s
-  where
-    bad :: String
-    bad = " \t\r\n\"'`:$"
+tPort :: Text -> Text
+tPort p | T.null p  = "0"
+        | otherwise = T.toUpper p

@@ -1,0 +1,14 @@
+digraph G {
+  rankdir=LR;
+  node [shape=box, style=rounded, fontsize=12];
+  n0 [label="const"];
+  n1 [label="const"];
+  n2 [label="const"];
+  n3 [label="const"];
+  n4 [label="+"];
+  n5 [label="+"];
+  n-1 -> n4 [label="(X,0)", fontsize=10];
+  n-1 -> n4 [label="(Y,1)", fontsize=10];
+  n4 -> n5 [label="(0,0)", fontsize=10];
+  n-1 -> n5 [label="(Z,1)", fontsize=10];
+}
