@@ -15,8 +15,6 @@ import           Data.Text      (Text)
 import           Types          (DGraph(..), NodeId)
 import           Node           (DNode(..), nodeName)
 
--- ---------------------------------------------------------------------
-
 toDot :: DGraph DNode -> TL.Text
 toDot g =
   TL.fromStrict . T.unlines $
@@ -27,8 +25,6 @@ toDot g =
     ++ map (ppNode g) (sortedNodes g)
     ++ map ppEdge        (sortedEdges g)
     ++ [ "}" ]
-
--- ---------------- order & helpers ------------------------------------
 
 sortedNodes :: DGraph a -> [(NodeId, a)]
 sortedNodes g = sortOn fst (M.toList (dgNodes g))
@@ -41,8 +37,6 @@ sortedEdges g =
 toInt :: Text -> Int
 toInt t | T.all isDigit t && not (T.null t) = read (T.unpack t)
 toInt _ = 0
-
--- ---------------- nodes ------------------------------------------------
 
 ppNode :: DGraph DNode -> (NodeId, DNode) -> Text
 ppNode _ (nid, dn) =
@@ -78,8 +72,7 @@ opSymbol = \case
   NMulI{}     -> "*i"
   NFMulI{}    -> "*fi"
   NDivI{}     -> "/i"
-  NIncTag{}   -> "inctag"
-  NIncTagI{}  -> "inctagi"
+  NCallGroup{}-> "callgroup"
   NCallSnd{}  -> "callsnd"
   NRetSnd{}   -> "retsnd"
   NRet{}      -> "ret"
@@ -90,8 +83,6 @@ opSymbol = \case
   NCommit{}   -> "commit"
   NStopSpec{} -> "stopspec"
   NSuper{}    -> "super"
-
--- ---------------- edges ------------------------------------------------
 
 ppEdge :: (NodeId, Text, NodeId, Text) -> Text
 ppEdge (s, sp, d, dp) =

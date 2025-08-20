@@ -1,106 +1,76 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
--- | Declaração dos nós do grafo dataflow (payload por NodeId).
---   Cada construtor corresponde diretamente a um mnemônico do assembler.
---   Convenções de portas:
---     - Saída padrão: "0"
---     - Segunda saída (quando houver): "1"
---     - Steer: "t" e "f"
---   Use os helpers 'outPort', 'out1Port', 'truePort', 'falsePort'.
-module Node
-  ( -- * Nó do grafo
-    DNode(..)
 
-    -- * Metadados
+module Node
+  ( DNode(..)
   , nodeName
   , nOutputs
-
-    -- * Port helpers (para construir arestas)
-  , outPort
-  , out1Port
-  , truePort
-  , falsePort
+  , outPort, out1Port, truePort, falsePort
   ) where
 
 import           Types (NodeId)
 import           Port  (Port(..))
 
---------------------------------------------------------------------------------
--- Tipo de nó (payload)
---------------------------------------------------------------------------------
-
--- | Nó de dataflow correspondente aos mnemônicos do assembler.
---   Campos de nome (nName) existem para rótulo humano; o 'NodeId' vem do grafo.
+-- Nó de dataflow (espelha os mnemônicos do assembly)
 data DNode
   -- Constantes
-  = NConstI  { nName :: !String, cInt   :: !Int }      -- const
-  | NConstF  { nName :: !String, cFloat :: !Float }    -- fconst
-  | NConstD  { nName :: !String, cDouble:: !Double }   -- dconst
+  = NConstI  { nName :: !String, cInt   :: !Int }
+  | NConstF  { nName :: !String, cFloat :: !Float }
+  | NConstD  { nName :: !String, cDouble:: !Double }
 
-  -- ALU binárias (1 saída)
-  | NAdd     { nName :: !String }  -- add (int)
-  | NSub     { nName :: !String }  -- sub (int)
-  | NMul     { nName :: !String }  -- mul (int)
-  | NFAdd    { nName :: !String }  -- fadd (float)
-  | NDAdd    { nName :: !String }  -- dadd (double)
-  | NBand    { nName :: !String }  -- band (bitwise AND)
+  -- ALU binárias
+  | NAdd     { nName :: !String }
+  | NSub     { nName :: !String }
+  | NMul     { nName :: !String }
+  | NDiv     { nName :: !String }      -- 2 saídas
+  | NFAdd    { nName :: !String }
+  | NDAdd    { nName :: !String }
+  | NBand    { nName :: !String }
 
-  -- ALU binárias (2 saídas)
-  | NDiv     { nName :: !String }  -- div (int -> quociente e resto/seg. saída)
-
-  -- ALU com imediato (1 fonte + immed)
-  | NAddI    { nName :: !String, iImm :: !Int   } -- addi
-  | NSubI    { nName :: !String, iImm :: !Int   } -- subi
-  | NMulI    { nName :: !String, iImm :: !Int   } -- muli
-  | NFMulI   { nName :: !String, fImm :: !Float } -- fmuli
-  | NDivI    { nName :: !String, iImm :: !Int   } -- divi (2 saídas)
+  -- ALU imediatas
+  | NAddI    { nName :: !String, iImm :: !Int }
+  | NSubI    { nName :: !String, iImm :: !Int }
+  | NMulI    { nName :: !String, iImm :: !Int }
+  | NFMulI   { nName :: !String, fImm :: !Float }
+  | NDivI    { nName :: !String, iImm :: !Int }  -- 2 saídas
 
   -- Comparações e steer
-  | NLThan   { nName :: !String }                 -- lthan
-  | NGThan   { nName :: !String }                 -- gthan
-  | NEqual   { nName :: !String }                 -- equal
-  | NLThanI  { nName :: !String, iImm :: !Int }   -- lthani
-  | NGThanI  { nName :: !String, iImm :: !Int }   -- gthani
-  | NSteer   { nName :: !String }                 -- steer (2 saídas: t/f)
+  | NLThan   { nName :: !String }
+  | NGThan   { nName :: !String }
+  | NEqual   { nName :: !String }
+  | NLThanI  { nName :: !String, iImm :: !Int }
+  | NGThanI  { nName :: !String, iImm :: !Int }
+  | NSteer   { nName :: !String }                -- saídas "t"/"f"
 
-  -- Controle de tags / retorno / call
-  | NIncTag  { nName :: !String }                 -- inctag
-  | NIncTagI { nName :: !String, iImm :: !Int }   -- inctagi
-  | NCallSnd { nName :: !String, taskId :: !Int } -- callsnd (imm = task id)
-  | NRetSnd  { nName :: !String, taskId :: !Int } -- retsnd (imm = task id)
-  | NRet     { nName :: !String }                 -- ret
+  -- Chamadas (instrumentação TALM)
+  | NCallGroup { nName :: !String }              -- callgroup (gera tag)
+  | NCallSnd   { nName :: !String, taskId :: !Int }  -- callsnd <tid>
+  | NRetSnd    { nName :: !String, taskId :: !Int }  -- retsnd <tid>
+  | NRet       { nName :: !String }              -- ret
 
-  -- Converters tag<->val
-  | NTagVal  { nName :: !String }                 -- tagval
-  | NValTag  { nName :: !String }                 -- valtag
+  -- Conversores tag <-> valor
+  | NTagVal  { nName :: !String }
+  | NValTag  { nName :: !String }
 
-  -- Cópias GPU/host
-  | NCpHToDev  { nName :: !String }               -- cphtodev (size, dst, src)
-  | NCpDevToH  { nName :: !String }               -- cpdevtoh (size, dst, src)
+  -- DMA / commit / especulação
+  | NCpHToDev  { nName :: !String }
+  | NCpDevToH  { nName :: !String }
+  | NCommit    { nName :: !String }             -- 2 saídas
+  | NStopSpec  { nName :: !String }             -- 2 saídas
 
-  -- Commit / especulação
-  | NCommit    { nName :: !String }               -- commit (2 saídas)
-  | NStopSpec  { nName :: !String }               -- stopspec (2 saídas)
-
-  -- Super-instruções
+  -- Super-instrução (só quando a AST trouxer explicitamente)
   | NSuper
       { nName      :: !String
-      , superNum   :: !Int          -- ^ número da super-instrução (soma ao opcode base)
-      , superOuts  :: !Int          -- ^ quantidade de saídas
-      , superImm   :: !(Maybe Int)  -- ^ imediato opcional (presente em 'superi' / 'specsuperi')
-      , superSpec  :: !Bool         -- ^ especulativa? (specsuper/specsuperi)
+      , superNum   :: !Int
+      , superOuts  :: !Int
+      , superImm   :: !(Maybe Int)
+      , superSpec  :: !Bool
       }
   deriving (Eq, Show)
 
---------------------------------------------------------------------------------
--- Metadados
---------------------------------------------------------------------------------
-
--- | Nome legível do nó (rótulo).
 nodeName :: DNode -> String
 nodeName = nName
 
--- | Quantidade de saídas desse nó (para nomear portas corretamente).
 nOutputs :: DNode -> Int
 nOutputs = \case
   NDiv{}      -> 2
@@ -111,22 +81,11 @@ nOutputs = \case
   NSuper{..}  -> superOuts
   _           -> 1
 
---------------------------------------------------------------------------------
--- Helpers de porta (para usar com Port.(-->))
---------------------------------------------------------------------------------
-
--- | Porta de saída padrão ("0").
-outPort :: NodeId -> Port
-outPort nid = InstPort nid "0"
-
--- | Segunda saída ("1") — para nós com duas saídas (Div/DivI/Commit/StopSpec).
+outPort  :: NodeId -> Port
+outPort  nid = InstPort nid "0"
 out1Port :: NodeId -> Port
 out1Port nid = InstPort nid "1"
-
--- | Saída verdadeira ("t") — exclusiva de 'NSteer'.
 truePort :: NodeId -> Port
 truePort nid = SteerPort nid "t"
-
--- | Saída falsa ("f") — exclusiva de 'NSteer'.
 falsePort :: NodeId -> Port
 falsePort nid = SteerPort nid "f"
