@@ -1,0 +1,18 @@
+digraph G {
+  rankdir=LR;
+  node [shape=box, style=rounded, fontsize=12];
+  n0 [label="const"];
+  n1 [label="const"];
+  n2 [label="callgroup"];
+  n3 [label="callsnd"];
+  n4 [label="callsnd"];
+  n5 [label="retsnd"];
+  n6 [label="ret"];
+  n0 -> n3 [label="(0,0)", fontsize=10];
+  n2 -> n3 [label="(0,1)", fontsize=10];
+  n1 -> n4 [label="(0,0)", fontsize=10];
+  n2 -> n4 [label="(0,1)", fontsize=10];
+  n1 -> n5 [label="(0,0)", fontsize=10];
+  n2 -> n5 [label="(0,1)", fontsize=10];
+  n1 -> n6 [label="(0,0)", fontsize=10];
+}
