@@ -1,7 +1,0 @@
-digraph DF {
-  rankdir=LR;
-  node [shape=box,fontname="monospace"];
-  0 [label="const 2"];
-  1 [label="const 3"];
-  2 [label="const 4"];
-}
