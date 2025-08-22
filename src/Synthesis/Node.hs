@@ -1,6 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
-
 module Node
   ( DNode(..)
   , nodeName
@@ -11,70 +10,65 @@ module Node
 import           Types (NodeId)
 import           Port  (Port(..))
 
--- Data-flow node: one constructor per assembler mnemonic
+-- Nó de dataflow (espelha mnemônicos do asm)
 data DNode
-  -- Constants
-  = NConstI  { nName :: !String, cInt    :: !Int    }
-  | NConstF  { nName :: !String, cFloat  :: !Float  }
-  | NConstD  { nName :: !String, cDouble :: !Double }
+  -- Constantes
+  = NConstI  { nName :: !String, cInt   :: !Int }
+  | NConstF  { nName :: !String, cFloat :: !Float }
+  | NConstD  { nName :: !String, cDouble:: !Double }
 
-  -- Binary ALU
+  -- ALU binárias
   | NAdd     { nName :: !String }
   | NSub     { nName :: !String }
   | NMul     { nName :: !String }
-  | NDiv     { nName :: !String }                    -- 2 outputs
+  | NDiv     { nName :: !String }      -- 2 saídas
   | NFAdd    { nName :: !String }
   | NDAdd    { nName :: !String }
   | NBand    { nName :: !String }
 
-  -- Immediate ALU
-  | NAddI    { nName :: !String, iImm :: !Int   }
-  | NSubI    { nName :: !String, iImm :: !Int   }
-  | NMulI    { nName :: !String, iImm :: !Int   }
+  -- ALU imediatas
+  | NAddI    { nName :: !String, iImm :: !Int }
+  | NSubI    { nName :: !String, iImm :: !Int }
+  | NMulI    { nName :: !String, iImm :: !Int }
   | NFMulI   { nName :: !String, fImm :: !Float }
-  | NDivI    { nName :: !String, iImm :: !Int   }    -- 2 outputs
+  | NDivI    { nName :: !String, iImm :: !Int }  -- 2 saídas
 
-  -- Comparisons / control
+  -- Comparações / steer
   | NLThan   { nName :: !String }
   | NGThan   { nName :: !String }
   | NEqual   { nName :: !String }
   | NLThanI  { nName :: !String, iImm :: !Int }
   | NGThanI  { nName :: !String, iImm :: !Int }
-  | NSteer   { nName :: !String }                    -- outputs “.t” / “.f”
+  | NSteer   { nName :: !String }                -- portas "t"/"f"
 
-  -- Tag increment
-  | NIncTag  { nName :: !String }
-  | NIncTagI { nName :: !String, iImm :: !Int }
-
-  -- Calls
-  | NCallGroup { nName :: !String }
+  -- Chamadas (TALM)
+  | NCallGroup { nName :: !String }              -- gera tag
   | NCallSnd   { nName :: !String, taskId :: !Int }
   | NRetSnd    { nName :: !String, taskId :: !Int }
   | NRet       { nName :: !String }
 
-  -- Tag ↔ value converters
+  -- Conversores tag <-> val
   | NTagVal  { nName :: !String }
   | NValTag  { nName :: !String }
 
-  -- GPU / memory
-  | NCpHToDev { nName :: !String }
-  | NCpDevToH { nName :: !String }
+  -- DMA / spec
+  | NCpHToDev  { nName :: !String }
+  | NCpDevToH  { nName :: !String }
+  | NCommit    { nName :: !String }             -- 2 saídas
+  | NStopSpec  { nName :: !String }             -- 2 saídas
 
-  -- Speculation / commit
-  | NCommit   { nName :: !String }                  -- 2 outputs
-  | NStopSpec { nName :: !String }                  -- 2 outputs
+  -- **NOVO**: argumento formal
+  | NArg       { nName :: !String }
 
-  -- Super-instruction
+  -- (super mantido, mas não usamos aqui)
   | NSuper
-      { nName     :: !String
-      , superNum  :: !Int
-      , superOuts :: !Int
-      , superImm  :: !(Maybe Int)
-      , superSpec :: !Bool
+      { nName      :: !String
+      , superNum   :: !Int
+      , superOuts  :: !Int
+      , superImm   :: !(Maybe Int)
+      , superSpec  :: !Bool
       }
   deriving (Eq, Show)
-
--- Helpers ---------------------------------------------------------------------
 
 nodeName :: DNode -> String
 nodeName = nName
@@ -90,13 +84,10 @@ nOutputs = \case
   _           -> 1
 
 outPort  :: NodeId -> Port
-outPort  nid = InstPort  nid "0"
-
+outPort  nid = InstPort nid "0"
 out1Port :: NodeId -> Port
-out1Port nid = InstPort  nid "1"
-
+out1Port nid = InstPort nid "1"
 truePort :: NodeId -> Port
 truePort nid = SteerPort nid "t"
-
 falsePort :: NodeId -> Port
 falsePort nid = SteerPort nid "f"
