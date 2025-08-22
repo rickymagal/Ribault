@@ -1,4 +1,4 @@
 -- Lambda expressions
 add       = \x y -> x + y;
 
-res3 = add 10 4;
+main = add 10 4;
