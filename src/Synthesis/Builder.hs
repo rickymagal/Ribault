@@ -188,27 +188,24 @@ foldrM' f z0 = go
 buildProgram :: Program -> DFG
 buildProgram (Program decls) =
   let (_, st) = runBuild $ do
+        -- Compila todas as declarações; cada função cria seu próprio "ret f".
         mapM_ goDecl decls
-        -- liga main -> ret (raiz do grafo)
-        mb <- lookupB "main"
-        case mb of
-          Just (BPort p) -> do
-            r <- newNode "main" (NRet "main")
-            connectPlus p (InstPort r "0")
-          _ -> pure ()
+        -- Não cria "ret main" adicional aqui (evita duplicata).
+        pure ()
   in bsGraph st
 
 -- Declarações ----------------------------------------------------------
 
 goDecl :: Decl -> Build ()
 goDecl (FunDecl f ps body)
-  | null ps   = do p <- withEnv (goExpr body)
-                   insertB f (BPort p)
-                   r <- newNode f (NRet f)
-                   connectPlus p (InstPort r "0")
+  | null ps   = do
+      p <- withEnv (goExpr body)
+      insertB f (BPort p)
+      r <- newNode f (NRet f)
+      connectPlus p (InstPort r "0")
   | otherwise = do
       insertB f (BLam ps body)
-      -- compila isolado: mostra "ret f" do corpo sem inline infinito
+      -- Compila o corpo isolado para mostrar "ret f".
       _ <- withActive f $ withEnv $ do
              forM_ (zip [0..] ps) $ \(i, v) -> do
                a <- argNode f i
@@ -356,8 +353,7 @@ goApp fun args = case fun of
       Just (BLam ps body) -> do
         cyc <- isActive f
         if cyc
-          -- *** ATENÇÃO: caminho recursivo — NÃO inline ***
-          then pure (out0 rs)
+          then pure (out0 rs)          -- chamada recursiva: não inline
           else do
             res <- withActive f $ withEnv $ do
                      forM_ (zip3 [0..] ps argv) $ \(i,v,p) -> bindFormal f i v p
