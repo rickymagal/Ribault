@@ -57,7 +57,7 @@ data DNode
   | NCommit    { nName :: !String }             -- 2 saídas
   | NStopSpec  { nName :: !String }             -- 2 saídas
 
-  -- Argumento formal (visual / bind)
+  -- **NOVO**: argumento formal
   | NArg       { nName :: !String }
 
   -- (super mantido, mas não usamos aqui)
