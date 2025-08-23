@@ -1,204 +1,232 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE RecordWildCards #-}
-
--- | Gera **TALM assembly (texto)** a partir do DFG.
---   Mantém o formato esperado pelo FlowASM (nome, ordem de operandos e
---   sufixos de porta ".t" / ".f" / ".1", etc).
 module Synthesis.Codegen
-  ( assemble  -- :: DGraph DNode -> Text (estrito)
+  ( assemble
   ) where
 
-import           Data.List            (sortBy, intersperse)
-import           Data.Char            (isDigit)
-import qualified Data.Map            as M
-import qualified Data.Text           as T
-import           Data.Text            (Text)
-import           Data.Ord             (comparing)
+import qualified Data.Map  as M
+import qualified Data.Set  as S
+import           Data.List (intercalate, sortOn, nub)
+import           Data.Maybe (fromMaybe)
+import           Numeric   (showFFloat)
+import qualified Data.Text as T
 
-import           Types                (DGraph(..), NodeId)
-import           Node                 (DNode(..), nodeName)
+import           Types (DGraph(..), NodeId)
+import           Node  (DNode(..))
 
---------------------------------------------------------------------------------
--- API
---------------------------------------------------------------------------------
+-- API -------------------------------------------------------------------
 
+-- Converte o grafo de Inst para assembly TALM (Text estrito).
 assemble :: DGraph DNode -> T.Text
 assemble g =
-  T.unlines $
-    concatMap (emitNode g) (sortedNodes g)
+  let nodes       = sortOn fst (M.toList (dgNodes g))
+      edges       = dgEdges g
+      nmap        = M.fromList nodes
+      inMap       = buildInputs edges
+      superDecls  = dedupSupers nodes
+      allRetChans = dedupRetChans nodes
+      hdr         = map ppSuperDecl superDecls
+      body        = concatMap (\(nid, dn) -> emitNode nmap inMap allRetChans nid dn) nodes
+  in T.unlines (hdr ++ body)
 
---------------------------------------------------------------------------------
--- Ordem estável de nós / arestas
---------------------------------------------------------------------------------
+-- Mapa (destNode, destPort) -> [(srcNode, srcPort)]
+buildInputs :: [(NodeId, String, NodeId, String)]
+            -> M.Map (NodeId, String) [(NodeId, String)]
+buildInputs es =
+  let step m (s,sp,d,dp) = M.insertWith (++) (d,dp) [(s,sp)] m
+  in foldl step M.empty es
 
-sortedNodes :: DGraph a -> [(NodeId, a)]
-sortedNodes DGraph{..} = sortBy (comparing fst) (M.toList dgNodes)
-
-incomingOf :: DGraph n -> NodeId -> [(NodeId, T.Text, T.Text)]
-incomingOf DGraph{..} dst =
-  -- (srcId, srcPort, dstPort) apenas dos edges que chegam ao 'dst'
-  [ (s, T.pack sp, T.pack dp)
-  | (s, sp, d, dp) <- dgEdges, d == dst
-  ]
-
--- Ordena entradas primeiro pela porta de destino (numérica quando possível),
--- depois por id do nó de origem — dá estabilidade e previsibilidade.
-orderInputs :: [(NodeId, T.Text, T.Text)] -> [(NodeId, T.Text, T.Text)]
-orderInputs =
-  let keyDst :: (NodeId, T.Text, T.Text) -> (Int, T.Text)
-      keyDst (_, _sp, dp) = (parseInt dp, dp)
-      keySrc :: (NodeId, T.Text, T.Text) -> NodeId
-      keySrc (s, _sp, _dp) = s
-  in sortBy (comparing keyDst <> comparing keySrc)
-
-parseInt :: T.Text -> Int
-parseInt t | T.all isDigit t && not (T.null t) = read (T.unpack t)
-parseInt _ = 0
-
---------------------------------------------------------------------------------
--- Impressão de um nó como uma linha de assembly
---------------------------------------------------------------------------------
-
-emitNode :: DGraph DNode -> (NodeId, DNode) -> [T.Text]
-emitNode g (nid, n) =
-  case n of
-    -- Constantes
-    NConstI{..}   -> [ row "const"   [ name, T.pack (show cInt) ] ]
-    NConstF{..}   -> [ row "fconst"  [ name, prettyFloat  cFloat ] ]
-    NConstD{..}   -> [ row "dconst"  [ name, prettyDouble cDouble] ]
-
-    -- ALU 2-op, 1 saída
-    NAdd{..}      -> [ row2 "add"    ]
-    NSub{..}      -> [ row2 "sub"    ]
-    NMul{..}      -> [ row2 "mul"    ]
-    NFAdd{..}     -> [ row2 "fadd"   ]
-    NDAdd{..}     -> [ row2 "dadd"   ]
-    NBand{..}     -> [ row2 "band"   ]
-
-    -- ALU 2-op, 2 saídas (div produz quociente e resto)
-    NDiv{..}      -> [ row2 "div"    ]
-
-    -- ALU com imediato (1 fonte + immed)
-    NAddI{..}     -> [ rowImm1  "addi"   iImm   ]
-    NSubI{..}     -> [ rowImm1  "subi"   iImm   ]
-    NMulI{..}     -> [ rowImm1  "muli"   iImm   ]
-    NFMulI{..}    -> [ rowImm1F "fmuli"  fImm   ]
-    NDivI{..}     -> [ rowImm1  "divi"   iImm   ]
-
-    -- Comparações e steer
-    NLThan{..}    -> [ row2 "lthan"  ]
-    NGThan{..}    -> [ row2 "gthan"  ]
-    NEqual{..}    -> [ row2 "equal"  ]
-    NLThanI{..}   -> [ rowImm1 "lthani" iImm ]
-    NGThanI{..}   -> [ rowImm1 "gthani" iImm ]
-    NSteer{..}    -> [ row2 "steer"  ]
-
-    -- Controle/tag/call/ret
-    NIncTag{..}   -> [ row1 "inctag" ]
-    NIncTagI{..}  -> [ rowImm1 "inctagi" iImm ]
-    NCallSnd{..}  -> [ rowImm1 "callsnd" taskId ]
-    NRetSnd{..}   -> [ rowImm1 "retsnd"  taskId ]
-    NRet{..}      -> [ row2 "ret"    ]  -- ret usa 2 fontes (valor e tag) no FlowASM da base
-
-    -- Conversões de tag/valor
-    NTagVal{..}   -> [ row1 "tagval" ]
-    NValTag{..}   -> [ row2 "valtag" ]
-
-    -- Cópias GPU (tamanho, destino, origem)
-    NCpHToDev{..} -> [ rowN "cphtodev"  3 ]
-    NCpDevToH{..} -> [ rowN "cpdevtoh"  3 ]
-
-    -- Commit/especulação (var-arg)
-    NCommit{..}   -> [ rowVar "commit" ]
-    NStopSpec{..} -> [ rowVar "stopspec" ]
-
-    -- Super-instruções
-    NSuper{..}  ->
-      let op | superSpec && superImm /= Nothing = "specsuperi"
-             | superSpec                        = "specsuper"
-             | superImm /= Nothing              = "superi"
-             | otherwise                        = "super"
-          base = [ name
-                 , T.pack (show (0 :: Int))          -- <-- substitua por superNumber se existir
-                 , T.pack (show superOuts)
-                 ]
-          srcs = incomingOps nid
-          immT = maybe [] (\k -> [T.pack (show k)]) superImm
-      in [ row op (base ++ srcs ++ immT) ]
-
+-- SUPERs declaradas (sem repetição)
+dedupSupers :: [(NodeId, DNode)] -> [(String, Int, Bool)]
+dedupSupers = go S.empty []
   where
-    name   = T.pack (nodeName n)
-    incom  = incomingOf g nid
-    incom' = orderInputs incom
+    go _   acc []                       = reverse acc
+    go seen acc ((_, NSuper{..}) : xs) =
+      let key = superKey nName superOuts superSpec
+      in if key `S.member` seen
+           then go seen acc xs
+           else go (S.insert key seen) ((nName, superOuts, superSpec):acc) xs
+    go seen acc (_:xs)                  = go seen acc xs
+    superKey nm outs sp = nm ++ "|" ++ show outs ++ "|" ++ show sp
 
-    -- gera operandos (como "inst", "inst.t", "inst.1")
-    toOp :: (NodeId, T.Text, T.Text) -> T.Text
-    toOp (srcId, srcPort, _dstPort) =
-      let srcName = case M.lookup srcId (dgNodes g) of
-                      Just nn -> T.pack (nodeName nn)
-                      Nothing -> T.pack ("instruction_" ++ show srcId)
-          portSuffix
-            | srcPort == "0" || T.null srcPort = ""
-            | otherwise                        = T.cons '.' srcPort
-      in srcName <> portSuffix
+ppSuperDecl :: (String, Int, Bool) -> T.Text
+ppSuperDecl (nm, outs, spec) =
+  T.pack $ "superinst(\"" ++ nm ++ "\", 0, " ++ show outs ++ ", " ++ mapBool spec ++ ")"
+  where
+    mapBool True  = "True"
+    mapBool False = "False"
 
-    incomingOps :: NodeId -> [T.Text]
-    incomingOps _ = map toOp incom'
+-- Emissão de 0..N linhas para um nó
+emitNode :: M.Map NodeId DNode
+         -> M.Map (NodeId, String) [(NodeId, String)]
+         -> [T.Text]  -- ^ canais usados em retsnd: ["foo[0]","bar[0]"]
+         -> NodeId
+         -> DNode
+         -> [T.Text]
+emitNode nmap inMap allRetChans nid dn =
+  case dn of
+    -- Constantes
+    NConstI{..} -> one $ T.pack ("const "  ++ outVar nid ++ ", " ++ show cInt)
+    NConstF{..} -> one $ T.pack ("fconst " ++ outVar nid ++ ", " ++ showF 6 cFloat)
+    NConstD{..} -> one $ T.pack ("dconst " ++ outVar nid ++ ", " ++ showF 6 cDouble)
 
-    -- pega 1/2/N/var-arg
-    takeN :: Maybe Int -> [T.Text] -> [T.Text]
-    takeN m xs = case m of
-      Just n  -> take n xs
-      Nothing -> xs
+    -- Binárias
+    NAdd{}      -> one $ bin2 "add"
+    NSub{}      -> one $ bin2 "sub"
+    NMul{}      -> one $ bin2 "mul"
+    NDiv{}      -> let [a,b] = insAB
+                       (o0,o1) = (outVar0 nid, outVar1 nid)
+                   in [T.pack ("div " ++ o0 ++ "," ++ o1 ++ ", " ++ a ++ ", " ++ b)]
+    NBand{}     -> one $ bin2 "band"
+    NFAdd{}     -> one $ bin2 "fadd"
+    NDAdd{}     -> one $ bin2 "dadd"
 
-    row :: Text -> [Text] -> Text
-    row op xs = T.concat [ op, " ", name, ", ", commaSep xs ]
+    -- Imediatas
+    NAddI{..}   -> one $ T.pack ("addi "  ++ outVar nid ++ ", " ++ arg0 ++ ", " ++ show iImm)
+    NSubI{..}   -> one $ T.pack ("subi "  ++ outVar nid ++ ", " ++ arg0 ++ ", " ++ show iImm)
+    NMulI{..}   -> one $ T.pack ("muli "  ++ outVar nid ++ ", " ++ arg0 ++ ", " ++ show iImm)
+    NFMulI{..}  -> one $ T.pack ("fmuli " ++ outVar nid ++ ", " ++ arg0 ++ ", " ++ showF 6 fImm)
+    NDivI{..}   -> let (o0,o1) = (outVarK nid 0, outVarK nid 1)
+                   in [T.pack ("divi " ++ o0 ++ "," ++ o1 ++ ", " ++ arg0 ++ ", " ++ show iImm)]
 
-    row1 :: Text -> Text
-    row1 op =
-      let ops = takeN (Just 1) (incomingOps nid)
-          single = case ops of
-                     (a:_) -> a
-                     []    -> "0"
-      in T.concat [ op, " ", name, ", ", single ]
+    -- Comparações / steer
+    NLThan{}    -> one $ bin2 "lthan"
+    NGThan{}    -> one $ bin2 "gthan"
+    NEqual{}    -> one $ bin2 "equal"
+    NLThanI{..} -> one $ T.pack ("lthani " ++ outVar nid ++ ", " ++ arg0 ++ ", " ++ show iImm)
+    NGThanI{..} -> one $ T.pack ("gthani " ++ outVar nid ++ ", " ++ arg0 ++ ", " ++ show iImm)
 
-    row2 :: Text -> Text
-    row2 op =
-      let ops = takeN (Just 2) (incomingOps nid)
-      in T.concat [ op, " ", name, ", ", commaSep ops ]
+    NSteer{}    -> one $ T.pack ("steer " ++ steerName nid ++ ", " ++ cond1 ++ ", " ++ arg0)
 
-    rowN :: Text -> Int -> Text
-    rowN op n =
-      let ops = takeN (Just n) (incomingOps nid)
-      in T.concat [ op, " ", name, ", ", commaSep ops ]
+    -- Chamadas TALM
+    NCallGroup{..} ->
+      [ T.pack $ "callgroup(\"" ++ tagName nid ++ "\",\"" ++ nName ++ "\")" ]
+    NCallSnd{..} ->
+      let (fname, idx) = splitHash nName   -- nName = "f#i"
+          tagSym       = tagOf (argOf "1")
+      in [ T.pack $ "callsnd " ++ fname ++ "[" ++ show idx ++ "], " ++ arg0 ++ ", " ++ tagSym ]
+    NRetSnd{..}  ->
+      let fname = nName
+          tagSym = tagOf (argOf "1")
+      in [ T.pack $ "retsnd " ++ fname ++ "[0], " ++ arg0 ++ ", " ++ tagSym ]
+    NRet{..}     ->
+      let xs = if null allRetChans
+                 then nName ++ "[0]"
+                 else "[" ++ intercalate "," (map T.unpack allRetChans) ++ "]"
+      in [ T.pack $ "ret " ++ nName ++ ", " ++ arg0 ++ ", " ++ xs ]
 
-    rowVar :: Text -> Text
-    rowVar op = T.concat [ op, " ", name, ", ", commaSep (incomingOps nid) ]
+    -- Conversores / DMA
+    NTagVal{}    -> one $ un1 "tagval"
+    NValTag{}    -> one $ un1 "valtag"
+    NCpHToDev{}  -> one $ un1 "cphtodev"
+    NCpDevToH{}  -> one $ un1 "cpdevtoh"
 
-    rowImm1 :: Text -> Int -> Text
-    rowImm1 op imm =
-      let ops = takeN (Just 1) (incomingOps nid)
-      in T.concat [ op, " ", name, ", ", commaSep ops, ", ", T.pack (show imm) ]
+    -- Spec
+    NCommit{}    -> let [a] = insA
+                        (o0,o1) = (outVar0 nid, outVar1 nid)
+                    in [ T.pack ("commit " ++ o0 ++ "," ++ o1 ++ ", " ++ a) ]
+    NStopSpec{}  -> let [a] = insA
+                        (o0,o1) = (outVar0 nid, outVar1 nid)
+                    in [ T.pack ("stopspec " ++ o0 ++ "," ++ o1 ++ ", " ++ a) ]
 
-    rowImm1F :: Text -> Float -> Text
-    rowImm1F op imm =
-      let ops = takeN (Just 1) (incomingOps nid)
-      in T.concat [ op, " ", name, ", ", commaSep ops, ", ", prettyFloat imm ]
+    -- Argumento formal: não emite linha; nome é resolvido pelos leitores.
+    NArg{}       -> []
 
---------------------------------------------------------------------------------
--- Utilitários de texto/numéricos
---------------------------------------------------------------------------------
+    -- SUPER (declaração sai no cabeçalho; aqui é a invocação)
+    NSuper{..}   ->
+      let outs = [ outVarK nid k | k <- [0 .. max 0 (superOuts-1)] ]
+          -- entradas ordenadas "0","1","2",...
+          inps = let gather k acc =
+                         case M.lookup (nid, show k) inMap of
+                           Nothing -> reverse acc
+                           Just xs -> gather (k+1) (opText xs : acc)
+                 in gather 0 []
+          line = nName ++ " " ++ intercalate ", " (outs ++ inps)
+      in [ T.pack line ]
+  where
+    -- entradas comuns
+    insA   = [opText (argOf "0")]
+    insAB  = [opText (argOf "0"), opText (argOf "1")]
+    -- operandos
+    arg0   = opText (argOf "0")
+    cond1  = opText (argOf "1")
+    -- ajudantes de impressão
+    one t  = [t]
+    bin2 op = T.pack (op ++ " " ++ outVar nid ++ ", " ++ opText (argOf "0") ++ ", " ++ opText (argOf "1"))
+    un1  op = T.pack (op ++ " " ++ outVar nid ++ ", " ++ opText (argOf "0"))
+    -- entradas do nó/porta
+    argOf dp = fromMaybe [] (M.lookup (nid, dp) inMap)
 
-commaSep :: [Text] -> Text
-commaSep = T.concat . intersperse ", "
+    -- um operando: simples "x" ou lista "[a,b,c]"
+    opText []  = "0"
+    opText [s] = refOf s
+    opText ss  = "[" ++ intercalate "," (map refOf ss) ++ "]"
 
-prettyFloat :: Float -> Text
-prettyFloat x =
-  let s = show x
-  in if '.' `elem` s then T.pack s else T.pack (s ++ ".0")
+    -- como referenciar a saída (sid, sp)
+    refOf (sid, sp) =
+      case M.lookup sid nmap of
+        Just NSteer{}     -> steerName sid ++ "." ++ sp
+        Just NDiv{}       -> if sp == "0" then outVar0 sid else outVar1 sid
+        Just NDivI{}      -> if sp == "0" then outVarK sid 0 else outVarK sid 1
+        Just NCommit{}    -> if sp == "0" then outVar0 sid else outVar1 sid
+        Just NStopSpec{}  -> if sp == "0" then outVar0 sid else outVar1 sid
+        Just NSuper{}     ->
+          case reads sp of
+            [(i,_)]  -> outVarK sid i     -- <- removida a anotação ::Int
+            _        -> outVar sid
+        Just NCallGroup{} -> tagName sid
+        Just NArg{..}     -> argFormal nName
+        _                 -> outVar sid
 
-prettyDouble :: Double -> Text
-prettyDouble x =
-  let s = show x
-  in if '.' `elem` s then T.pack s else T.pack (s ++ ".0")
+    tagOf []      = tagName (-1)
+    tagOf (s:_)   = case M.lookup (fst s) nmap of
+                      Just NCallGroup{} -> tagName (fst s)
+                      _                 -> outVar (fst s)
+
+-- Nomes -----------------------------------------------------------------
+
+outVar :: NodeId -> String
+outVar nid = "n" ++ show nid
+
+outVar0 :: NodeId -> String
+outVar0 nid = "n" ++ show nid ++ "a"
+
+outVar1 :: NodeId -> String
+outVar1 nid = "n" ++ show nid ++ "b"
+
+-- para nós com >1 saídas (SUPER, DivI genérico, etc.)
+outVarK :: NodeId -> Int -> String
+outVarK nid k = "n" ++ show nid ++ "_" ++ show k
+
+steerName :: NodeId -> String
+steerName nid = "s" ++ show nid
+
+tagName :: NodeId -> String
+tagName nid = "c" ++ show nid
+
+-- "foo#0" -> "foo.call1" (usado para formais NArg)
+argFormal :: String -> String
+argFormal nm = case break (=='#') nm of
+  (fname, '#':ix) ->
+    case reads ix of
+      [(i, _)] -> fname ++ ".call" ++ show (i+1)
+      _        -> fname ++ ".call?"
+  _ -> nm ++ ".call?"
+
+-- "foo#7" -> ("foo", 7) (usado em callsnd)
+splitHash :: String -> (String, Int)
+splitHash nm = case break (=='#') nm of
+  (fname, '#':ix) -> case reads ix of
+                       [(i,_)] -> (fname, i)
+                       _       -> (fname, 0)
+  _                -> (nm, 0)
+
+-- Float/Double pretty
+showF :: Real a => Int -> a -> String
+showF n x = showFFloat (Just n) (realToFrac x :: Double) ""
+
+-- Lista deduplicada de canais passados em retsnd (para o 'ret ... , [...]')
+dedupRetChans :: [(NodeId, DNode)] -> [T.Text]
+dedupRetChans xs =
+  let names = [ T.pack (nm ++ "[0]") | (_, NRetSnd{ nName = nm }) <- xs ]
+  in nub names

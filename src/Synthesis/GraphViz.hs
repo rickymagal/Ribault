@@ -37,8 +37,8 @@ toInt t | T.all isDigit t && not (T.null t) = read (T.unpack t)
 toInt _ = 0
 
 ppNode :: DGraph DNode -> (NodeId, DNode) -> Text
-ppNode _ (nid, dn) =
-  T.concat [ "  n", T.pack (show nid), " [label=\"", opSymbol dn, "\"];" ]
+ppNode _ (_nid, dn) =
+  T.concat [ "  n", T.pack (show (_nid)), " [label=\"", opSymbol dn, "\"];" ]
 
 opSymbol :: DNode -> Text
 opSymbol = \case

@@ -60,7 +60,7 @@ data DNode
   -- Argumento formal (visual / bind)
   | NArg       { nName :: !String }
 
-  -- (super mantido, mas não usamos aqui)
+  -- Super inst (opaca neste estágio)
   | NSuper
       { nName      :: !String
       , superNum   :: !Int
