@@ -190,7 +190,6 @@ buildProgram (Program decls) =
   let (_, st) = runBuild $ do
         -- Compila todas as declarações; cada função cria seu próprio "ret f".
         mapM_ goDecl decls
-        -- Não cria "ret main" adicional aqui (evita duplicata).
         pure ()
   in bsGraph st
 
@@ -226,6 +225,16 @@ goExpr = \case
       _               -> InstPort (-1) x
 
   Lit lit -> litNode lit
+
+  -- SUPER: opaca; cria nó NSuper, liga a entrada e
+  -- expõe o identificador de saída para o restante do grafo.
+  Super name _kind inpId outId _body -> do
+    pin <- goExpr (Var inpId)
+    sid <- newNode name (NSuper name 0 1 Nothing True)
+    connectPlus pin (InstPort sid "0")
+    let pout = out0 sid
+    insertB outId (BPort pout)
+    pure pout
 
   Lambda ps e ->
     withEnv $ do
@@ -293,8 +302,6 @@ goExpr = \case
     case u of
       Neg -> do z <- constI 0; bin2 "sub" (NSub "") z pe
       Not -> notP pe
-
-  _ -> constI 0
 
 -- Aplicação n-ária -----------------------------------------------------
 
