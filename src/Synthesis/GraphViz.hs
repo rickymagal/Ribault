@@ -66,7 +66,7 @@ opSymbol = \case
   NCallGroup{..}-> T.pack ("callgroup " <> nName)
   NCallSnd{..}  -> T.pack ("callsnd "   <> nName)
   NRetSnd{..}   -> T.pack ("retsnd "    <> nName)
-  NRet{}        -> "ret"
+  NRet{..}      -> T.pack ("ret "       <> nName)
   NTagVal{}     -> "tagval"
   NValTag{}     -> "valtag"
   NCpHToDev{}   -> "cphtodev"

@@ -193,7 +193,7 @@ buildProgram (Program decls) =
         mb <- lookupB "main"
         case mb of
           Just (BPort p) -> do
-            r <- newNode "ret" (NRet "")
+            r <- newNode "main" (NRet "main")
             connectPlus p (InstPort r "0")
           _ -> pure ()
   in bsGraph st
@@ -204,7 +204,19 @@ goDecl :: Decl -> Build ()
 goDecl (FunDecl f ps body)
   | null ps   = do p <- withEnv (goExpr body)
                    insertB f (BPort p)
-  | otherwise = insertB f (BLam ps body)
+                   r <- newNode f (NRet f)
+                   connectPlus p (InstPort r "0")
+  | otherwise = do
+      insertB f (BLam ps body)
+      -- compila isolado: mostra "ret f" do corpo sem inline infinito
+      _ <- withActive f $ withEnv $ do
+             forM_ (zip [0..] ps) $ \(i, v) -> do
+               a <- argNode f i
+               insertB v (BPort a)
+             res <- goExpr body
+             r   <- newNode f (NRet f)
+             connectPlus res (InstPort r "0")
+      pure ()
 
 -- Expressões -----------------------------------------------------------
 
@@ -312,69 +324,62 @@ isActive f = Build $ gets (\s -> f `elem` bsActive s)
 funTaskId :: Ident -> Int
 funTaskId ident = foldl (\h c -> h * 131 + fromEnum c) 7 (show ident)
 
--- cria um nó de argumento formal e retorna sua porta
-argPort :: String -> Int -> Build Port
-argPort fun i = do
-  nid <- newNode ("arg " ++ fun ++ "#" ++ show i) (NArg (fun ++ "#" ++ show i))
+-- nó de argumento formal
+argNode :: String -> Int -> Build Port
+argNode fun i = do
+  nid <- newNode (fun ++ "#" ++ show i) (NArg (fun ++ "#" ++ show i))
   pure (out0 nid)
+
+-- formal + alias para o real
+bindFormal :: String -> Int -> Ident -> Port -> Build ()
+bindFormal fun i formal actual = do
+  ap <- argNode fun i
+  insertB formal (BPort ap)
+  registerAlias ap [actual]
 
 goApp :: Expr -> [Expr] -> Build Port
 goApp fun args = case fun of
   Var f -> do
     argv <- mapM goExpr args
-
-    -- tag da chamada
     let tid = funTaskId f
-    cg <- newNode ("callgroup " ++ f) (NCallGroup f)
+    cg <- newNode f (NCallGroup f)
     let tag = out0 cg
-
-    -- envia argumentos
     forM_ (zip [0..] argv) $ \(i,a) -> do
-      cs <- newNode ("callsnd " ++ f ++ "#" ++ show i) (NCallSnd (f ++ "#" ++ show i) tid)
+      cs <- newNode (f ++ "#" ++ show i) (NCallSnd (f ++ "#" ++ show i) tid)
       connectPlus a   (InstPort cs "0")
       connectPlus tag (InstPort cs "1")
-
-    -- nó de retorno
-    rs <- newNode ("retsnd " ++ f) (NRetSnd f tid)
-    connectPlus tag (InstPort rs "1")   -- porta 1 = tag
+    rs <- newNode f (NRetSnd f tid)
+    connectPlus tag (InstPort rs "1")
 
     mb <- lookupB f
     case mb of
       Just (BLam ps body) -> do
         cyc <- isActive f
-        -- compila corpo com nós de argumento
-        res <- withActive f $ withEnv $ do
-                 forM_ (zip [0..] ps) $ \(i, v) -> do
-                   ap <- argPort f i
-                   insertB v (BPort ap)
-                 goExpr body
-
-        -- valor do corpo vai para retsnd (porta 0)
-        connectPlus res (InstPort rs "0")
-
-        -- valor observado da aplicação
         if cyc
-          then pure (out0 rs)  -- em recursão: observe o retsnd
-          else pure res        -- fora de recursão: observe o corpo (ex.: + → ret)
-      _ -> do
-        -- variável não-lambda: ainda deixa o retsnd como valor
-        pure (out0 rs)
+          -- *** ATENÇÃO: caminho recursivo — NÃO inline ***
+          then pure (out0 rs)
+          else do
+            res <- withActive f $ withEnv $ do
+                     forM_ (zip3 [0..] ps argv) $ \(i,v,p) -> bindFormal f i v p
+                     goExpr body
+            connectPlus res (InstPort rs "0")
+            pure res
+      _ -> pure (out0 rs)
 
   Lambda ps body -> do
-    -- nome sintético simples
     let fname = "lambda"
         tid   = funTaskId fname
     argv <- mapM goExpr args
-    cg <- newNode ("callgroup " ++ fname) (NCallGroup fname)
+    cg <- newNode fname (NCallGroup fname)
     let tag = out0 cg
     forM_ (zip [0..] argv) $ \(i,a) -> do
-      cs <- newNode ("callsnd " ++ fname ++ "#" ++ show i) (NCallSnd (fname ++ "#" ++ show i) tid)
+      cs <- newNode (fname ++ "#" ++ show i) (NCallSnd (fname ++ "#" ++ show i) tid)
       connectPlus a   (InstPort cs "0")
       connectPlus tag (InstPort cs "1")
-    rs <- newNode ("retsnd " ++ fname) (NRetSnd fname tid)
+    rs <- newNode fname (NRetSnd fname tid)
     connectPlus tag (InstPort rs "1")
     res <- withEnv $ do
-             forM_ (zip [0..] ps) $ \(i,v) -> argPort fname i >>= \p -> insertB v (BPort p)
+             forM_ (zip3 [0..] ps argv) $ \(i,v,p) -> bindFormal fname i v p
              goExpr body
     connectPlus res (InstPort rs "0")
     pure res
@@ -384,15 +389,6 @@ goApp fun args = case fun of
     case args of
       [] -> constI 0
       _  -> goExpr (last args)
-
-applyLambda :: [Ident] -> Expr -> [Expr] -> Build Port
-applyLambda ps body args = do
-  let (use, rest) = splitAt (length ps) args
-  argv <- mapM goExpr use
-  withEnv $ do
-    forM_ (zip ps argv) $ \(v,p) -> insertB v (BPort p)
-    res <- goExpr body
-    foldM (\acc _ -> pure acc) res rest
 
 -- Literais -------------------------------------------------------------
 
