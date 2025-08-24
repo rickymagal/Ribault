@@ -92,7 +92,7 @@ equal n89, len[0], n87
 add n90, n88, n89
 const n91, 0
 gthan n92, n90, n91
-const n93, 0
+super n93, 0, 1, n53
 callgroup("c94","split")
 callsnd split[0], n53, c94
 retsnd split[0], z0, c94
@@ -178,7 +178,7 @@ equal n175, len[0], n173
 add n176, n174, n175
 const n177, 0
 gthan n178, n176, n177
-const n179, 0
+super n179, 0, 1, [len[0], n139]
 callgroup("c180","split")
 callsnd split[0], [len[0], n139], c180
 retsnd split[0], z0, c180
