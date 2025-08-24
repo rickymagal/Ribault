@@ -167,24 +167,25 @@ emitNode g im (nid, dn) =
     NArg{} ->
       let a0 = fmtOp (getInputs "0")
       in [ "add " <> dstN nid <> ", " <> a0 <> ", z0" ]
-
-    -- Super/specsuper
     NSuper{..} ->
-      let pins = orderedPins im nid
-          srcs = map (\p -> fmtOp (getInputs p)) pins
-          base = case (superSpec, superImm) of
-                   (False, Nothing) -> "super"
-                   (True,  Nothing) -> "specsuper"
-                   (False, Just _)  -> "superi"
-                   (True,  Just _)  -> "specsuperi"
-          imm  = maybe [] (\t -> [showT t]) superImm
-          line = T.intercalate ", "
-                   ( [ base
-                     , T.pack nName
-                     , showT superNum
-                     , showT (max 1 superOuts)
-                     ] ++ srcs ++ imm )
+      let pins   = orderedPins im nid
+          srcs   = map (\p -> fmtOp (getInputs p)) pins
+          base   = case (superSpec, superImm) of
+                     (False, Nothing) -> "super"
+                     (True,  Nothing) -> "specsuper"
+                     (False, Just _)  -> "superi"
+                     (True,  Just _)  -> "specsuperi"
+          imm    = maybe [] (\t -> [showT t]) superImm
+          -- destino ÚNICO: use o id do nó (n<N>), não o nome lógico (s1)
+          headOp = T.pack base <> " " <> dstN nid
+          line   = T.intercalate ", "
+                     ( headOp
+                     : [ showT superNum
+                       , showT (max 1 superOuts)
+                       ] ++ srcs ++ imm )
       in [ line ]
+
+
   where
     getInputs pin = M.findWithDefault [] (nid, pin) im
 
