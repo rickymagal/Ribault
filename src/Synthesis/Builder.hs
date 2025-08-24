@@ -13,6 +13,7 @@ import           Control.Monad.State    (StateT, get, put, runStateT, gets, modi
 import           Control.Monad.Trans    (lift)
 import qualified Data.Map              as M
 
+import           Semantic              (assignSuperNames)
 import           Syntax
 import           Types                  (DGraph(..), Edge, NodeId, emptyGraph, addNode, addEdge)
 import           Port                   (Port(..), (-->))
@@ -185,9 +186,11 @@ foldrM' f z0 = go
 -- API ------------------------------------------------------------------
 
 buildProgram :: Program -> DFG
-buildProgram (Program decls) =
-  let (_, st) = runBuild $ mapM_ goDecl decls
+buildProgram p0 =
+  let Program decls = assignSuperNames p0   -- <<< garante nomes s1, s2, ...
+      (_, st)       = runBuild $ mapM_ goDecl decls
   in bsGraph st
+
 
 -- Declarações ----------------------------------------------------------
 
@@ -295,8 +298,19 @@ goExpr = \case
     case u of
       Neg -> do z <- constI 0; bin2 "sub" (NSub "") z pe
       Not -> notP pe
+  Super nm kind inp out _ -> do
+    pIn <- goExpr (Var inp)
+    nid <- naryNode nm NSuper
+             { nName     = ""                          -- será substituído pelo setName nm
+             , superNum  = 0
+             , superOuts = 1
+             , superSpec = case kind of { SuperParallel -> True; SuperSingle -> False }
+             , superImm  = Nothing
+             } [pIn]
+    insertB out (BPort (out0 nid))
+    pure (out0 nid)
 
-  _ -> constI 0
+
 
 -- Aplicação n-ária -----------------------------------------------------
 
