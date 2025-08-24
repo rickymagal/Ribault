@@ -1,37 +1,45 @@
 digraph AST {
-  node [shape=box, fontname="Courier"];
-  decl0 [label="FunDecl
-main()"];
-  decl0_body [label="App"];
-  decl0 -> decl0_body;
-  decl0_body_fun [label="Var
-sumTwo"];
-  decl0_body -> decl0_body_fun;
-  decl0_body_arg [label="List"];
-  decl0_body -> decl0_body_arg;
-  decl0_body_arg_e0 [label="Lit"];
-  decl0_body_arg -> decl0_body_arg_e0;
-  decl0_body_arg_e1 [label="Lit"];
-  decl0_body_arg -> decl0_body_arg_e1;
-  decl1 [label="FunDecl
-sumTwo(lst)"];
-  decl1_body [label="Case"];
-  decl1 -> decl1_body;
-  decl1_body_scrut [label="Var
-lst"];
-  decl1_body -> decl1_body_scrut;
-  decl1_body_pat0 [label="ListPat"];
-  decl1_body -> decl1_body_pat0;
-  decl1_body_bd0 [label="AltBody"];
-  decl1_body_pat0 -> decl1_body_bd0;
-  decl1_body_bd0_l [label="Var
-x"];
-  decl1_body_bd0 -> decl1_body_bd0_l;
-  decl1_body_bd0_r [label="Var
-y"];
-  decl1_body_bd0 -> decl1_body_bd0_r;
-  decl1_body_pat1 [label="_"];
-  decl1_body -> decl1_body_pat1;
-  decl1_body_bd1 [label="AltBody"];
-  decl1_body_pat1 -> decl1_body_bd1;
+  rankdir=TB;
+  node [shape=box,fontname="monospace"];
+  0 [shape=box,label="Program"];
+  1 [shape=box,label="FunDecl main"];
+  2 [shape=box,label="App"];
+  3 [shape=box,label="Var sumTwo"];
+  2 -> 3;
+  4 [shape=box,label="List"];
+  5 [shape=box,label="Lit 10"];
+  4 -> 5;
+  6 [shape=box,label="Lit 15"];
+  4 -> 6;
+  2 -> 4;
+  1 -> 2;
+  0 -> 1;
+  7 [shape=box,label="FunDecl sumTwo"];
+  8 [shape=box,label="Params lst"];
+  7 -> 8;
+  9 [shape=box,label="Case"];
+  10 [shape=box,label="Var lst"];
+  9 -> 10;
+  11 [shape=box,label="Alt"];
+  12 [shape=box,label="PList"];
+  13 [shape=box,label="PVar x"];
+  12 -> 13;
+  14 [shape=box,label="PVar y"];
+  12 -> 14;
+  15 [shape=box,label="BinOp +"];
+  16 [shape=box,label="Var x"];
+  15 -> 16;
+  17 [shape=box,label="Var y"];
+  15 -> 17;
+  11 -> 12;
+  11 -> 15;
+  9 -> 11;
+  18 [shape=box,label="Alt"];
+  19 [shape=box,label="PWildcard"];
+  20 [shape=box,label="Lit 0"];
+  18 -> 19;
+  18 -> 20;
+  9 -> 18;
+  7 -> 9;
+  0 -> 7;
 }

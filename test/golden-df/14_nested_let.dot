@@ -1,10 +1,20 @@
-digraph G{
-  n0 [shape=box style=rounded label="const #2"];
-  n1 [shape=box style=rounded label="const #1"];
-  n2 [shape=box style=rounded label="+"];
-  n3 [shape=box style=rounded label="*"];
-  n1 -> n2 [tailport=s, headport=nw];
-  n0 -> n2 [tailport=s, headport=ne];
-  n2 -> n3 [tailport=s, headport=nw];
-  n2 -> n3 [tailport=s, headport=ne];
+digraph G {
+  rankdir=LR;
+  node [shape=box, style=rounded, fontsize=12];
+  n0 [label="const 2"];
+  n1 [label="ret y"];
+  n2 [label="const 1"];
+  n3 [label="ret x"];
+  n4 [label="+"];
+  n5 [label="ret z"];
+  n6 [label="*"];
+  n7 [label="ret main"];
+  n0 -> n1 [label="(0,0)", fontsize=10];
+  n2 -> n3 [label="(0,0)", fontsize=10];
+  n2 -> n4 [label="(0,0)", fontsize=10];
+  n0 -> n4 [label="(0,1)", fontsize=10];
+  n4 -> n5 [label="(0,0)", fontsize=10];
+  n4 -> n6 [label="(0,0)", fontsize=10];
+  n4 -> n6 [label="(0,1)", fontsize=10];
+  n6 -> n7 [label="(0,0)", fontsize=10];
 }
