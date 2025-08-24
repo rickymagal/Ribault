@@ -37,9 +37,11 @@ MAIN_CODE_HS := $(SRC_DIR)/Synthesis/MainCode.hs
 MAIN_DF_HS   := $(SRC_DIR)/Synthesis/MainGraph.hs
 MAIN_AST_HS  := $(SRC_DIR)/Analysis/MainAST.hs
 
-# → novas super-instruções em Haskell
-SUPERS_HS    := $(SRC_DIR)/Lib/Supers.hs
-LIB_SUPERS   := libsupers.so
+MAIN_SUPERS_HS := $(SRC_DIR)/Synthesis/MainSupers.hs
+EXE_SUPERS     := supersgen
+SUPERS_EXTRACT := $(SRC_DIR)/Synthesis/SuperExtract.hs
+SUPERS_EMIT    := $(SRC_DIR)/Synthesis/SupersEmit.hs
+SUPERS_DIR     := $(TEST_DIR)/supers
 
 # -------- executáveis -----------------------------------------
 EXE_DF       := synthesis
@@ -62,18 +64,46 @@ CODE_FL      := $(patsubst $(TEST_DIR)/%.hsk,$(CODE_OUT_DIR)/%.fl,$(TESTS))
 # ------------------------------------------------------------
 # Alvos de alto nível
 # ------------------------------------------------------------
-.PHONY: all df ast code tokens images ast-dots ast-images supers clean
+.PHONY: all df ast code tokens images ast-dots ast-images clean supers
 
-all: df ast code supers       ## gera .dot e .png de Dataflow/AST e libsupers.so
+all: df ast code supers 
 
 # ---------- biblioteca de super-instruções --------------------
-supers: $(LIB_SUPERS)         ## compila libsupers.so
+supers: $(EXE_SUPERS)
+	@mkdir -p $(SUPERS_DIR)
+	@set -e; \
+	for f in $(TESTS); do \
+	  base=$$(basename $$f .hsk); \
+	  outdir=$(SUPERS_DIR)/$$base; \
+	  mkdir -p $$outdir; \
+	  echo "[SUPERS] $$f → $$outdir/Supers.hs"; \
+	  ./$(EXE_SUPERS) $$f > $$outdir/Supers.hs.tmp; \
+	  if [ -s $$outdir/Supers.hs.tmp ]; then \
+	    mv $$outdir/Supers.hs.tmp $$outdir/Supers.hs; \
+	    echo "[GHC  ] $$outdir/libsupers.so"; \
+	    $(GHC) -O2 -shared -dynamic -fPIC -threaded \
+	           -o $$outdir/libsupers.so $$outdir/Supers.hs; \
+	  else \
+	    rm -f $$outdir/Supers.hs.tmp $$outdir/Supers.hs $$outdir/libsupers.so; \
+	  fi; \
+	done
 
-$(LIB_SUPERS): $(SUPERS_HS)
+$(EXE_SUPERS): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
+               $(UNIQUE_HS) $(TYPES_HS) $(PORT_HS) $(NODE_HS) \
+               $(SRC_DIR)/Synthesis/SuperExtract.hs \
+               $(SRC_DIR)/Synthesis/SupersEmit.hs \
+               $(MAIN_SUPERS_HS)
 	@echo "[GHC  ] $@"
-	$(GHC) -O2 -shared -dynamic -fPIC                     \
-	       -package hint -package hashable               \
-	       -o $@ $<
+	@mkdir -p $(EXE_SUPERS).obj $(EXE_SUPERS).hi
+	$(GHC) -O2 \
+	      -odir $(EXE_SUPERS).obj -hidir $(EXE_SUPERS).hi \
+	      -o $@ \
+	      $(MAIN_SUPERS_HS) $(LEXER_HS) $(PARSER_HS) \
+	      $(SYNTAX_HS) $(SEMANTIC_HS) $(UNIQUE_HS) \
+	      $(TYPES_HS) $(PORT_HS) $(NODE_HS) \
+	      $(SRC_DIR)/Synthesis/SuperExtract.hs \
+	      $(SRC_DIR)/Synthesis/SupersEmit.hs
+
 
 # ---------- Dataflow & AST pipelines -------------------------
 df: tokens images        
@@ -178,6 +208,7 @@ clean:
 	        codegen.obj codegen.hi     \
 	        $(SRC_DIR)/Analysis/*.hi $(SRC_DIR)/Analysis/*.o \
 	        $(SRC_DIR)/Synthesis/*.hi $(SRC_DIR)/Synthesis/*.o \
-	        $(EXE_DF) $(EXE_AST) $(EXE_CODE) $(LIB_SUPERS)
+	        $(EXE_DF) $(EXE_AST) $(EXE_CODE) $(EXE_SUPERS) \
+		$(EXE_SUPERS).obj $(EXE_SUPERS).hi 
 	@rm -f $(LEXER_HS) $(PARSER_HS)
 	@rm -rf $(DF_OUT_DIR) $(AST_OUT_DIR) $(CODE_OUT_DIR)
