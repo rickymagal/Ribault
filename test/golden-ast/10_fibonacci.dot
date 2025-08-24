@@ -1,56 +1,49 @@
 digraph AST {
-  node [shape=box, fontname="Courier"];
-  decl0 [label="FunDecl
-main()"];
-  decl0_body [label="App"];
-  decl0 -> decl0_body;
-  decl0_body_fun [label="Var
-fib"];
-  decl0_body -> decl0_body_fun;
-  decl0_body_arg [label="Lit"];
-  decl0_body -> decl0_body_arg;
-  decl1 [label="FunDecl
-fib(n)"];
-  decl1_body [label="If"];
-  decl1 -> decl1_body;
-  decl1_body_cond [label="BinOp
-Le"];
-  decl1_body -> decl1_body_cond;
-  decl1_body_cond_l [label="Var
-n"];
-  decl1_body_cond -> decl1_body_cond_l;
-  decl1_body_cond_r [label="Lit"];
-  decl1_body_cond -> decl1_body_cond_r;
-  decl1_body_then [label="Var
-n"];
-  decl1_body -> decl1_body_then;
-  decl1_body_else [label="BinOp
-Add"];
-  decl1_body -> decl1_body_else;
-  decl1_body_else_l [label="App"];
-  decl1_body_else -> decl1_body_else_l;
-  decl1_body_else_l_fun [label="Var
-fib"];
-  decl1_body_else_l -> decl1_body_else_l_fun;
-  decl1_body_else_l_arg [label="BinOp
-Sub"];
-  decl1_body_else_l -> decl1_body_else_l_arg;
-  decl1_body_else_l_arg_l [label="Var
-n"];
-  decl1_body_else_l_arg -> decl1_body_else_l_arg_l;
-  decl1_body_else_l_arg_r [label="Lit"];
-  decl1_body_else_l_arg -> decl1_body_else_l_arg_r;
-  decl1_body_else_r [label="App"];
-  decl1_body_else -> decl1_body_else_r;
-  decl1_body_else_r_fun [label="Var
-fib"];
-  decl1_body_else_r -> decl1_body_else_r_fun;
-  decl1_body_else_r_arg [label="BinOp
-Sub"];
-  decl1_body_else_r -> decl1_body_else_r_arg;
-  decl1_body_else_r_arg_l [label="Var
-n"];
-  decl1_body_else_r_arg -> decl1_body_else_r_arg_l;
-  decl1_body_else_r_arg_r [label="Lit"];
-  decl1_body_else_r_arg -> decl1_body_else_r_arg_r;
+  rankdir=TB;
+  node [shape=box,fontname="monospace"];
+  0 [shape=box,label="Program"];
+  1 [shape=box,label="FunDecl main"];
+  2 [shape=box,label="App"];
+  3 [shape=box,label="Var fib"];
+  2 -> 3;
+  4 [shape=box,label="Lit 10"];
+  2 -> 4;
+  1 -> 2;
+  0 -> 1;
+  5 [shape=box,label="FunDecl fib"];
+  6 [shape=box,label="Params n"];
+  5 -> 6;
+  7 [shape=box,label="If"];
+  8 [shape=box,label="BinOp <"];
+  9 [shape=box,label="Var n"];
+  8 -> 9;
+  10 [shape=box,label="Lit 1"];
+  8 -> 10;
+  7 -> 8;
+  11 [shape=box,label="Var n"];
+  7 -> 11;
+  12 [shape=box,label="BinOp +"];
+  13 [shape=box,label="App"];
+  14 [shape=box,label="Var fib"];
+  13 -> 14;
+  15 [shape=box,label="BinOp -"];
+  16 [shape=box,label="Var n"];
+  15 -> 16;
+  17 [shape=box,label="Lit 1"];
+  15 -> 17;
+  13 -> 15;
+  12 -> 13;
+  18 [shape=box,label="App"];
+  19 [shape=box,label="Var fib"];
+  18 -> 19;
+  20 [shape=box,label="BinOp -"];
+  21 [shape=box,label="Var n"];
+  20 -> 21;
+  22 [shape=box,label="Lit 2"];
+  20 -> 22;
+  18 -> 20;
+  12 -> 18;
+  7 -> 12;
+  5 -> 7;
+  0 -> 5;
 }

@@ -1,37 +1,37 @@
 digraph AST {
-  node [shape=box, fontname="Courier"];
-  decl0 [label="FunDecl
-result()"];
-  decl0_body [label="Let"];
-  decl0 -> decl0_body;
-  decl0_body_let0 [label="FunDecl
-y()"];
-  decl0_body_let0_body [label="Lit"];
-  decl0_body_let0 -> decl0_body_let0_body;
-  decl0_body_let1 [label="FunDecl
-x()"];
-  decl0_body_let1_body [label="Lit"];
-  decl0_body_let1 -> decl0_body_let1_body;
-  decl0_body_in [label="Let"];
-  decl0_body -> decl0_body_in;
-  decl0_body_in_let0 [label="FunDecl
-z()"];
-  decl0_body_in_let0_body [label="BinOp
-Add"];
-  decl0_body_in_let0 -> decl0_body_in_let0_body;
-  decl0_body_in_let0_body_l [label="Var
-x"];
-  decl0_body_in_let0_body -> decl0_body_in_let0_body_l;
-  decl0_body_in_let0_body_r [label="Var
-y"];
-  decl0_body_in_let0_body -> decl0_body_in_let0_body_r;
-  decl0_body_in_in [label="BinOp
-Mul"];
-  decl0_body_in -> decl0_body_in_in;
-  decl0_body_in_in_l [label="Var
-z"];
-  decl0_body_in_in -> decl0_body_in_in_l;
-  decl0_body_in_in_r [label="Var
-z"];
-  decl0_body_in_in -> decl0_body_in_in_r;
+  rankdir=TB;
+  node [shape=box,fontname="monospace"];
+  0 [shape=box,label="Program"];
+  1 [shape=box,label="FunDecl main"];
+  2 [shape=box,label="Let"];
+  3 [shape=box,label="Decls"];
+  2 -> 3;
+  4 [shape=box,label="FunDecl y"];
+  5 [shape=box,label="Lit 2"];
+  4 -> 5;
+  3 -> 4;
+  6 [shape=box,label="FunDecl x"];
+  7 [shape=box,label="Lit 1"];
+  6 -> 7;
+  3 -> 6;
+  8 [shape=box,label="Let"];
+  9 [shape=box,label="Decls"];
+  8 -> 9;
+  10 [shape=box,label="FunDecl z"];
+  11 [shape=box,label="BinOp +"];
+  12 [shape=box,label="Var x"];
+  11 -> 12;
+  13 [shape=box,label="Var y"];
+  11 -> 13;
+  10 -> 11;
+  9 -> 10;
+  14 [shape=box,label="BinOp *"];
+  15 [shape=box,label="Var z"];
+  14 -> 15;
+  16 [shape=box,label="Var z"];
+  14 -> 16;
+  8 -> 14;
+  2 -> 8;
+  1 -> 2;
+  0 -> 1;
 }

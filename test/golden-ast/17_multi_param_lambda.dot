@@ -1,39 +1,31 @@
 digraph AST {
-  node [shape=box, fontname="Courier"];
-  decl0 [label="FunDecl
-main()"];
-  decl0_body [label="App"];
-  decl0 -> decl0_body;
-  decl0_body_fun [label="App"];
-  decl0_body -> decl0_body_fun;
-  decl0_body_fun_fun [label="App"];
-  decl0_body_fun -> decl0_body_fun_fun;
-  decl0_body_fun_fun_fun [label="Var
-addThree"];
-  decl0_body_fun_fun -> decl0_body_fun_fun_fun;
-  decl0_body_fun_fun_arg [label="Lit"];
-  decl0_body_fun_fun -> decl0_body_fun_fun_arg;
-  decl0_body_fun_arg [label="Lit"];
-  decl0_body_fun -> decl0_body_fun_arg;
-  decl0_body_arg [label="Lit"];
-  decl0_body -> decl0_body_arg;
-  decl1 [label="FunDecl
-addThree()"];
-  decl1_body [label="Lambda(z,y,x)"];
-  decl1 -> decl1_body;
-  decl1_body_body [label="BinOp
-Add"];
-  decl1_body -> decl1_body_body;
-  decl1_body_body_l [label="BinOp
-Add"];
-  decl1_body_body -> decl1_body_body_l;
-  decl1_body_body_l_l [label="Var
-x"];
-  decl1_body_body_l -> decl1_body_body_l_l;
-  decl1_body_body_l_r [label="Var
-y"];
-  decl1_body_body_l -> decl1_body_body_l_r;
-  decl1_body_body_r [label="Var
-z"];
-  decl1_body_body -> decl1_body_body_r;
+  rankdir=TB;
+  node [shape=box,fontname="monospace"];
+  0 [shape=box,label="Program"];
+  1 [shape=box,label="FunDecl main"];
+  2 [shape=box,label="App"];
+  3 [shape=box,label="Var addThree"];
+  2 -> 3;
+  4 [shape=box,label="Lit 1"];
+  2 -> 4;
+  5 [shape=box,label="Lit 2"];
+  2 -> 5;
+  6 [shape=box,label="Lit 3"];
+  2 -> 6;
+  1 -> 2;
+  0 -> 1;
+  7 [shape=box,label="FunDecl addThree"];
+  8 [shape=box,label="Lambda z y x"];
+  9 [shape=box,label="BinOp +"];
+  10 [shape=box,label="BinOp +"];
+  11 [shape=box,label="Var x"];
+  10 -> 11;
+  12 [shape=box,label="Var y"];
+  10 -> 12;
+  9 -> 10;
+  13 [shape=box,label="Var z"];
+  9 -> 13;
+  8 -> 9;
+  7 -> 8;
+  0 -> 7;
 }

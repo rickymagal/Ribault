@@ -1,0 +1,37 @@
+const z0, 0
+const n0, -1
+const n1, 10
+const n2, 15
+const n3, 1000003
+mul n4, n2, n3
+add n5, n4, n0
+const n6, 1000003
+mul n7, n1, n6
+add n8, n7, n5
+callgroup("c9","sumTwo")
+callsnd sumTwo[0], n8, c9
+retsnd sumTwo[0], z0, c9
+ret main, sumTwo[0], z0
+add n13, z0, z0
+const n14, 0
+const n15, 1
+const n16, 0
+equal n17, n14, n16
+band n18, n15, n17
+add n19, z0, z0
+add n20, z0, z0
+add n21, n19, n20
+steer s22, n18, n21
+add n23, n14, n15
+const n24, 0
+gthan n25, n23, n24
+const n26, 1
+const n27, 0
+equal n28, n25, n27
+band n29, n26, n28
+const n30, 0
+steer s31, n29, n30
+add n32, n25, n26
+const n33, 0
+gthan n34, n32, n33
+ret sumTwo, [s31.t, s22.t], z0

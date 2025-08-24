@@ -1,45 +1,47 @@
 digraph AST {
-  node [shape=box, fontname="Courier"];
-  decl0 [label="FunDecl
-tupleVal()"];
-  decl0_body [label="Tuple"];
-  decl0 -> decl0_body;
-  decl0_body_e0 [label="Lit"];
-  decl0_body -> decl0_body_e0;
-  decl0_body_e1 [label="Lit"];
-  decl0_body -> decl0_body_e1;
-  decl1 [label="FunDecl
-listVal()"];
-  decl1_body [label="List"];
-  decl1 -> decl1_body;
-  decl1_body_e0 [label="Lit"];
-  decl1_body -> decl1_body_e0;
-  decl1_body_e1 [label="Lit"];
-  decl1_body -> decl1_body_e1;
-  decl1_body_e2 [label="Lit"];
-  decl1_body -> decl1_body_e2;
-  decl2 [label="FunDecl
-stringVal()"];
-  decl2_body [label="Lit"];
-  decl2 -> decl2_body;
-  decl3 [label="FunDecl
-charVal()"];
-  decl3_body [label="Lit"];
-  decl3 -> decl3_body;
-  decl4 [label="FunDecl
-floatVal()"];
-  decl4_body [label="Lit"];
-  decl4 -> decl4_body;
-  decl5 [label="FunDecl
-intVal()"];
-  decl5_body [label="Lit"];
-  decl5 -> decl5_body;
-  decl6 [label="FunDecl
-falseBool()"];
-  decl6_body [label="Lit"];
-  decl6 -> decl6_body;
-  decl7 [label="FunDecl
-trueBool()"];
-  decl7_body [label="Lit"];
-  decl7 -> decl7_body;
+  rankdir=TB;
+  node [shape=box,fontname="monospace"];
+  0 [shape=box,label="Program"];
+  1 [shape=box,label="FunDecl tupleVal"];
+  2 [shape=box,label="Tuple/2"];
+  3 [shape=box,label="Lit 1"];
+  2 -> 3;
+  4 [shape=box,label="Lit 2"];
+  2 -> 4;
+  1 -> 2;
+  0 -> 1;
+  5 [shape=box,label="FunDecl listVal"];
+  6 [shape=box,label="List"];
+  7 [shape=box,label="Lit 1"];
+  6 -> 7;
+  8 [shape=box,label="Lit 2"];
+  6 -> 8;
+  9 [shape=box,label="Lit 3"];
+  6 -> 9;
+  5 -> 6;
+  0 -> 5;
+  10 [shape=box,label="FunDecl stringVal"];
+  11 [shape=box,label="Lit \"lambda\""];
+  10 -> 11;
+  0 -> 10;
+  12 [shape=box,label="FunDecl charVal"];
+  13 [shape=box,label="Lit 'z'"];
+  12 -> 13;
+  0 -> 12;
+  14 [shape=box,label="FunDecl floatVal"];
+  15 [shape=box,label="Lit 3.14"];
+  14 -> 15;
+  0 -> 14;
+  16 [shape=box,label="FunDecl intVal"];
+  17 [shape=box,label="Lit 42"];
+  16 -> 17;
+  0 -> 16;
+  18 [shape=box,label="FunDecl falseBool"];
+  19 [shape=box,label="Lit False"];
+  18 -> 19;
+  0 -> 18;
+  20 [shape=box,label="FunDecl trueBool"];
+  21 [shape=box,label="Lit True"];
+  20 -> 21;
+  0 -> 20;
 }

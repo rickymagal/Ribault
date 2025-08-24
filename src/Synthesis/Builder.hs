@@ -8,7 +8,7 @@ module Synthesis.Builder
   ) where
 
 import           Prelude hiding (lookup)
-import           Control.Monad          (forM_, foldM, zipWithM_, when)
+import           Control.Monad          (forM_, zipWithM_)
 import           Control.Monad.State    (StateT, get, put, runStateT, gets, modify)
 import           Control.Monad.Trans    (lift)
 import qualified Data.Map              as M
@@ -16,9 +16,8 @@ import qualified Data.Map              as M
 import           Syntax
 import           Types                  (DGraph(..), Edge, NodeId, emptyGraph, addNode, addEdge)
 import           Port                   (Port(..), (-->))
-import           Unique                 (Unique, evalUnique, MonadUnique(..))
+import           Unique                 (Unique, evalUnique, freshId)
 import           Node                   (DNode(..))
-
 -- Grafo final
 type DFG = DGraph DNode
 
@@ -187,10 +186,7 @@ foldrM' f z0 = go
 
 buildProgram :: Program -> DFG
 buildProgram (Program decls) =
-  let (_, st) = runBuild $ do
-        -- Compila todas as declarações; cada função cria seu próprio "ret f".
-        mapM_ goDecl decls
-        pure ()
+  let (_, st) = runBuild $ mapM_ goDecl decls
   in bsGraph st
 
 -- Declarações ----------------------------------------------------------
@@ -204,7 +200,6 @@ goDecl (FunDecl f ps body)
       connectPlus p (InstPort r "0")
   | otherwise = do
       insertB f (BLam ps body)
-      -- Compila o corpo isolado para mostrar "ret f".
       _ <- withActive f $ withEnv $ do
              forM_ (zip [0..] ps) $ \(i, v) -> do
                a <- argNode f i
@@ -216,25 +211,23 @@ goDecl (FunDecl f ps body)
 
 -- Expressões -----------------------------------------------------------
 
+-- variável livre -> NArg materializado e guardado no env
+freeVar :: Ident -> Build Port
+freeVar x = do
+  nid <- newNode x (NArg x)
+  let p = out0 nid
+  insertB x (BPort p)
+  pure p
+
 goExpr :: Expr -> Build Port
 goExpr = \case
   Var x -> do
-    mb <- lookupB x
-    pure $ case mb of
-      Just (BPort p)  -> p
-      _               -> InstPort (-1) x
+    lookupB x >>= \case
+      Just (BPort p) -> pure p
+      Just (BLam _ _) -> freeVar x
+      Nothing         -> freeVar x
 
   Lit lit -> litNode lit
-
-  -- SUPER: opaca; cria nó NSuper, liga a entrada e
-  -- expõe o identificador de saída para o restante do grafo.
-  Super name _kind inpId outId _body -> do
-    pin <- goExpr (Var inpId)
-    sid <- newNode name (NSuper name 0 1 Nothing True)
-    connectPlus pin (InstPort sid "0")
-    let pout = out0 sid
-    insertB outId (BPort pout)
-    pure pout
 
   Lambda ps e ->
     withEnv $ do
@@ -303,6 +296,8 @@ goExpr = \case
       Neg -> do z <- constI 0; bin2 "sub" (NSub "") z pe
       Not -> notP pe
 
+  _ -> constI 0
+
 -- Aplicação n-ária -----------------------------------------------------
 
 flattenApp :: Expr -> (Expr, [Expr])
@@ -355,12 +350,11 @@ goApp fun args = case fun of
     rs <- newNode f (NRetSnd f tid)
     connectPlus tag (InstPort rs "1")
 
-    mb <- lookupB f
-    case mb of
+    lookupB f >>= \case
       Just (BLam ps body) -> do
         cyc <- isActive f
         if cyc
-          then pure (out0 rs)          -- chamada recursiva: não inline
+          then pure (out0 rs)
           else do
             res <- withActive f $ withEnv $ do
                      forM_ (zip3 [0..] ps argv) $ \(i,v,p) -> bindFormal f i v p
