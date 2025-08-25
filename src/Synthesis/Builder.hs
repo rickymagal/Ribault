@@ -381,6 +381,8 @@ bindFormal fun i formal actual = do
 
 goApp :: Expr -> [Expr] -> Build Port
 goApp fun args = case fun of
+  -- chamada de função nomeada: *não* inlinar o corpo.
+  -- só emite callgroup/callsnd/retsnd e devolve o port de retorno.
   Var f -> do
     argv <- mapM goExpr args
     let tid = funTaskId f
@@ -392,20 +394,10 @@ goApp fun args = case fun of
       connectPlus tag (InstPort cs "1")
     rs <- newNode f (NRetSnd f tid)
     connectPlus tag (InstPort rs "1")
+    -- o corpo da função é gerado uma única vez em goDecl; os NArg "f#i" são alimentados pelos calls acima.
+    pure (out0 rs)
 
-    lookupB f >>= \case
-      Just (BLam ps body) -> do
-        cyc <- isActive f
-        if cyc
-          then pure (out0 rs)
-          else do
-            res <- withActive f $ withEnv $ do
-                     forM_ (zip3 [0..] ps argv) $ \(i,v,p) -> bindFormal f i v p
-                     goExpr body
-            connectPlus res (InstPort rs "0")
-            pure res
-      _ -> pure (out0 rs)
-
+  -- lambda: continua materializando inline (não há decl global)
   Lambda ps body -> do
     let fname = "lambda"
         tid   = funTaskId fname
@@ -424,11 +416,13 @@ goApp fun args = case fun of
     connectPlus res (InstPort rs "0")
     pure res
 
+  -- fallback
   _ -> do
     _ <- mapM goExpr args
     case args of
       [] -> constI 0
       _  -> goExpr (last args)
+
 
 -- Literais -------------------------------------------------------------
 

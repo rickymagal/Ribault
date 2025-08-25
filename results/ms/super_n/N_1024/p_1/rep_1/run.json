@@ -1,0 +1,15 @@
+{
+  "cmd": [
+    "/home/ricky/\u00c1rea de trabalho/TALM/interp/interp",
+    "1",
+    "/home/ricky/\u00c1rea de trabalho/Ribault/results/ms/super_n/N_1024/N_1024.flb",
+    "/home/ricky/\u00c1rea de trabalho/Ribault/results/ms/super_n/N_1024/N_1024.pla",
+    "/home/ricky/\u00c1rea de trabalho/Ribault/test/supers/21_merge_sort_super/libsupers.so"
+  ],
+  "cwd": "/home/ricky/\u00c1rea de trabalho/TALM/interp",
+  "rc": -11,
+  "wall_s": 0.004622488981112838,
+  "env_add": {
+    "LD_LIBRARY_PATH": "/home/ricky/\u00c1rea de trabalho/TALM/interp/rts-local:/home/ricky/\u00c1rea de trabalho/Ribault/test/supers/21_merge_sort_super/ghc-deps"
+  }
+}

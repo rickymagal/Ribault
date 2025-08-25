@@ -100,7 +100,7 @@ emitNode g im (nid, dn) =
     NDiv{}  ->
       let a0 = fmtOp (getInputs "0")
           a1 = fmtOp (getInputs "1")
-      in [ "div " <> dstN nid <> ", " <> a0 <> ", " <> a1 ]  -- um destino só
+      in [ "div " <> dstN nid <> ", " <> a0 <> ", " <> a1 ]
     NFAdd{} -> bin2 "fadd"
     NDAdd{} -> bin2 "dadd"
     NBand{} -> bin2 "band"
@@ -112,7 +112,7 @@ emitNode g im (nid, dn) =
     NFMulI{..} -> bin1imm "fmuli" (showT fImm)
     NDivI{..}  ->
       let a0 = fmtOp (getInputs "0")
-      in [ "divi " <> dstN nid <> ", " <> a0 <> ", " <> showT iImm ]  -- um destino só
+      in [ "divi " <> dstN nid <> ", " <> a0 <> ", " <> showT iImm ]
 
     -- Comparações e steer
     NLThan{}    -> bin2 "lthan"
@@ -121,8 +121,8 @@ emitNode g im (nid, dn) =
     NLThanI{..} -> bin1imm "lthani" (showT iImm)
     NGThanI{..} -> bin1imm "gthani" (showT iImm)
     NSteer{}    ->
-      let g0 = fmtOp (getInputs "1")  -- guarda
-          v0 = fmtOp (getInputs "0")  -- valor
+      let g0 = fmtOp (getInputs "1")
+          v0 = fmtOp (getInputs "0")
       in [ "steer " <> dstS nid <> ", " <> g0 <> ", " <> v0 ]
 
     -- TALM: grupos/chamadas/retornos
@@ -135,6 +135,7 @@ emitNode g im (nid, dn) =
           slotTxt = argAsFunSlot nName
       in [ "callsnd " <> slotTxt <> ", " <> src0 <> ", " <> tag ]
 
+    -- >>> correção: retsnd SEM payload; valor vem do 'ret <fun>, ...'
     NRetSnd{..} ->
       let tag  = maybe "0" id (findCallgroupTag g im nid)
           dstF = T.pack nName <> "[0]"
@@ -153,7 +154,7 @@ emitNode g im (nid, dn) =
     NCpHToDev{}  -> [ "cphtodev " <> dstN nid <> ", 0" ]
     NCpDevToH{}  -> [ "cpdevtoh " <> dstN nid <> ", 0" ]
 
-    -- commit/stopspec também têm 2 saídas → um destino só
+    -- commit / stopspec
     NCommit{} ->
       let pins = orderedPins im nid
           srcs = map (\p -> fmtOp (getInputs p)) pins
@@ -163,10 +164,12 @@ emitNode g im (nid, dn) =
           srcs = map (\p -> fmtOp (getInputs p)) pins
       in [ "stopspec " <> T.intercalate ", " (dstN nid : srcs) ]
 
-    -- Formal: materializa nome n<N> (copia entrada ou z0)
+    -- Formal
     NArg{} ->
       let a0 = fmtOp (getInputs "0")
       in [ "add " <> dstN nid <> ", " <> a0 <> ", z0" ]
+
+    -- Super
     NSuper{..} ->
       let pins   = orderedPins im nid
           srcs   = map (\p -> fmtOp (getInputs p)) pins
@@ -176,7 +179,6 @@ emitNode g im (nid, dn) =
                      (False, Just _)  -> "superi"
                      (True,  Just _)  -> "specsuperi"
           imm    = maybe [] (\t -> [showT t]) superImm
-          -- destino ÚNICO: use o id do nó (n<N>), não o nome lógico (s1)
           headOp = T.pack base <> " " <> dstN nid
           line   = T.intercalate ", "
                      ( headOp
@@ -184,20 +186,15 @@ emitNode g im (nid, dn) =
                        , showT (max 1 superOuts)
                        ] ++ srcs ++ imm )
       in [ line ]
-
-
   where
     getInputs pin = M.findWithDefault [] (nid, pin) im
-
     bin2 mnem =
       let a0 = fmtOp (getInputs "0")
           a1 = fmtOp (getInputs "1")
       in [ T.pack mnem <> " " <> dstN nid <> ", " <> a0 <> ", " <> a1 ]
-
     bin1imm mnem immTxt =
       let a0 = fmtOp (getInputs "0")
       in [ T.pack mnem <> " " <> dstN nid <> ", " <> a0 <> ", " <> immTxt ]
-
     one1 mnem =
       let a0 = fmtOp (getInputs "0")
       in [ T.pack mnem <> " " <> dstN nid <> ", " <> a0 ]
