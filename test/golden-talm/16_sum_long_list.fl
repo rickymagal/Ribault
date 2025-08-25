@@ -43,31 +43,56 @@ add n40, n39, n37
 callgroup("c41","sumList")
 callsnd sumList[0], n40, c41
 retsnd sumList[0], z0, c41
-ret main, sumList[0], z0
-add n45, z0, z0
-const n46, 0
-const n47, -1
-equal n48, n45, n47
-const n49, 0
-equal n50, n46, n49
-band n51, n48, n50
-const n52, 0
-steer s53, n51, n52
-add n54, n46, n48
-const n55, 0
-gthan n56, n54, n55
-const n57, 1
-const n58, 0
-equal n59, n56, n58
-band n60, n57, n59
+add n44, n40, z0
+const n45, 0
+const n46, -1
+equal n47, n44, n46
+const n48, 0
+equal n49, n45, n48
+band n50, n47, n49
+const n51, 0
+steer s52, n50, n51
+add n53, n45, n47
+const n54, 0
+gthan n55, n53, n54
+const n56, 1
+const n57, 0
+equal n58, n55, n57
+band n59, n56, n58
+add n60, z0, z0
 add n61, z0, z0
-add n62, z0, z0
-callgroup("c63","sumList")
-callsnd sumList[0], n62, c63
-retsnd sumList[0], z0, c63
-add n66, n61, sumList[0]
-steer s67, n60, n66
-add n68, n56, n57
-const n69, 0
-gthan n70, n68, n69
-ret sumList, [s67.t, s53.t], z0
+callgroup("c62","sumList")
+callsnd sumList[0], n61, c62
+retsnd sumList[0], z0, c62
+add n65, n60, sumList[0]
+steer s66, n59, n65
+add n67, n55, n56
+const n68, 0
+gthan n69, n67, n68
+ret main, [s66.t, s52.t], z0
+const n71, 0
+const n72, -1
+equal n73, n44, n72
+const n74, 0
+equal n75, n71, n74
+band n76, n73, n75
+const n77, 0
+steer s78, n76, n77
+add n79, n71, n73
+const n80, 0
+gthan n81, n79, n80
+const n82, 1
+const n83, 0
+equal n84, n81, n83
+band n85, n82, n84
+add n86, z0, z0
+add n87, z0, z0
+callgroup("c88","sumList")
+callsnd sumList[0], n87, c88
+retsnd sumList[0], z0, c88
+add n91, n86, sumList[0]
+steer s92, n85, n91
+add n93, n81, n82
+const n94, 0
+gthan n95, n93, n94
+ret sumList, [s92.t, s78.t], z0

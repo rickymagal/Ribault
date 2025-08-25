@@ -3,21 +3,36 @@ const n0, 10
 callgroup("c1","fib")
 callsnd fib[0], n0, c1
 retsnd fib[0], z0, c1
-ret main, fib[0], z0
-add n5, z0, z0
-const n6, 1
-lthan n7, n5, n6
-const n8, 1
-sub n9, n5, n8
-callgroup("c10","fib")
-callsnd fib[0], n9, c10
-retsnd fib[0], z0, c10
-const n13, 2
-sub n14, n5, n13
-callgroup("c15","fib")
-callsnd fib[0], n14, c15
-retsnd fib[0], z0, c15
-add n18, fib[0], fib[0]
-steer s19, n7, n5
-steer s20, n7, n18
-ret fib, [s20.f, s19.t], z0
+add n4, n0, z0
+const n5, 1
+lthan n6, n4, n5
+const n7, 1
+sub n8, n4, n7
+callgroup("c9","fib")
+callsnd fib[0], n8, c9
+retsnd fib[0], z0, c9
+const n12, 2
+sub n13, n4, n12
+callgroup("c14","fib")
+callsnd fib[0], n13, c14
+retsnd fib[0], z0, c14
+add n17, fib[0], fib[0]
+steer s18, n6, n4
+steer s19, n6, n17
+ret main, [s19.f, s18.t], z0
+const n21, 1
+lthan n22, n4, n21
+const n23, 1
+sub n24, n4, n23
+callgroup("c25","fib")
+callsnd fib[0], n24, c25
+retsnd fib[0], z0, c25
+const n28, 2
+sub n29, n4, n28
+callgroup("c30","fib")
+callsnd fib[0], n29, c30
+retsnd fib[0], z0, c30
+add n33, fib[0], fib[0]
+steer s34, n22, n4
+steer s35, n22, n33
+ret fib, [s35.f, s34.t], z0

@@ -3,8 +3,10 @@ const n0, 1
 callgroup("c1","negBool")
 callsnd negBool[0], n0, c1
 retsnd negBool[0], z0, c1
-ret main, negBool[0], z0
-add n5, z0, z0
-const n6, 0
-equal n7, n5, n6
-ret negBool, n7, z0
+add n4, n0, z0
+const n5, 0
+equal n6, n4, n5
+ret main, n6, z0
+const n8, 0
+equal n9, n4, n8
+ret negBool, n9, z0

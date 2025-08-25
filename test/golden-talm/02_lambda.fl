@@ -5,6 +5,7 @@ callgroup("c2","add")
 callsnd add[0], n0, c2
 callsnd add[1], n1, c2
 retsnd add[0], z0, c2
-ret main, add[0], z0
-add n7, n-1, n-1
-ret add, n7, z0
+add n6, n-1, n-1
+ret main, n6, z0
+add n8, n-1, n-1
+ret add, n8, z0
