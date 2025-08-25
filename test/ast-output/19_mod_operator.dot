@@ -1,0 +1,23 @@
+digraph AST {
+  rankdir=TB;
+  node [shape=box,fontname="monospace"];
+  0 [shape=box,label="Program"];
+  1 [shape=box,label="FunDecl main"];
+  2 [shape=box,label="App"];
+  3 [shape=box,label="Var rem7"];
+  2 -> 3;
+  4 [shape=box,label="Lit 15"];
+  2 -> 4;
+  1 -> 2;
+  0 -> 1;
+  5 [shape=box,label="FunDecl rem7"];
+  6 [shape=box,label="Params x"];
+  5 -> 6;
+  7 [shape=box,label="BinOp %"];
+  8 [shape=box,label="Var x"];
+  7 -> 8;
+  9 [shape=box,label="Lit 7"];
+  7 -> 9;
+  5 -> 7;
+  0 -> 5;
+}
