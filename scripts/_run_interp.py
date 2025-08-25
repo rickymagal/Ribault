@@ -1,59 +1,56 @@
 #!/usr/bin/env python3
-import argparse, os, subprocess, sys
-from pathlib import Path
+# -*- coding: utf-8 -*-
+import argparse, subprocess, pathlib, os, json, time, sys
 
 def run_cmd_logged(cmd, outdir, env=None, cwd=None):
-    outdir = Path(outdir); outdir.mkdir(parents=True, exist_ok=True)
-    with open(outdir / "stdout.txt", "w") as so, open(outdir / "stderr.txt", "w") as se:
-        so.write(f"CMD: {cmd!r}\n")
-        if env and "LD_LIBRARY_PATH" in env:
-            so.write(f"LD_LIBRARY_PATH: {env['LD_LIBRARY_PATH']}\n")
-        so.flush()
+    outdir = pathlib.Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    so = open(outdir/"stdout.txt", "w")
+    se = open(outdir/"stderr.txt", "w")
+    try:
+        t0 = time.perf_counter()
         p = subprocess.run(cmd, stdout=so, stderr=se, env=env, cwd=cwd, check=False)
-        return p.returncode
+        dt_ms = (time.perf_counter() - t0) * 1000.0
+    finally:
+        so.flush(); se.flush()
+        so.close(); se.close()
+    meta = {"rc": p.returncode, "elapsed_ms": dt_ms, "cmd": cmd}
+    (outdir/"run_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return p.returncode, dt_ms, outdir
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--interp", required=True)
-    ap.add_argument("--flb", required=True)
-    ap.add_argument("--pla", required=True)
-    ap.add_argument("--threads", type=int, required=True)
-    ap.add_argument("--variant", choices=["asm","super"], required=True)
-    ap.add_argument("--libsupers")
+    ap.add_argument("--flb",    required=True)
+    ap.add_argument("--pla",    required=True)
+    ap.add_argument("--threads", required=True, type=int)
+    ap.add_argument("--variant", required=True, choices=["asm","super"])
+    ap.add_argument("--libsupers", default=None)
     ap.add_argument("--outdir", required=True)
-    ap.add_argument("--affinity")  # opcional
+    ap.add_argument("--affinity", default=None)
     args = ap.parse_args()
 
-    interp_path = Path(args.interp).resolve()
-    interp_dir  = interp_path.parent
+    # Caminho ABSOLUTO do interp e não mudamos o cwd
+    interp = pathlib.Path(args.interp).resolve()
 
-    # Ambiente: rts-local SEMPRE; ghc-deps quando for SUPER
-    ldparts = [str(interp_dir / "rts-local")]
+    cmd = [str(interp), str(args.threads), str(args.flb), str(args.pla)]
     if args.variant == "super" and args.libsupers:
-        ghcdeps = Path(args.libsupers).resolve().parent / "ghc-deps"
-        ldparts.append(str(ghcdeps))
-    # Preserva LD_LIBRARY_PATH do usuário
-    if os.environ.get("LD_LIBRARY_PATH"):
-        ldparts.append(os.environ["LD_LIBRARY_PATH"])
-    env = dict(os.environ)
-    env["LD_LIBRARY_PATH"] = ":".join(ldparts)
+        cmd.append(str(args.libsupers))
+    if args.affinity:
+        cmd = ["taskset", "-c", str(args.affinity)] + cmd
 
-    # Comando exatamente como você roda à mão
-    cmd = [str(interp_path), str(args.threads), str(Path(args.flb).resolve()), str(Path(args.pla).resolve())]
-    if args.variant == "super":
-        if not args.libsupers:
-            print("Faltou --libsupers para variant=super", file=sys.stderr)
-            sys.exit(2)
-        cmd.append(str(Path(args.libsupers).resolve()))
+    rc, dt_ms, outdir = run_cmd_logged(cmd, args.outdir, cwd=None)
 
-    # Executa no diretório do interp (igual ao seu teste manual)
-    rc = run_cmd_logged(cmd, args.outdir, env=env, cwd=str(interp_dir))
-
-    if rc != 0:
-        print(f"[run] retorno {rc}. Veja logs:\n  {args.outdir}/stderr.txt\n  {args.outdir}/stdout.txt")
-        sys.exit(1)
+    if rc == 0:
+        print(f"[run] ok. Logs em {outdir}")
+        print(f"[run] elapsed_ms={dt_ms:.2f}")
+        sys.exit(0)
     else:
-        print(f"[run] ok. Logs em {args.outdir}")
+        print(f"[run] retorno {rc}. Veja logs:")
+        print(f"  {outdir/'stderr.txt'}")
+        print(f"  {outdir/'stdout.txt'}")
+        print(f"[run] elapsed_ms={dt_ms:.2f}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

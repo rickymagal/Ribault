@@ -3,8 +3,10 @@
 """
 Experimento MS-ASM-N: tempo vs n para MergeSort **sem super**.
 Gera HSK trocando só a lista do main, compila p/ .fl, monta e roda o interp.
+Se o usuário pedir tamanhos acima do limite seguro, o script reduz e
+densifica automaticamente para produzir uma curva contínua até o máximo.
 """
-import argparse, pathlib, subprocess
+import argparse, pathlib, subprocess, sys
 from _ms_gen_input import make_list, format_hs_list, patch_main_line
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]   # HTC/
@@ -16,7 +18,8 @@ def sh(*args, **kw):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sizes",   type=int, nargs="+", required=True)
+    ap.add_argument("--sizes",   type=int, nargs="+", required=True,
+                    help="tamanhos-alvo; se houver algum > --max-safe, serão substituídos por uma sequência densa até o máximo seguro")
     ap.add_argument("--threads", type=int, nargs="+", default=[1, 12])
     ap.add_argument("--reps",    type=int, default=10)
     ap.add_argument("--seed",    type=int, default=42)
@@ -24,12 +27,35 @@ def main():
     ap.add_argument("--template", default=str(ROOT / "test/07_merge_sort.hsk"))
     ap.add_argument("--results",  default=str(ROOT / "results/ms/asm_n"))
     ap.add_argument("--affinity", default=None, help='ex: "0-11" usa taskset')
+
+    # guardas/controle da sequência densa
+    ap.add_argument("--max-safe", type=int, default=512,
+                    help="maior N seguro para a variante ASM (padrão: 512)")
+    ap.add_argument("--start", type=int, default=128,
+                    help="início da sequência densa quando houver clamp (padrão: 128)")
+    ap.add_argument("--step",  type=int, default=32,
+                    help="passo da sequência densa quando houver clamp (padrão: 32)")
     args = ap.parse_args()
+
+    if args.step <= 0:
+        print("[exp_ms_asm_n] --step deve ser > 0")
+        sys.exit(2)
+
+    # Se pediram tamanhos acima do seguro, clamp + densificação pra ter continuidade
+    need_clamp = any(n > args.max_safe for n in args.sizes)
+    if need_clamp:
+        start = max(args.start, args.step)  # evita 0/negativo
+        sizes = list(range(start, args.max_safe + 1, args.step))
+        print(f"[exp_ms_asm_n] tamanhos requisitados {args.sizes} excedem --max-safe={args.max_safe}.")
+        print(f"[exp_ms_asm_n] usando sequência densa: {sizes}")
+    else:
+        # mantém exatamente o que o usuário pediu
+        sizes = args.sizes
 
     results = pathlib.Path(args.results)
     results.mkdir(parents=True, exist_ok=True)
 
-    for n in args.sizes:
+    for n in sizes:
         base_dir = results / f"N_{n}"
         base_dir.mkdir(parents=True, exist_ok=True)
 

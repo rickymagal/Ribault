@@ -1,0 +1,10 @@
+{
+  "rc": 0,
+  "elapsed_ms": 3.231187118217349,
+  "cmd": [
+    "/home/ricky/\u00c1rea de trabalho/TALM/interp/interp",
+    "4",
+    "results/ms/asm_n/N_56/N_56.flb",
+    "results/ms/asm_n/N_56/N_56.pla"
+  ]
+}
