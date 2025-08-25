@@ -187,9 +187,14 @@ foldrM' f z0 = go
 
 buildProgram :: Program -> DFG
 buildProgram p0 =
-  let Program decls = assignSuperNames p0   -- <<< garante nomes s1, s2, ...
-      (_, st)       = runBuild $ mapM_ goDecl decls
+  let Program decls = assignSuperNames p0
+      (_, st) = runBuild $ do
+        -- PASSO 1: todo topo visível no ambiente
+        mapM_ (\(FunDecl f ps body) -> insertB f (BLam ps body)) decls
+        -- PASSO 2: agora constrói de fato (gera ret, nós etc.)
+        mapM_ goDecl decls
   in bsGraph st
+
 
 
 -- Declarações ----------------------------------------------------------
@@ -227,8 +232,14 @@ goExpr = \case
   Var x -> do
     lookupB x >>= \case
       Just (BPort p) -> pure p
-      Just (BLam _ _) -> freeVar x
-      Nothing         -> freeVar x
+      Just (BLam ps body) ->
+        if null ps
+          then do
+            p <- withEnv (goExpr body)  -- avalia p=4 uma vez
+            insertB x (BPort p)         -- cache: futuras leituras pegam o valor
+            pure p
+          else freeVar x                -- funções com aridade > 0: continua como antes
+      Nothing -> freeVar x
 
   Lit lit -> litNode lit
 
@@ -339,16 +350,34 @@ funTaskId ident = foldl (\h c -> h * 131 + fromEnum c) 7 (show ident)
 
 -- nó de argumento formal
 argNode :: String -> Int -> Build Port
-argNode fun i = do
-  nid <- newNode (fun ++ "#" ++ show i) (NArg (fun ++ "#" ++ show i))
+argNode fun i = Build $ do
+  s <- get
+  let nm    = fun ++ "#" ++ show i
+      found = [ nid
+              | (nid, n) <- M.toList (dgNodes (bsGraph s))
+              , case n of
+                  NArg nm' -> nm' == nm
+                  _        -> False
+              ]
+  nid <- case found of
+           (h:_) -> pure h
+           []    -> do
+             nid' <- lift freshId
+             let g' = addNode nid' (NArg nm) (bsGraph s)
+             put s { bsGraph = g' }
+             pure nid'
   pure (out0 nid)
+
 
 -- formal + alias para o real
 bindFormal :: String -> Int -> Ident -> Port -> Build ()
 bindFormal fun i formal actual = do
   ap <- argNode fun i
   insertB formal (BPort ap)
-  registerAlias ap [actual]
+  case ap of
+    InstPort nid _ -> connectPlus actual (InstPort nid "0")  -- alimenta o NArg
+    _              -> pure ()
+
 
 goApp :: Expr -> [Expr] -> Build Port
 goApp fun args = case fun of

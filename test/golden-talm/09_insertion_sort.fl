@@ -27,78 +27,188 @@ add n24, n23, n21
 callgroup("c25","insertionSort")
 callsnd insertionSort[0], n24, c25
 retsnd insertionSort[0], z0, c25
-ret main, insertionSort[0], z0
-add n29, z0, z0
-const n30, 0
-const n31, -1
-equal n32, n29, n31
-const n33, 0
-equal n34, n30, n33
-band n35, n32, n34
-const n36, -1
-steer s37, n35, n36
-add n38, n30, n32
-const n39, 0
-gthan n40, n38, n39
-const n41, 1
-const n42, 0
-equal n43, n40, n42
-band n44, n41, n43
+add n28, n24, z0
+const n29, 0
+const n30, -1
+equal n31, n28, n30
+const n32, 0
+equal n33, n29, n32
+band n34, n31, n33
+const n35, -1
+steer s36, n34, n35
+add n37, n29, n31
+const n38, 0
+gthan n39, n37, n38
+const n40, 1
+const n41, 0
+equal n42, n39, n41
+band n43, n40, n42
+add n44, z0, z0
 add n45, z0, z0
-add n46, z0, z0
-callgroup("c47","insertionSort")
-callsnd insertionSort[0], n46, c47
-retsnd insertionSort[0], z0, c47
-callgroup("c50","insert")
-callsnd insert[0], n45, c50
-callsnd insert[1], insertionSort[0], c50
-retsnd insert[0], z0, c50
-steer s54, n44, insert[0]
-add n55, n40, n41
-const n56, 0
-gthan n57, n55, n56
-ret insertionSort, [s54.t, s37.t], z0
-add n59, z0, z0
-add n60, z0, z0
-const n61, 0
-const n62, -1
-equal n63, n59, n62
-const n64, 0
-equal n65, n61, n64
-band n66, n63, n65
-const n67, -1
-const n68, 1000003
-mul n69, n60, n68
-add n70, n69, n67
-steer s71, n66, n70
-add n72, n61, n63
-const n73, 0
-gthan n74, n72, n73
-const n75, 1
-const n76, 0
-equal n77, n74, n76
-band n78, n75, n77
-add n79, z0, z0
-lthan n80, n60, n79
-equal n81, n60, n79
-add n82, n80, n81
-const n83, 0
-gthan n84, n82, n83
-const n85, 1000003
-mul n86, n60, n85
-add n87, n86, n59
-add n88, z0, z0
-callgroup("c89","insert")
-callsnd insert[0], n60, c89
-callsnd insert[1], n88, c89
-retsnd insert[0], z0, c89
-const n93, 1000003
-mul n94, n79, n93
-add n95, n94, insert[0]
-steer s96, n84, n87
-steer s97, n84, n95
-steer s98, n78, s96.t
-add n99, n74, n75
-const n100, 0
-gthan n101, n99, n100
-ret insert, [s98.t, s71.t], z0
+callgroup("c46","insertionSort")
+callsnd insertionSort[0], n45, c46
+retsnd insertionSort[0], z0, c46
+callgroup("c49","insert")
+callsnd insert[0], n44, c49
+callsnd insert[1], insertionSort[0], c49
+retsnd insert[0], z0, c49
+add n53, [n44, n116], z0
+add n54, [insertionSort[0], insertionSort[0]], z0
+const n55, 0
+const n56, -1
+equal n57, n53, n56
+const n58, 0
+equal n59, n55, n58
+band n60, n57, n59
+const n61, -1
+const n62, 1000003
+mul n63, n54, n62
+add n64, n63, n61
+steer s65, n60, n64
+add n66, n55, n57
+const n67, 0
+gthan n68, n66, n67
+const n69, 1
+const n70, 0
+equal n71, n68, n70
+band n72, n69, n71
+add n73, z0, z0
+lthan n74, n54, n73
+equal n75, n54, n73
+add n76, n74, n75
+const n77, 0
+gthan n78, n76, n77
+const n79, 1000003
+mul n80, n54, n79
+add n81, n80, n53
+add n82, z0, z0
+callgroup("c83","insert")
+callsnd insert[0], n54, c83
+callsnd insert[1], n82, c83
+retsnd insert[0], z0, c83
+const n87, 1000003
+mul n88, n73, n87
+add n89, n88, insert[0]
+steer s90, n78, n81
+steer s91, n78, n89
+steer s92, n72, s90.t
+add n93, n68, n69
+const n94, 0
+gthan n95, n93, n94
+steer s96, n43, s65.t
+add n97, n39, n40
+const n98, 0
+gthan n99, n97, n98
+ret main, [s96.t, s36.t], z0
+const n101, 0
+const n102, -1
+equal n103, n28, n102
+const n104, 0
+equal n105, n101, n104
+band n106, n103, n105
+const n107, -1
+steer s108, n106, n107
+add n109, n101, n103
+const n110, 0
+gthan n111, n109, n110
+const n112, 1
+const n113, 0
+equal n114, n111, n113
+band n115, n112, n114
+add n116, z0, z0
+add n117, z0, z0
+callgroup("c118","insertionSort")
+callsnd insertionSort[0], n117, c118
+retsnd insertionSort[0], z0, c118
+callgroup("c121","insert")
+callsnd insert[0], n116, c121
+callsnd insert[1], insertionSort[0], c121
+retsnd insert[0], z0, c121
+const n125, 0
+const n126, -1
+equal n127, n53, n126
+const n128, 0
+equal n129, n125, n128
+band n130, n127, n129
+const n131, -1
+const n132, 1000003
+mul n133, n54, n132
+add n134, n133, n131
+steer s135, n130, n134
+add n136, n125, n127
+const n137, 0
+gthan n138, n136, n137
+const n139, 1
+const n140, 0
+equal n141, n138, n140
+band n142, n139, n141
+add n143, z0, z0
+lthan n144, n54, n143
+equal n145, n54, n143
+add n146, n144, n145
+const n147, 0
+gthan n148, n146, n147
+const n149, 1000003
+mul n150, n54, n149
+add n151, n150, n53
+add n152, z0, z0
+callgroup("c153","insert")
+callsnd insert[0], n54, c153
+callsnd insert[1], n152, c153
+retsnd insert[0], z0, c153
+const n157, 1000003
+mul n158, n143, n157
+add n159, n158, insert[0]
+steer s160, n148, n151
+steer s161, n148, n159
+steer s162, n142, s160.t
+add n163, n138, n139
+const n164, 0
+gthan n165, n163, n164
+steer s166, n115, s135.t
+add n167, n111, n112
+const n168, 0
+gthan n169, n167, n168
+ret insertionSort, [s166.t, s108.t], z0
+const n171, 0
+const n172, -1
+equal n173, n53, n172
+const n174, 0
+equal n175, n171, n174
+band n176, n173, n175
+const n177, -1
+const n178, 1000003
+mul n179, n54, n178
+add n180, n179, n177
+steer s181, n176, n180
+add n182, n171, n173
+const n183, 0
+gthan n184, n182, n183
+const n185, 1
+const n186, 0
+equal n187, n184, n186
+band n188, n185, n187
+add n189, z0, z0
+lthan n190, n54, n189
+equal n191, n54, n189
+add n192, n190, n191
+const n193, 0
+gthan n194, n192, n193
+const n195, 1000003
+mul n196, n54, n195
+add n197, n196, n53
+add n198, z0, z0
+callgroup("c199","insert")
+callsnd insert[0], n54, c199
+callsnd insert[1], n198, c199
+retsnd insert[0], z0, c199
+const n203, 1000003
+mul n204, n189, n203
+add n205, n204, insert[0]
+steer s206, n194, n197
+steer s207, n194, n205
+steer s208, n188, s206.t
+add n209, n184, n185
+const n210, 0
+gthan n211, n209, n210
+ret insert, [s208.t, s181.t], z0

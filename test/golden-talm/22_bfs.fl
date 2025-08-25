@@ -3,264 +3,1028 @@ const n0, 1
 callgroup("c1","bfs")
 callsnd bfs[0], n0, c1
 retsnd bfs[0], z0, c1
-ret main, bfs[0], z0
-add n5, z0, z0
-const n6, -1
-const n7, 1000003
-mul n8, n5, n7
-add n9, n8, n6
-const n10, -1
-const n11, 1000003
-mul n12, n5, n11
-add n13, n12, n10
-callgroup("c14","bfsRec")
-callsnd bfsRec[0], n9, c14
-callsnd bfsRec[1], n13, c14
-retsnd bfsRec[0], z0, c14
-ret bfs, bfsRec[0], z0
-add n19, z0, z0
-add n20, z0, z0
-const n21, 0
-const n22, -1
-equal n23, n20, n22
-const n24, 0
-equal n25, n21, n24
-band n26, n23, n25
-steer s27, n26, n19
-add n28, n21, n23
-const n29, 0
-gthan n30, n28, n29
-const n31, 1
-const n32, 0
-equal n33, n30, n32
-band n34, n31, n33
-add n35, z0, z0
-add n36, z0, z0
-callgroup("c37","lookupGraph")
-callsnd lookupGraph[0], n35, c37
-callsnd lookupGraph[1], n36, c37
-retsnd lookupGraph[0], z0, c37
-ret nbrs, lookupGraph[0], z0
-callgroup("c42","filterNotVisited")
-callsnd filterNotVisited[0], lookupGraph[0], c42
-callsnd filterNotVisited[1], n19, c42
-retsnd filterNotVisited[0], z0, c42
-ret news, filterNotVisited[0], z0
-add n47, z0, z0
-callgroup("c48","append")
-callsnd append[0], n47, c48
-callsnd append[1], filterNotVisited[0], c48
-retsnd append[0], z0, c48
-ret queue', append[0], z0
-callgroup("c53","append")
-callsnd append[0], n19, c53
-callsnd append[1], filterNotVisited[0], c53
-retsnd append[0], z0, c53
-ret visited', append[0], z0
-callgroup("c58","bfsRec")
-callsnd bfsRec[0], append[0], c58
-callsnd bfsRec[1], append[0], c58
-retsnd bfsRec[0], z0, c58
-steer s62, n34, bfsRec[0]
-add n63, n30, n31
-const n64, 0
-gthan n65, n63, n64
-ret bfsRec, [s62.t, s27.t], z0
-add n67, z0, z0
-add n68, z0, z0
-const n69, 0
+add n4, n0, z0
+const n5, -1
+const n6, 1000003
+mul n7, n4, n6
+add n8, n7, n5
+const n9, -1
+const n10, 1000003
+mul n11, n4, n10
+add n12, n11, n9
+callgroup("c13","bfsRec")
+callsnd bfsRec[0], n8, c13
+callsnd bfsRec[1], n12, c13
+retsnd bfsRec[0], z0, c13
+add n17, [n8, n287], z0
+add n18, [n12, n291], z0
+const n19, 0
+const n20, -1
+equal n21, n18, n20
+const n22, 0
+equal n23, n19, n22
+band n24, n21, n23
+steer s25, n24, n17
+add n26, n19, n21
+const n27, 0
+gthan n28, n26, n27
+const n29, 1
+const n30, 0
+equal n31, n28, n30
+band n32, n29, n31
+const n33, -1
+const n34, 1
+const n35, -1
+const n36, 2
+const n37, 3
+const n38, 1000003
+mul n39, n37, n38
+add n40, n39, n35
+const n41, 1000003
+mul n42, n36, n41
+add n43, n42, n40
+const n44, 1000003
+mul n45, n34, n44
+add n46, n45, n43
+const n47, 2
+const n48, -1
+const n49, 4
+const n50, 1000003
+mul n51, n49, n50
+add n52, n51, n48
+const n53, 1000003
+mul n54, n47, n53
+add n55, n54, n52
+const n56, 3
+const n57, -1
+const n58, 4
+const n59, 5
+const n60, 1000003
+mul n61, n59, n60
+add n62, n61, n57
+const n63, 1000003
+mul n64, n58, n63
+add n65, n64, n62
+const n66, 1000003
+mul n67, n56, n66
+add n68, n67, n65
+const n69, 4
 const n70, -1
-equal n71, n68, n70
-const n72, 0
-equal n73, n69, n72
-band n74, n71, n73
+const n71, 1000003
+mul n72, n69, n71
+add n73, n72, n70
+const n74, 5
 const n75, -1
-steer s76, n74, n75
-add n77, n69, n71
-const n78, 0
-gthan n79, n77, n78
-const n80, 1
-const n81, 0
-equal n82, n79, n81
-band n83, n80, n82
-add n84, z0, z0
-callgroup("c85","elem")
-callsnd elem[0], n84, c85
-callsnd elem[1], n67, c85
-retsnd elem[0], z0, c85
-add n89, z0, z0
-callgroup("c90","filterNotVisited")
-callsnd filterNotVisited[0], n89, c90
-callsnd filterNotVisited[1], n67, c90
-retsnd filterNotVisited[0], z0, c90
+const n76, 1000003
+mul n77, n74, n76
+add n78, n77, n75
+const n79, 1000003
+mul n80, n78, n79
+add n81, n80, n33
+const n82, 1000003
+mul n83, n73, n82
+add n84, n83, n81
+const n85, 1000003
+mul n86, n68, n85
+add n87, n86, n84
+const n88, 1000003
+mul n89, n55, n88
+add n90, n89, n87
+const n91, 1000003
+mul n92, n46, n91
+add n93, n92, n90
 add n94, z0, z0
-callgroup("c95","filterNotVisited")
-callsnd filterNotVisited[0], n94, c95
-callsnd filterNotVisited[1], n67, c95
-retsnd filterNotVisited[0], z0, c95
-const n99, 1000003
-mul n100, n84, n99
-add n101, n100, filterNotVisited[0]
-steer s102, elem[0], filterNotVisited[0]
-steer s103, elem[0], n101
-steer s104, n83, s102.t
-add n105, n79, n80
-const n106, 0
-gthan n107, n105, n106
-ret filterNotVisited, [s104.t, s76.t], z0
-add n109, z0, z0
-add n110, z0, z0
-const n111, 0
-const n112, -1
-equal n113, n110, n112
-const n114, 0
-equal n115, n111, n114
-band n116, n113, n115
-steer s117, n116, n109
-add n118, n111, n113
-const n119, 0
-gthan n120, n118, n119
-const n121, 1
-const n122, 0
-equal n123, n120, n122
-band n124, n121, n123
-add n125, z0, z0
-add n126, z0, z0
-callgroup("c127","append")
-callsnd append[0], n126, c127
-callsnd append[1], n109, c127
-retsnd append[0], z0, c127
-const n131, 1000003
-mul n132, n125, n131
-add n133, n132, append[0]
-steer s134, n124, n133
-add n135, n120, n121
-const n136, 0
-gthan n137, n135, n136
-ret append, [s134.t, s117.t], z0
-add n139, z0, z0
-add n140, z0, z0
-const n141, 0
-const n142, -1
-equal n143, n139, n142
-const n144, 0
-equal n145, n141, n144
-band n146, n143, n145
-const n147, 0
-steer s148, n146, n147
-add n149, n141, n143
-const n150, 0
-gthan n151, n149, n150
-const n152, 1
-const n153, 0
-equal n154, n151, n153
-band n155, n152, n154
-add n156, z0, z0
-equal n157, n140, n156
-const n158, 1
-add n159, z0, z0
-callgroup("c160","elem")
-callsnd elem[0], n140, c160
-callsnd elem[1], n159, c160
-retsnd elem[0], z0, c160
-steer s164, n157, n158
-steer s165, n157, elem[0]
-steer s166, n155, s164.t
-add n167, n151, n152
+callgroup("c95","lookupGraph")
+callsnd lookupGraph[0], n93, c95
+callsnd lookupGraph[1], n94, c95
+retsnd lookupGraph[0], z0, c95
+add n99, [n93, n370, n627], z0
+add n100, [n94, n371, n628], z0
+const n101, 0
+const n102, -1
+equal n103, n100, n102
+const n104, 0
+equal n105, n101, n104
+band n106, n103, n105
+const n107, -1
+steer s108, n106, n107
+add n109, n101, n103
+const n110, 0
+gthan n111, n109, n110
+const n112, 1
+const n113, 0
+equal n114, n111, n113
+band n115, n112, n114
+add n116, z0, z0
+equal n117, n99, n116
+add n118, z0, z0
+add n119, z0, z0
+callgroup("c120","lookupGraph")
+callsnd lookupGraph[0], n119, c120
+callsnd lookupGraph[1], n99, c120
+retsnd lookupGraph[0], z0, c120
+steer s124, n117, n118
+steer s125, n117, lookupGraph[0]
+steer s126, n115, s124.t
+add n127, n111, n112
+const n128, 0
+gthan n129, n127, n128
+ret nbrs, [s126.t, s108.t], z0
+callgroup("c131","filterNotVisited")
+callsnd filterNotVisited[0], [s126.t, s108.t], c131
+callsnd filterNotVisited[1], n17, c131
+retsnd filterNotVisited[0], z0, c131
+add n135, [s126.t, s108.t, s401.t, s383.t, s658.t, s640.t], z0
+add n136, [n17, n17, n17], z0
+const n137, 0
+const n138, -1
+equal n139, n136, n138
+const n140, 0
+equal n141, n137, n140
+band n142, n139, n141
+const n143, -1
+steer s144, n142, n143
+add n145, n137, n139
+const n146, 0
+gthan n147, n145, n146
+const n148, 1
+const n149, 0
+equal n150, n147, n149
+band n151, n148, n150
+add n152, z0, z0
+callgroup("c153","elem")
+callsnd elem[0], n152, c153
+callsnd elem[1], n135, c153
+retsnd elem[0], z0, c153
+add n157, [n152, n425, n682, n825], z0
+add n158, [n135, n135, n135, n135], z0
+const n159, 0
+const n160, -1
+equal n161, n157, n160
+const n162, 0
+equal n163, n159, n162
+band n164, n161, n163
+const n165, 0
+steer s166, n164, n165
+add n167, n159, n161
 const n168, 0
 gthan n169, n167, n168
-ret elem, [s166.t, s148.t], z0
-add n171, z0, z0
-add n172, z0, z0
-const n173, 0
-const n174, -1
-equal n175, n172, n174
-const n176, 0
-equal n177, n173, n176
-band n178, n175, n177
-const n179, -1
-steer s180, n178, n179
-add n181, n173, n175
-const n182, 0
-gthan n183, n181, n182
-const n184, 1
-const n185, 0
-equal n186, n183, n185
-band n187, n184, n186
+const n170, 1
+const n171, 0
+equal n172, n169, n171
+band n173, n170, n172
+add n174, z0, z0
+equal n175, n158, n174
+const n176, 1
+add n177, z0, z0
+callgroup("c178","elem")
+callsnd elem[0], n158, c178
+callsnd elem[1], n177, c178
+retsnd elem[0], z0, c178
+steer s182, n175, n176
+steer s183, n175, elem[0]
+steer s184, n173, s182.t
+add n185, n169, n170
+const n186, 0
+gthan n187, n185, n186
 add n188, z0, z0
-equal n189, n171, n188
-add n190, z0, z0
-add n191, z0, z0
-callgroup("c192","lookupGraph")
-callsnd lookupGraph[0], n191, c192
-callsnd lookupGraph[1], n171, c192
-retsnd lookupGraph[0], z0, c192
-steer s196, n189, n190
-steer s197, n189, lookupGraph[0]
-steer s198, n187, s196.t
-add n199, n183, n184
-const n200, 0
-gthan n201, n199, n200
-ret lookupGraph, [s198.t, s180.t], z0
-const n203, -1
-const n204, 1
-const n205, -1
-const n206, 2
-const n207, 3
-const n208, 1000003
-mul n209, n207, n208
-add n210, n209, n205
-const n211, 1000003
-mul n212, n206, n211
-add n213, n212, n210
-const n214, 1000003
-mul n215, n204, n214
-add n216, n215, n213
-const n217, 2
-const n218, -1
-const n219, 4
-const n220, 1000003
-mul n221, n219, n220
-add n222, n221, n218
-const n223, 1000003
-mul n224, n217, n223
-add n225, n224, n222
-const n226, 3
-const n227, -1
-const n228, 4
-const n229, 5
-const n230, 1000003
-mul n231, n229, n230
-add n232, n231, n227
-const n233, 1000003
-mul n234, n228, n233
-add n235, n234, n232
-const n236, 1000003
-mul n237, n226, n236
-add n238, n237, n235
-const n239, 4
-const n240, -1
-const n241, 1000003
-mul n242, n239, n241
-add n243, n242, n240
-const n244, 5
-const n245, -1
-const n246, 1000003
-mul n247, n244, n246
-add n248, n247, n245
-const n249, 1000003
-mul n250, n248, n249
-add n251, n250, n203
-const n252, 1000003
-mul n253, n243, n252
-add n254, n253, n251
-const n255, 1000003
-mul n256, n238, n255
-add n257, n256, n254
-const n258, 1000003
-mul n259, n225, n258
-add n260, n259, n257
-const n261, 1000003
-mul n262, n216, n261
-add n263, n262, n260
-ret graph, n263, z0
+callgroup("c189","filterNotVisited")
+callsnd filterNotVisited[0], n188, c189
+callsnd filterNotVisited[1], n135, c189
+retsnd filterNotVisited[0], z0, c189
+add n193, z0, z0
+callgroup("c194","filterNotVisited")
+callsnd filterNotVisited[0], n193, c194
+callsnd filterNotVisited[1], n135, c194
+retsnd filterNotVisited[0], z0, c194
+const n198, 1000003
+mul n199, n152, n198
+add n200, n199, filterNotVisited[0]
+steer s201, s166.t, filterNotVisited[0]
+steer s202, s166.t, n200
+steer s203, n151, s201.t
+add n204, n147, n148
+const n205, 0
+gthan n206, n204, n205
+ret news, [s203.t, s144.t], z0
+add n208, z0, z0
+callgroup("c209","append")
+callsnd append[0], n208, c209
+callsnd append[1], [s203.t, s144.t], c209
+retsnd append[0], z0, c209
+add n213, [n208, n17, n479, n17, n736, n17], z0
+add n214, [s203.t, s144.t, s203.t, s144.t, s474.t, s417.t, s474.t, s417.t, s731.t, s674.t, s731.t, s674.t], z0
+const n215, 0
+const n216, -1
+equal n217, n214, n216
+const n218, 0
+equal n219, n215, n218
+band n220, n217, n219
+steer s221, n220, n213
+add n222, n215, n217
+const n223, 0
+gthan n224, n222, n223
+const n225, 1
+const n226, 0
+equal n227, n224, n226
+band n228, n225, n227
+add n229, z0, z0
+add n230, z0, z0
+callgroup("c231","append")
+callsnd append[0], n230, c231
+callsnd append[1], n213, c231
+retsnd append[0], z0, c231
+const n235, 1000003
+mul n236, n229, n235
+add n237, n236, append[0]
+steer s238, n228, n237
+add n239, n224, n225
+const n240, 0
+gthan n241, n239, n240
+ret queue', [s238.t, s221.t], z0
+callgroup("c243","append")
+callsnd append[0], n17, c243
+callsnd append[1], [s203.t, s144.t], c243
+retsnd append[0], z0, c243
+const n247, 0
+const n248, -1
+equal n249, n214, n248
+const n250, 0
+equal n251, n247, n250
+band n252, n249, n251
+steer s253, n252, n213
+add n254, n247, n249
+const n255, 0
+gthan n256, n254, n255
+const n257, 1
+const n258, 0
+equal n259, n256, n258
+band n260, n257, n259
+add n261, z0, z0
+add n262, z0, z0
+callgroup("c263","append")
+callsnd append[0], n262, c263
+callsnd append[1], n213, c263
+retsnd append[0], z0, c263
+const n267, 1000003
+mul n268, n261, n267
+add n269, n268, append[0]
+steer s270, n260, n269
+add n271, n256, n257
+const n272, 0
+gthan n273, n271, n272
+ret visited', [s270.t, s253.t], z0
+callgroup("c275","bfsRec")
+callsnd bfsRec[0], [s238.t, s221.t], c275
+callsnd bfsRec[1], [s270.t, s253.t], c275
+retsnd bfsRec[0], z0, c275
+steer s279, n32, bfsRec[0]
+add n280, n28, n29
+const n281, 0
+gthan n282, n280, n281
+ret main, [s279.t, s25.t], z0
+const n284, -1
+const n285, 1000003
+mul n286, n4, n285
+add n287, n286, n284
+const n288, -1
+const n289, 1000003
+mul n290, n4, n289
+add n291, n290, n288
+callgroup("c292","bfsRec")
+callsnd bfsRec[0], n287, c292
+callsnd bfsRec[1], n291, c292
+retsnd bfsRec[0], z0, c292
+const n296, 0
+const n297, -1
+equal n298, n18, n297
+const n299, 0
+equal n300, n296, n299
+band n301, n298, n300
+steer s302, n301, n17
+add n303, n296, n298
+const n304, 0
+gthan n305, n303, n304
+const n306, 1
+const n307, 0
+equal n308, n305, n307
+band n309, n306, n308
+const n310, -1
+const n311, 1
+const n312, -1
+const n313, 2
+const n314, 3
+const n315, 1000003
+mul n316, n314, n315
+add n317, n316, n312
+const n318, 1000003
+mul n319, n313, n318
+add n320, n319, n317
+const n321, 1000003
+mul n322, n311, n321
+add n323, n322, n320
+const n324, 2
+const n325, -1
+const n326, 4
+const n327, 1000003
+mul n328, n326, n327
+add n329, n328, n325
+const n330, 1000003
+mul n331, n324, n330
+add n332, n331, n329
+const n333, 3
+const n334, -1
+const n335, 4
+const n336, 5
+const n337, 1000003
+mul n338, n336, n337
+add n339, n338, n334
+const n340, 1000003
+mul n341, n335, n340
+add n342, n341, n339
+const n343, 1000003
+mul n344, n333, n343
+add n345, n344, n342
+const n346, 4
+const n347, -1
+const n348, 1000003
+mul n349, n346, n348
+add n350, n349, n347
+const n351, 5
+const n352, -1
+const n353, 1000003
+mul n354, n351, n353
+add n355, n354, n352
+const n356, 1000003
+mul n357, n355, n356
+add n358, n357, n310
+const n359, 1000003
+mul n360, n350, n359
+add n361, n360, n358
+const n362, 1000003
+mul n363, n345, n362
+add n364, n363, n361
+const n365, 1000003
+mul n366, n332, n365
+add n367, n366, n364
+const n368, 1000003
+mul n369, n323, n368
+add n370, n369, n367
+add n371, z0, z0
+callgroup("c372","lookupGraph")
+callsnd lookupGraph[0], n370, c372
+callsnd lookupGraph[1], n371, c372
+retsnd lookupGraph[0], z0, c372
+const n376, 0
+const n377, -1
+equal n378, n100, n377
+const n379, 0
+equal n380, n376, n379
+band n381, n378, n380
+const n382, -1
+steer s383, n381, n382
+add n384, n376, n378
+const n385, 0
+gthan n386, n384, n385
+const n387, 1
+const n388, 0
+equal n389, n386, n388
+band n390, n387, n389
+add n391, z0, z0
+equal n392, n99, n391
+add n393, z0, z0
+add n394, z0, z0
+callgroup("c395","lookupGraph")
+callsnd lookupGraph[0], n394, c395
+callsnd lookupGraph[1], n99, c395
+retsnd lookupGraph[0], z0, c395
+steer s399, n392, n393
+steer s400, n392, lookupGraph[0]
+steer s401, n390, s399.t
+add n402, n386, n387
+const n403, 0
+gthan n404, n402, n403
+ret nbrs, [s401.t, s383.t], z0
+callgroup("c406","filterNotVisited")
+callsnd filterNotVisited[0], [s401.t, s383.t], c406
+callsnd filterNotVisited[1], n17, c406
+retsnd filterNotVisited[0], z0, c406
+const n410, 0
+const n411, -1
+equal n412, n136, n411
+const n413, 0
+equal n414, n410, n413
+band n415, n412, n414
+const n416, -1
+steer s417, n415, n416
+add n418, n410, n412
+const n419, 0
+gthan n420, n418, n419
+const n421, 1
+const n422, 0
+equal n423, n420, n422
+band n424, n421, n423
+add n425, z0, z0
+callgroup("c426","elem")
+callsnd elem[0], n425, c426
+callsnd elem[1], n135, c426
+retsnd elem[0], z0, c426
+const n430, 0
+const n431, -1
+equal n432, n157, n431
+const n433, 0
+equal n434, n430, n433
+band n435, n432, n434
+const n436, 0
+steer s437, n435, n436
+add n438, n430, n432
+const n439, 0
+gthan n440, n438, n439
+const n441, 1
+const n442, 0
+equal n443, n440, n442
+band n444, n441, n443
+add n445, z0, z0
+equal n446, n158, n445
+const n447, 1
+add n448, z0, z0
+callgroup("c449","elem")
+callsnd elem[0], n158, c449
+callsnd elem[1], n448, c449
+retsnd elem[0], z0, c449
+steer s453, n446, n447
+steer s454, n446, elem[0]
+steer s455, n444, s453.t
+add n456, n440, n441
+const n457, 0
+gthan n458, n456, n457
+add n459, z0, z0
+callgroup("c460","filterNotVisited")
+callsnd filterNotVisited[0], n459, c460
+callsnd filterNotVisited[1], n135, c460
+retsnd filterNotVisited[0], z0, c460
+add n464, z0, z0
+callgroup("c465","filterNotVisited")
+callsnd filterNotVisited[0], n464, c465
+callsnd filterNotVisited[1], n135, c465
+retsnd filterNotVisited[0], z0, c465
+const n469, 1000003
+mul n470, n425, n469
+add n471, n470, filterNotVisited[0]
+steer s472, s437.t, filterNotVisited[0]
+steer s473, s437.t, n471
+steer s474, n424, s472.t
+add n475, n420, n421
+const n476, 0
+gthan n477, n475, n476
+ret news, [s474.t, s417.t], z0
+add n479, z0, z0
+callgroup("c480","append")
+callsnd append[0], n479, c480
+callsnd append[1], [s474.t, s417.t], c480
+retsnd append[0], z0, c480
+const n484, 0
+const n485, -1
+equal n486, n214, n485
+const n487, 0
+equal n488, n484, n487
+band n489, n486, n488
+steer s490, n489, n213
+add n491, n484, n486
+const n492, 0
+gthan n493, n491, n492
+const n494, 1
+const n495, 0
+equal n496, n493, n495
+band n497, n494, n496
+add n498, z0, z0
+add n499, z0, z0
+callgroup("c500","append")
+callsnd append[0], n499, c500
+callsnd append[1], n213, c500
+retsnd append[0], z0, c500
+const n504, 1000003
+mul n505, n498, n504
+add n506, n505, append[0]
+steer s507, n497, n506
+add n508, n493, n494
+const n509, 0
+gthan n510, n508, n509
+ret queue', [s507.t, s490.t], z0
+callgroup("c512","append")
+callsnd append[0], n17, c512
+callsnd append[1], [s474.t, s417.t], c512
+retsnd append[0], z0, c512
+const n516, 0
+const n517, -1
+equal n518, n214, n517
+const n519, 0
+equal n520, n516, n519
+band n521, n518, n520
+steer s522, n521, n213
+add n523, n516, n518
+const n524, 0
+gthan n525, n523, n524
+const n526, 1
+const n527, 0
+equal n528, n525, n527
+band n529, n526, n528
+add n530, z0, z0
+add n531, z0, z0
+callgroup("c532","append")
+callsnd append[0], n531, c532
+callsnd append[1], n213, c532
+retsnd append[0], z0, c532
+const n536, 1000003
+mul n537, n530, n536
+add n538, n537, append[0]
+steer s539, n529, n538
+add n540, n525, n526
+const n541, 0
+gthan n542, n540, n541
+ret visited', [s539.t, s522.t], z0
+callgroup("c544","bfsRec")
+callsnd bfsRec[0], [s507.t, s490.t], c544
+callsnd bfsRec[1], [s539.t, s522.t], c544
+retsnd bfsRec[0], z0, c544
+steer s548, n309, bfsRec[0]
+add n549, n305, n306
+const n550, 0
+gthan n551, n549, n550
+ret bfs, [s548.t, s302.t], z0
+const n553, 0
+const n554, -1
+equal n555, n18, n554
+const n556, 0
+equal n557, n553, n556
+band n558, n555, n557
+steer s559, n558, n17
+add n560, n553, n555
+const n561, 0
+gthan n562, n560, n561
+const n563, 1
+const n564, 0
+equal n565, n562, n564
+band n566, n563, n565
+const n567, -1
+const n568, 1
+const n569, -1
+const n570, 2
+const n571, 3
+const n572, 1000003
+mul n573, n571, n572
+add n574, n573, n569
+const n575, 1000003
+mul n576, n570, n575
+add n577, n576, n574
+const n578, 1000003
+mul n579, n568, n578
+add n580, n579, n577
+const n581, 2
+const n582, -1
+const n583, 4
+const n584, 1000003
+mul n585, n583, n584
+add n586, n585, n582
+const n587, 1000003
+mul n588, n581, n587
+add n589, n588, n586
+const n590, 3
+const n591, -1
+const n592, 4
+const n593, 5
+const n594, 1000003
+mul n595, n593, n594
+add n596, n595, n591
+const n597, 1000003
+mul n598, n592, n597
+add n599, n598, n596
+const n600, 1000003
+mul n601, n590, n600
+add n602, n601, n599
+const n603, 4
+const n604, -1
+const n605, 1000003
+mul n606, n603, n605
+add n607, n606, n604
+const n608, 5
+const n609, -1
+const n610, 1000003
+mul n611, n608, n610
+add n612, n611, n609
+const n613, 1000003
+mul n614, n612, n613
+add n615, n614, n567
+const n616, 1000003
+mul n617, n607, n616
+add n618, n617, n615
+const n619, 1000003
+mul n620, n602, n619
+add n621, n620, n618
+const n622, 1000003
+mul n623, n589, n622
+add n624, n623, n621
+const n625, 1000003
+mul n626, n580, n625
+add n627, n626, n624
+add n628, z0, z0
+callgroup("c629","lookupGraph")
+callsnd lookupGraph[0], n627, c629
+callsnd lookupGraph[1], n628, c629
+retsnd lookupGraph[0], z0, c629
+const n633, 0
+const n634, -1
+equal n635, n100, n634
+const n636, 0
+equal n637, n633, n636
+band n638, n635, n637
+const n639, -1
+steer s640, n638, n639
+add n641, n633, n635
+const n642, 0
+gthan n643, n641, n642
+const n644, 1
+const n645, 0
+equal n646, n643, n645
+band n647, n644, n646
+add n648, z0, z0
+equal n649, n99, n648
+add n650, z0, z0
+add n651, z0, z0
+callgroup("c652","lookupGraph")
+callsnd lookupGraph[0], n651, c652
+callsnd lookupGraph[1], n99, c652
+retsnd lookupGraph[0], z0, c652
+steer s656, n649, n650
+steer s657, n649, lookupGraph[0]
+steer s658, n647, s656.t
+add n659, n643, n644
+const n660, 0
+gthan n661, n659, n660
+ret nbrs, [s658.t, s640.t], z0
+callgroup("c663","filterNotVisited")
+callsnd filterNotVisited[0], [s658.t, s640.t], c663
+callsnd filterNotVisited[1], n17, c663
+retsnd filterNotVisited[0], z0, c663
+const n667, 0
+const n668, -1
+equal n669, n136, n668
+const n670, 0
+equal n671, n667, n670
+band n672, n669, n671
+const n673, -1
+steer s674, n672, n673
+add n675, n667, n669
+const n676, 0
+gthan n677, n675, n676
+const n678, 1
+const n679, 0
+equal n680, n677, n679
+band n681, n678, n680
+add n682, z0, z0
+callgroup("c683","elem")
+callsnd elem[0], n682, c683
+callsnd elem[1], n135, c683
+retsnd elem[0], z0, c683
+const n687, 0
+const n688, -1
+equal n689, n157, n688
+const n690, 0
+equal n691, n687, n690
+band n692, n689, n691
+const n693, 0
+steer s694, n692, n693
+add n695, n687, n689
+const n696, 0
+gthan n697, n695, n696
+const n698, 1
+const n699, 0
+equal n700, n697, n699
+band n701, n698, n700
+add n702, z0, z0
+equal n703, n158, n702
+const n704, 1
+add n705, z0, z0
+callgroup("c706","elem")
+callsnd elem[0], n158, c706
+callsnd elem[1], n705, c706
+retsnd elem[0], z0, c706
+steer s710, n703, n704
+steer s711, n703, elem[0]
+steer s712, n701, s710.t
+add n713, n697, n698
+const n714, 0
+gthan n715, n713, n714
+add n716, z0, z0
+callgroup("c717","filterNotVisited")
+callsnd filterNotVisited[0], n716, c717
+callsnd filterNotVisited[1], n135, c717
+retsnd filterNotVisited[0], z0, c717
+add n721, z0, z0
+callgroup("c722","filterNotVisited")
+callsnd filterNotVisited[0], n721, c722
+callsnd filterNotVisited[1], n135, c722
+retsnd filterNotVisited[0], z0, c722
+const n726, 1000003
+mul n727, n682, n726
+add n728, n727, filterNotVisited[0]
+steer s729, s694.t, filterNotVisited[0]
+steer s730, s694.t, n728
+steer s731, n681, s729.t
+add n732, n677, n678
+const n733, 0
+gthan n734, n732, n733
+ret news, [s731.t, s674.t], z0
+add n736, z0, z0
+callgroup("c737","append")
+callsnd append[0], n736, c737
+callsnd append[1], [s731.t, s674.t], c737
+retsnd append[0], z0, c737
+const n741, 0
+const n742, -1
+equal n743, n214, n742
+const n744, 0
+equal n745, n741, n744
+band n746, n743, n745
+steer s747, n746, n213
+add n748, n741, n743
+const n749, 0
+gthan n750, n748, n749
+const n751, 1
+const n752, 0
+equal n753, n750, n752
+band n754, n751, n753
+add n755, z0, z0
+add n756, z0, z0
+callgroup("c757","append")
+callsnd append[0], n756, c757
+callsnd append[1], n213, c757
+retsnd append[0], z0, c757
+const n761, 1000003
+mul n762, n755, n761
+add n763, n762, append[0]
+steer s764, n754, n763
+add n765, n750, n751
+const n766, 0
+gthan n767, n765, n766
+ret queue', [s764.t, s747.t], z0
+callgroup("c769","append")
+callsnd append[0], n17, c769
+callsnd append[1], [s731.t, s674.t], c769
+retsnd append[0], z0, c769
+const n773, 0
+const n774, -1
+equal n775, n214, n774
+const n776, 0
+equal n777, n773, n776
+band n778, n775, n777
+steer s779, n778, n213
+add n780, n773, n775
+const n781, 0
+gthan n782, n780, n781
+const n783, 1
+const n784, 0
+equal n785, n782, n784
+band n786, n783, n785
+add n787, z0, z0
+add n788, z0, z0
+callgroup("c789","append")
+callsnd append[0], n788, c789
+callsnd append[1], n213, c789
+retsnd append[0], z0, c789
+const n793, 1000003
+mul n794, n787, n793
+add n795, n794, append[0]
+steer s796, n786, n795
+add n797, n782, n783
+const n798, 0
+gthan n799, n797, n798
+ret visited', [s796.t, s779.t], z0
+callgroup("c801","bfsRec")
+callsnd bfsRec[0], [s764.t, s747.t], c801
+callsnd bfsRec[1], [s796.t, s779.t], c801
+retsnd bfsRec[0], z0, c801
+steer s805, n566, bfsRec[0]
+add n806, n562, n563
+const n807, 0
+gthan n808, n806, n807
+ret bfsRec, [s805.t, s559.t], z0
+const n810, 0
+const n811, -1
+equal n812, n136, n811
+const n813, 0
+equal n814, n810, n813
+band n815, n812, n814
+const n816, -1
+steer s817, n815, n816
+add n818, n810, n812
+const n819, 0
+gthan n820, n818, n819
+const n821, 1
+const n822, 0
+equal n823, n820, n822
+band n824, n821, n823
+add n825, z0, z0
+callgroup("c826","elem")
+callsnd elem[0], n825, c826
+callsnd elem[1], n135, c826
+retsnd elem[0], z0, c826
+const n830, 0
+const n831, -1
+equal n832, n157, n831
+const n833, 0
+equal n834, n830, n833
+band n835, n832, n834
+const n836, 0
+steer s837, n835, n836
+add n838, n830, n832
+const n839, 0
+gthan n840, n838, n839
+const n841, 1
+const n842, 0
+equal n843, n840, n842
+band n844, n841, n843
+add n845, z0, z0
+equal n846, n158, n845
+const n847, 1
+add n848, z0, z0
+callgroup("c849","elem")
+callsnd elem[0], n158, c849
+callsnd elem[1], n848, c849
+retsnd elem[0], z0, c849
+steer s853, n846, n847
+steer s854, n846, elem[0]
+steer s855, n844, s853.t
+add n856, n840, n841
+const n857, 0
+gthan n858, n856, n857
+add n859, z0, z0
+callgroup("c860","filterNotVisited")
+callsnd filterNotVisited[0], n859, c860
+callsnd filterNotVisited[1], n135, c860
+retsnd filterNotVisited[0], z0, c860
+add n864, z0, z0
+callgroup("c865","filterNotVisited")
+callsnd filterNotVisited[0], n864, c865
+callsnd filterNotVisited[1], n135, c865
+retsnd filterNotVisited[0], z0, c865
+const n869, 1000003
+mul n870, n825, n869
+add n871, n870, filterNotVisited[0]
+steer s872, s837.t, filterNotVisited[0]
+steer s873, s837.t, n871
+steer s874, n824, s872.t
+add n875, n820, n821
+const n876, 0
+gthan n877, n875, n876
+ret filterNotVisited, [s874.t, s817.t], z0
+const n879, 0
+const n880, -1
+equal n881, n214, n880
+const n882, 0
+equal n883, n879, n882
+band n884, n881, n883
+steer s885, n884, n213
+add n886, n879, n881
+const n887, 0
+gthan n888, n886, n887
+const n889, 1
+const n890, 0
+equal n891, n888, n890
+band n892, n889, n891
+add n893, z0, z0
+add n894, z0, z0
+callgroup("c895","append")
+callsnd append[0], n894, c895
+callsnd append[1], n213, c895
+retsnd append[0], z0, c895
+const n899, 1000003
+mul n900, n893, n899
+add n901, n900, append[0]
+steer s902, n892, n901
+add n903, n888, n889
+const n904, 0
+gthan n905, n903, n904
+ret append, [s902.t, s885.t], z0
+const n907, 0
+const n908, -1
+equal n909, n157, n908
+const n910, 0
+equal n911, n907, n910
+band n912, n909, n911
+const n913, 0
+steer s914, n912, n913
+add n915, n907, n909
+const n916, 0
+gthan n917, n915, n916
+const n918, 1
+const n919, 0
+equal n920, n917, n919
+band n921, n918, n920
+add n922, z0, z0
+equal n923, n158, n922
+const n924, 1
+add n925, z0, z0
+callgroup("c926","elem")
+callsnd elem[0], n158, c926
+callsnd elem[1], n925, c926
+retsnd elem[0], z0, c926
+steer s930, n923, n924
+steer s931, n923, elem[0]
+steer s932, n921, s930.t
+add n933, n917, n918
+const n934, 0
+gthan n935, n933, n934
+ret elem, [s932.t, s914.t], z0
+const n937, 0
+const n938, -1
+equal n939, n100, n938
+const n940, 0
+equal n941, n937, n940
+band n942, n939, n941
+const n943, -1
+steer s944, n942, n943
+add n945, n937, n939
+const n946, 0
+gthan n947, n945, n946
+const n948, 1
+const n949, 0
+equal n950, n947, n949
+band n951, n948, n950
+add n952, z0, z0
+equal n953, n99, n952
+add n954, z0, z0
+add n955, z0, z0
+callgroup("c956","lookupGraph")
+callsnd lookupGraph[0], n955, c956
+callsnd lookupGraph[1], n99, c956
+retsnd lookupGraph[0], z0, c956
+steer s960, n953, n954
+steer s961, n953, lookupGraph[0]
+steer s962, n951, s960.t
+add n963, n947, n948
+const n964, 0
+gthan n965, n963, n964
+ret lookupGraph, [s962.t, s944.t], z0
+const n967, -1
+const n968, 1
+const n969, -1
+const n970, 2
+const n971, 3
+const n972, 1000003
+mul n973, n971, n972
+add n974, n973, n969
+const n975, 1000003
+mul n976, n970, n975
+add n977, n976, n974
+const n978, 1000003
+mul n979, n968, n978
+add n980, n979, n977
+const n981, 2
+const n982, -1
+const n983, 4
+const n984, 1000003
+mul n985, n983, n984
+add n986, n985, n982
+const n987, 1000003
+mul n988, n981, n987
+add n989, n988, n986
+const n990, 3
+const n991, -1
+const n992, 4
+const n993, 5
+const n994, 1000003
+mul n995, n993, n994
+add n996, n995, n991
+const n997, 1000003
+mul n998, n992, n997
+add n999, n998, n996
+const n1000, 1000003
+mul n1001, n990, n1000
+add n1002, n1001, n999
+const n1003, 4
+const n1004, -1
+const n1005, 1000003
+mul n1006, n1003, n1005
+add n1007, n1006, n1004
+const n1008, 5
+const n1009, -1
+const n1010, 1000003
+mul n1011, n1008, n1010
+add n1012, n1011, n1009
+const n1013, 1000003
+mul n1014, n1012, n1013
+add n1015, n1014, n967
+const n1016, 1000003
+mul n1017, n1007, n1016
+add n1018, n1017, n1015
+const n1019, 1000003
+mul n1020, n1002, n1019
+add n1021, n1020, n1018
+const n1022, 1000003
+mul n1023, n989, n1022
+add n1024, n1023, n1021
+const n1025, 1000003
+mul n1026, n980, n1025
+add n1027, n1026, n1024
+ret graph, n1027, z0

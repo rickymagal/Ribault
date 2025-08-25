@@ -3,9 +3,13 @@ const n0, 1
 callgroup("c1","squarePlusOne")
 callsnd squarePlusOne[0], n0, c1
 retsnd squarePlusOne[0], z0, c1
-ret main, squarePlusOne[0], z0
-mul n5, n-1, n-1
-ret sq, n5, z0
-const n7, 1
-add n8, n5, n7
-ret squarePlusOne, n8, z0
+mul n4, n-1, n-1
+ret sq, n4, z0
+const n6, 1
+add n7, n4, n6
+ret main, n7, z0
+mul n9, n-1, n-1
+ret sq, n9, z0
+const n11, 1
+add n12, n9, n11
+ret squarePlusOne, n12, z0
