@@ -1,0 +1,11 @@
+{
+  "rc": 0,
+  "elapsed_ms": 293.16053190268576,
+  "cmd": [
+    "/home/ricky/\u00c1rea de trabalho/TALM/interp/interp",
+    "4",
+    "results/ms/super_n/N_56/N_56.flb",
+    "results/ms/super_n/N_56/N_56.pla",
+    "/home/ricky/\u00c1rea de trabalho/Ribault/test/supers/21_merge_sort_super/libsupers.so"
+  ]
+}

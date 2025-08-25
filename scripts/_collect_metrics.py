@@ -1,88 +1,64 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import argparse, csv, math, pathlib, re, statistics as stats
+import argparse, pathlib, re, json, csv
 
-TIME_RE = re.compile(r"wall=(\d+(?:\.\d+)?)\s+rss=(\d+)")
-
-def scan_runs(root):
-    rows = []
-    for p in pathlib.Path(root).rglob("time.log"):
-        d = p.parent
-        # tenta inferir n, p, rep dos nomes dos diretórios
-        # .../N_<n>/p_<p>/rep_<r>/time.log
-        parts = d.parts
-        n = pth = rep = None
-        for i, seg in enumerate(parts):
-            if seg.startswith("N_"):
-                n = int(seg[2:])
-            if seg.startswith("p_"):
-                pth = int(seg[2:])
-            if seg.startswith("rep_"):
-                rep = int(seg[4:])
-        wall = rss = None
-        for line in p.read_text().splitlines():
-            m = TIME_RE.search(line)
-            if m:
-                wall = float(m.group(1)); rss = int(m.group(2))
-        if wall is None:
-            continue
-        rows.append({"n": n, "p": pth, "rep": rep, "wall_s": wall, "rss_kb": rss, "path": str(d)})
-    return rows
-
-def iqr_filter(values):
-    if len(values) < 4:  # nada agressivo com poucas reps
-        return values, []
-    q1 = stats.quantiles(values, n=4)[0]
-    q3 = stats.quantiles(values, n=4)[2]
-    iqr = q3 - q1
-    lo = q1 - 1.5*iqr
-    hi = q3 + 1.5*iqr
-    keep = [v for v in values if lo <= v <= hi]
-    drop = [v for v in values if not (lo <= v <= hi)]
-    return keep, drop
-
-def mean_ci95(xs):
-    if not xs:
-        return (math.nan, math.nan)
-    m = stats.mean(xs)
-    sd = stats.pstdev(xs) if len(xs) < 2 else stats.stdev(xs)
-    # aproximação 95% ~ 1.96*SE (ok para n>=8; sem scipy)
-    se = sd / math.sqrt(len(xs)) if len(xs) > 0 else math.nan
-    ci = 1.96 * se
-    return (m, ci)
+def parse_triplet(path: pathlib.Path):
+    # .../N_32/p_4/rep_2/ -> (n=32, p=4, rep=2)
+    mN   = re.search(r"N_(\d+)", str(path))
+    mP   = re.search(r"/p_(\d+)/", str(path))
+    mRep = re.search(r"/rep_(\d+)/", str(path))
+    if not (mN and mP and mRep): return None
+    return int(mN.group(1)), int(mP.group(1)), int(mRep.group(1))
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", required=True, help="diretório do experimento (ex.: results/ms/asm_n)")
-    ap.add_argument("--out",  required=True, help="CSV final agregado")
-    ap.add_argument("--raw",  required=False, help="CSV com execuções individuais")
+    ap.add_argument("--root", required=True)
+    ap.add_argument("--raw",  required=True)
+    ap.add_argument("--out",  required=True)
     args = ap.parse_args()
 
-    rows = scan_runs(args.root)
-    if args.raw:
-        with open(args.raw, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=["n","p","rep","wall_s","rss_kb","path"])
-            w.writeheader(); w.writerows(rows)
+    root = pathlib.Path(args.root)
+    rows = []
+    for meta in root.rglob("run_meta.json"):
+        trip = parse_triplet(meta)
+        if not trip: continue
+        n,p,rep = trip
+        try:
+            data = json.loads(meta.read_text(encoding="utf-8"))
+            ms = float(data.get("elapsed_ms", "nan"))
+        except Exception:
+            continue
+        rows.append({"n": n, "p": p, "rep": rep, "elapsed_ms": ms, "dir": str(meta.parent)})
 
-    # agrega por (n,p)
+    rows.sort(key=lambda r: (r["p"], r["n"], r["rep"]))
+
+    # RAW
+    rawp = pathlib.Path(args.raw)
+    rawp.parent.mkdir(parents=True, exist_ok=True)
+    with rawp.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["n","p","rep","elapsed_ms","dir"])
+        w.writeheader()
+        w.writerows(rows)
+
+    # MÉTRICAS agregadas por (n, p) -> média
+    outp = pathlib.Path(args.out)
+    outp.parent.mkdir(parents=True, exist_ok=True)
     agg = {}
     for r in rows:
-        agg.setdefault((r["n"], r["p"]), []).append(r["wall_s"])
-
-    out_rows = []
+        k = (r["n"], r["p"])
+        agg.setdefault(k, []).append(r["elapsed_ms"])
+    aggr = []
     for (n,p), vals in sorted(agg.items()):
-        kept, dropped = iqr_filter(vals)
-        m, ci = mean_ci95(kept)
-        out_rows.append({
-            "n": n, "p": p,
-            "runs": len(vals), "kept": len(kept), "dropped": len(dropped),
-            "T_mean_s": f"{m:.6f}", "CI95_s": f"{ci:.6f}"
-        })
+        if not vals: continue
+        mean = sum(vals)/len(vals)
+        aggr.append({"n": n, "p": p, "mean_ms": mean, "samples": len(vals)})
 
-    with open(args.out, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["n","p","runs","kept","dropped","T_mean_s","CI95_s"])
-        w.writeheader(); w.writerows(out_rows)
-    print(f"[collect] OK: {args.out}")
+    with outp.open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["n","p","mean_ms","samples"])
+        w.writeheader()
+        w.writerows(aggr)
+
+    print(f"[collect] OK: {outp}")
 
 if __name__ == "__main__":
     main()

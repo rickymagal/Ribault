@@ -1,45 +1,33 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import argparse, csv, collections
-import matplotlib.pyplot as plt
-
-def read_metrics(csv_path):
-    by_p = collections.defaultdict(list)
-    with open(csv_path, newline="") as f:
-        for row in csv.DictReader(f):
-            n = int(row["n"]); p = int(row["p"])
-            t = float(row["T_mean_s"]); ci = float(row["CI95_s"])
-            by_p[p].append((n, t, ci))
-    for p in by_p:
-        by_p[p].sort()
-    return by_p
+import argparse, pathlib, pandas as pd, matplotlib.pyplot as plt
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--metrics", required=True)
-    ap.add_argument("--out", required=True, help="png de saída")
-    ap.add_argument("--title", default="MergeSort: Tempo vs Tamanho")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--title", default="Tempo vs n")
     args = ap.parse_args()
 
-    data = read_metrics(args.metrics)
-    if not data:
+    df = pd.read_csv(args.metrics)
+    if df.empty:
         print("nada para plotar"); return
 
+    # se houver vários p, plota uma linha por p
     plt.figure()
-    for p, pts in sorted(data.items()):
-        xs = [n for (n,_,__) in pts]
-        ys = [t for (_,t,__) in pts]
-        es = [ci for (_,__,ci) in pts]
-        plt.errorbar(xs, ys, yerr=es, marker="o", capsize=3, label=f"p={p}")
-    plt.xlabel("n (tamanho do vetor)")
-    plt.ylabel("tempo médio (s) ± IC95")
+    for p_val, g in df.groupby("p", sort=True):
+        g = g.sort_values("n")
+        plt.plot(g["n"], g["mean_ms"], marker="o", label=f"p={p_val}")
+
+    plt.xlabel("n (tamanho da lista)")
+    plt.ylabel("tempo médio (ms)")
     plt.title(args.title)
-    plt.xscale("log", base=2)
-    plt.grid(True, which="both", linestyle="--", alpha=0.4)
-    plt.legend()
+    if len(df["p"].unique()) > 1:
+        plt.legend()
+    pathlib.Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(args.out, dpi=160)
-    print(f"[plot] OK: {args.out}")
+    print(f"[plot] salvo: {args.out}")
 
 if __name__ == "__main__":
     main()

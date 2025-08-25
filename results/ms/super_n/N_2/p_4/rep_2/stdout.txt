@@ -1,0 +1,2 @@
+CMD: ['/home/ricky/Área de trabalho/TALM/interp/interp', '4', '/home/ricky/Área de trabalho/Ribault/results/ms/super_n/N_2/N_2.flb', '/home/ricky/Área de trabalho/Ribault/results/ms/super_n/N_2/N_2.pla', '/home/ricky/Área de trabalho/Ribault/test/supers/21_merge_sort_super/libsupers.so']
+LD_LIBRARY_PATH: /home/ricky/Área de trabalho/TALM/interp/rts-local:/home/ricky/Área de trabalho/Ribault/test/supers/21_merge_sort_super/ghc-deps

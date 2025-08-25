@@ -1,0 +1,377 @@
+const z0, 0
+const n0, -1
+const n1, -1
+const n2, 670487
+const n3, 116739
+const n4, 26225
+const n5, 777572
+const n6, 288389
+const n7, 256787
+const n8, 234053
+const n9, 146316
+const n10, 772246
+const n11, 107473
+const n12, 709570
+const n13, 776646
+const n14, 935518
+const n15, 571858
+const n16, 91161
+const n17, 619176
+const n18, 442417
+const n19, 33326
+const n20, 31244
+const n21, 98246
+const n22, 229258
+const n23, 243962
+const n24, 529903
+const n25, 631262
+const n26, 1000003
+mul n27, n25, n26
+add n28, n27, n1
+const n29, 1000003
+mul n30, n24, n29
+add n31, n30, n28
+const n32, 1000003
+mul n33, n23, n32
+add n34, n33, n31
+const n35, 1000003
+mul n36, n22, n35
+add n37, n36, n34
+const n38, 1000003
+mul n39, n21, n38
+add n40, n39, n37
+const n41, 1000003
+mul n42, n20, n41
+add n43, n42, n40
+const n44, 1000003
+mul n45, n19, n44
+add n46, n45, n43
+const n47, 1000003
+mul n48, n18, n47
+add n49, n48, n46
+const n50, 1000003
+mul n51, n17, n50
+add n52, n51, n49
+const n53, 1000003
+mul n54, n16, n53
+add n55, n54, n52
+const n56, 1000003
+mul n57, n15, n56
+add n58, n57, n55
+const n59, 1000003
+mul n60, n14, n59
+add n61, n60, n58
+const n62, 1000003
+mul n63, n13, n62
+add n64, n63, n61
+const n65, 1000003
+mul n66, n12, n65
+add n67, n66, n64
+const n68, 1000003
+mul n69, n11, n68
+add n70, n69, n67
+const n71, 1000003
+mul n72, n10, n71
+add n73, n72, n70
+const n74, 1000003
+mul n75, n9, n74
+add n76, n75, n73
+const n77, 1000003
+mul n78, n8, n77
+add n79, n78, n76
+const n80, 1000003
+mul n81, n7, n80
+add n82, n81, n79
+const n83, 1000003
+mul n84, n6, n83
+add n85, n84, n82
+const n86, 1000003
+mul n87, n5, n86
+add n88, n87, n85
+const n89, 1000003
+mul n90, n4, n89
+add n91, n90, n88
+const n92, 1000003
+mul n93, n3, n92
+add n94, n93, n91
+const n95, 1000003
+mul n96, n2, n95
+add n97, n96, n94
+const n98, 1000003
+mul n99, n97, n98
+add n100, n99, n0
+callgroup("c101","mergeSort0")
+callsnd mergeSort0[0], n100, c101
+retsnd mergeSort0[0], z0, c101
+ret main, mergeSort0[0], z0
+add n105, z0, z0
+add n106, z0, z0
+const n107, 0
+const n108, -1
+equal n109, n105, n108
+const n110, 0
+equal n111, n107, n110
+band n112, n109, n111
+const n113, -1
+steer s114, n112, n113
+add n115, n107, n109
+const n116, 0
+gthan n117, n115, n116
+const n118, 1
+const n119, 0
+equal n120, n117, n119
+band n121, n118, n120
+const n122, -1
+add n123, z0, z0
+const n124, 1000003
+mul n125, n123, n124
+add n126, n125, n122
+steer s127, n121, n126
+add n128, n117, n118
+const n129, 0
+gthan n130, n128, n129
+const n131, 1
+const n132, 0
+equal n133, n130, n132
+band n134, n131, n133
+callgroup("c135","len")
+callsnd len[0], n105, c135
+retsnd len[0], z0, c135
+const n138, 4
+div n139, n106, n138
+lthan n140, len[0], n139
+equal n141, len[0], n139
+add n142, n140, n141
+const n143, 0
+gthan n144, n142, n143
+super n145, 0, 1, n105
+callgroup("c146","split")
+callsnd split[0], n105, c146
+retsnd split[0], z0, c146
+const n149, 0
+const n150, 1000003
+div n151, split[0], n150
+const n152, 1000003
+div n153, split[0], n152
+mul n154, n153, n152
+sub n155, split[0], n154
+const n156, 1
+const n157, 0
+equal n158, n149, n157
+band n159, n156, n158
+callgroup("c160","mergeSortT")
+callsnd mergeSortT[0], n106, c160
+callsnd mergeSortT[1], n151, c160
+retsnd mergeSortT[0], z0, c160
+callgroup("c164","mergeSortT")
+callsnd mergeSortT[0], n106, c164
+callsnd mergeSortT[1], n155, c164
+retsnd mergeSortT[0], z0, c164
+callgroup("c168","merge")
+callsnd merge[0], mergeSortT[0], c168
+callsnd merge[1], mergeSortT[0], c168
+retsnd merge[0], z0, c168
+steer s172, n159, merge[0]
+add n173, n149, n156
+const n174, 0
+gthan n175, n173, n174
+steer s176, n144, n145
+steer s177, n144, s172.t
+steer s178, n134, s176.t
+add n179, n130, n131
+const n180, 0
+gthan n181, n179, n180
+ret mergeSortT, [s178.t, s127.t, s114.t], z0
+add n183, z0, z0
+callgroup("c184","len")
+callsnd len[0], n183, c184
+retsnd len[0], z0, c184
+callgroup("c187","mergeSortT")
+callsnd mergeSortT[0], len[0], c187
+callsnd mergeSortT[1], n183, c187
+retsnd mergeSortT[0], z0, c187
+ret mergeSort0, mergeSortT[0], z0
+const n192, 4
+ret p, n192, z0
+add n194, z0, z0
+const n195, 0
+const n196, -1
+equal n197, n194, n196
+const n198, 0
+equal n199, n195, n198
+band n200, n197, n199
+const n201, -1
+const n202, -1
+const n203, 1000003
+mul n204, n201, n203
+add n205, n204, n202
+steer s206, n200, n205
+add n207, n195, n197
+const n208, 0
+gthan n209, n207, n208
+const n210, -1
+equal n211, n194, n210
+const n212, 0
+equal n213, n211, n212
+const n214, 1000003
+div n215, n194, n214
+mul n216, n215, n214
+sub n217, n194, n216
+const n218, -1
+equal n219, n217, n218
+band n220, n213, n219
+const n221, 1000003
+div n222, n194, n221
+const n223, 0
+equal n224, n209, n223
+band n225, n220, n224
+const n226, -1
+const n227, 1000003
+mul n228, n222, n227
+add n229, n228, n226
+const n230, -1
+const n231, 1000003
+mul n232, n229, n231
+add n233, n232, n230
+steer s234, n225, n233
+add n235, n209, n220
+const n236, 0
+gthan n237, n235, n236
+const n238, -1
+equal n239, n194, n238
+const n240, 0
+equal n241, n239, n240
+const n242, 1000003
+div n243, n194, n242
+const n244, 1000003
+div n245, n194, n244
+mul n246, n245, n244
+sub n247, n194, n246
+const n248, 0
+equal n249, n237, n248
+band n250, n241, n249
+add n251, z0, z0
+callgroup("c252","split")
+callsnd split[0], n251, c252
+retsnd split[0], z0, c252
+const n255, 0
+const n256, 1000003
+div n257, split[0], n256
+const n258, 1000003
+div n259, split[0], n258
+mul n260, n259, n258
+sub n261, split[0], n260
+const n262, 1
+const n263, 0
+equal n264, n255, n263
+band n265, n262, n264
+const n266, 1000003
+mul n267, n243, n266
+add n268, n267, n257
+add n269, z0, z0
+const n270, 1000003
+mul n271, n269, n270
+add n272, n271, n261
+const n273, 1000003
+mul n274, n268, n273
+add n275, n274, n272
+steer s276, n265, n275
+add n277, n255, n262
+const n278, 0
+gthan n279, n277, n278
+steer s280, n250, s276.t
+add n281, n237, n241
+const n282, 0
+gthan n283, n281, n282
+ret split, [s280.t, s234.t, s206.t], z0
+add n285, z0, z0
+add n286, z0, z0
+const n287, 0
+const n288, -1
+equal n289, n286, n288
+const n290, 0
+equal n291, n287, n290
+band n292, n289, n291
+steer s293, n292, n285
+add n294, n287, n289
+const n295, 0
+gthan n296, n294, n295
+const n297, 1
+const n298, 0
+equal n299, n296, n298
+band n300, n297, n299
+const n301, 0
+const n302, -1
+equal n303, n285, n302
+const n304, 0
+equal n305, n301, n304
+band n306, n303, n305
+steer s307, n306, n286
+add n308, n301, n303
+const n309, 0
+gthan n310, n308, n309
+const n311, 1
+const n312, 0
+equal n313, n310, n312
+band n314, n311, n313
+add n315, z0, z0
+add n316, z0, z0
+lthan n317, n315, n316
+equal n318, n315, n316
+add n319, n317, n318
+const n320, 0
+gthan n321, n319, n320
+add n322, z0, z0
+callgroup("c323","merge")
+callsnd merge[0], n322, c323
+callsnd merge[1], n285, c323
+retsnd merge[0], z0, c323
+const n327, 1000003
+mul n328, n315, n327
+add n329, n328, merge[0]
+add n330, z0, z0
+callgroup("c331","merge")
+callsnd merge[0], n286, c331
+callsnd merge[1], n330, c331
+retsnd merge[0], z0, c331
+const n335, 1000003
+mul n336, n316, n335
+add n337, n336, merge[0]
+steer s338, n321, n329
+steer s339, n321, n337
+steer s340, n314, s338.t
+add n341, n310, n311
+const n342, 0
+gthan n343, n341, n342
+steer s344, n300, s307.t
+add n345, n296, n297
+const n346, 0
+gthan n347, n345, n346
+ret merge, [s344.t, s293.t], z0
+add n349, z0, z0
+const n350, 0
+const n351, -1
+equal n352, n349, n351
+const n353, 0
+equal n354, n350, n353
+band n355, n352, n354
+const n356, 0
+steer s357, n355, n356
+add n358, n350, n352
+const n359, 0
+gthan n360, n358, n359
+const n361, 1
+const n362, 0
+equal n363, n360, n362
+band n364, n361, n363
+const n365, 1
+add n366, z0, z0
+callgroup("c367","len")
+callsnd len[0], n366, c367
+retsnd len[0], z0, c367
+add n370, n365, len[0]
+steer s371, n364, n370
+add n372, n360, n361
+const n373, 0
+gthan n374, n372, n373
+ret len, [s371.t, s357.t], z0
