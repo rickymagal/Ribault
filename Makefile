@@ -48,6 +48,7 @@ EXE_DF       := synthesis
 EXE_AST      := analysis
 EXE_CODE     := codegen
 
+SHELL := /bin/bash
 # ============================================================
 # Casos de teste
 # ============================================================
@@ -64,117 +65,68 @@ CODE_FL      := $(patsubst $(TEST_DIR)/%.hsk,$(CODE_OUT_DIR)/%.fl,$(TESTS))
 # ------------------------------------------------------------
 # Alvos de alto nível
 # ------------------------------------------------------------
-.PHONY: all df ast code tokens images ast-dots ast-images clean
+.PHONY: all df ast code tokens images ast-dots ast-images supers clean
 
 all: df ast code supers 
 
 # ---------- biblioteca de super-instruções --------------------
-GHC_LIBDIR   := $(shell $(GHC) --print-libdir)
-GHC_RTS_DIR  := $(GHC_LIBDIR)/rts
 
-# libs runtime Haskell a empacotar (TODAS as NEEDED Haskell + RTS)
-DEPS_PATTERNS := rts/libHSrts*.so \
-                 ghc-prim-*/libHSghc-prim-*.so \
-                 base-*/libHSbase-*.so \
-                 integer-gmp-*/libHSinteger-gmp-*.so \
-                 ghc-bignum-*/libHSghc-bignum-*.so
+# ---------- biblioteca de super-instruções --------------------
 
-# libgmp do sistema (opcional; fecha NEEDED sem depender de /usr/lib em runtime)
+GHC_LIBDIR  := $(shell $(GHC) --print-libdir)
+GHC_RTS_DIR := $(GHC_LIBDIR)/rts
+
+# Tudo que a .so pode pedir em runtime (fecha TODOS os NEEDED Haskell + RTS)
+DEPS_PATTERNS := \
+  rts/libHSrts*.so \
+  ghc-prim-*/libHSghc-prim-*.so \
+  base-*/libHSbase-*.so \
+  integer-gmp-*/libHSinteger-gmp-*.so \
+  ghc-bignum-*/libHSghc-bignum-*.so
+
+# (Opcional) copiar libgmp para evitar depender de /usr/lib em runtime
 GMP_CANDIDATES := /usr/lib64/libgmp.so.10 /usr/lib/libgmp.so.10
 
-# detecta o RTS NÃO-THREADED (evita depender do *_thr)
-RTS_BASE_SO  := $(firstword $(wildcard $(GHC_RTS_DIR)/libHSrts-ghc*.so))
-RTS_BASE_LIB := $(patsubst lib%.so,%,$(notdir $(RTS_BASE_SO)))
-
-# flags de link: ambiente limpo + RPATH curto (transitivo) — sem -threaded
+# Link sem -threaded (evita *_thr); força noexecstack e rpath curto no bundle local
 SUPERS_LINK_FLAGS := -O2 -shared -dynamic -fPIC -no-hs-main \
-                     -hide-all-packages -package base -package ghc-prim -package integer-gmp -package ghc-bignum \
+                     -hide-all-packages \
+                     -package base -package ghc-prim -package integer-gmp -package ghc-bignum \
                      -no-user-package-db -package-env - \
                      -optl -Wl,--disable-new-dtags \
+                     -optl -Wl,-z,noexecstack \
                      -optl -Wl,-rpath,'$$ORIGIN/ghc-deps:$$ORIGIN' \
                      -optl -Wl,--no-as-needed
 
-# script python para REMOVER o bit EXEC do PT_GNU_STACK em todas as .so (sem execstack)
-PY_FIX := $(SUPERS_DIR)/fix_execstack.py
-$(PY_FIX):
-	@mkdir -p $(SUPERS_DIR)
-	@printf '%s\n' "#!/usr/bin/env python3" > $(PY_FIX)
-	@printf '%s\n' "# remove EXEC do PT_GNU_STACK em ELF64 little-endian" >> $(PY_FIX)
-	@printf '%s\n' "import sys,struct" >> $(PY_FIX)
-	@printf '%s\n' "if len(sys.argv)<2:print('uso: fix_execstack.py <lib.so>...');sys.exit(1)" >> $(PY_FIX)
-	@printf '%s\n' "for p in sys.argv[1:]:" >> $(PY_FIX)
-	@printf '%s\n' "  with open(p,'r+b') as f: data=bytearray(f.read())" >> $(PY_FIX)
-	@printf '%s\n' "  if data[:4]!=b'\\x7fELF': print('[SKIP]',p); continue" >> $(PY_FIX)
-	@printf '%s\n' "  if data[4]!=2 or data[5]!=1: print('[SKIP]',p); continue  # 64-bit LE" >> $(PY_FIX)
-	@printf '%s\n' "  e_phoff=struct.unpack_from('<Q',data,0x20)[0]" >> $(PY_FIX)
-	@printf '%s\n' "  e_phentsize=struct.unpack_from('<H',data,0x36)[0]" >> $(PY_FIX)
-	@printf '%s\n' "  e_phnum=struct.unpack_from('<H',data,0x38)[0]" >> $(PY_FIX)
-	@printf '%s\n' "  PT_GNU_STACK=0x6474E551; changed=False" >> $(PY_FIX)
-	@printf '%s\n' "  for i in range(e_phnum):" >> $(PY_FIX)
-	@printf '%s\n' "    off=e_phoff+i*e_phentsize" >> $(PY_FIX)
-	@printf '%s\n' "    p_type=struct.unpack_from('<I',data,off+0)[0]" >> $(PY_FIX)
-	@printf '%s\n' "    if p_type==PT_GNU_STACK:" >> $(PY_FIX)
-	@printf '%s\n' "      flags=struct.unpack_from('<I',data,off+4)[0]" >> $(PY_FIX)
-	@printf '%s\n' "      nflags=flags & ~0x1  # limpa PF_X" >> $(PY_FIX)
-	@printf '%s\n' "      if nflags!=flags: struct.pack_into('<I',data,off+4,nflags); changed=True" >> $(PY_FIX)
-	@printf '%s\n' "  if changed: open(p,'r+b').write(data); print('[OK ]',p,'EXEC removido')" >> $(PY_FIX)
-	@printf '%s\n' "  else: print('[OK ]',p,'já estava sem EXEC')" >> $(PY_FIX)
-	@chmod +x $(PY_FIX)
-
+# Compila o gerador de supers (supersgen)
 $(EXE_SUPERS): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
                $(UNIQUE_HS) $(TYPES_HS) $(PORT_HS) $(NODE_HS) \
                $(SUPERS_EXTRACT) $(SUPERS_EMIT) $(MAIN_SUPERS_HS)
 	@echo "[GHC  ] $@"
 	@mkdir -p $(EXE_SUPERS).obj $(EXE_SUPERS).hi
 	GHC_ENVIRONMENT=- $(GHC) -O2 \
-	      -odir $(EXE_SUPERS).obj -hidir $(EXE_SUPERS).hi \
-	      -o $@ \
-	      $(MAIN_SUPERS_HS) $(LEXER_HS) $(PARSER_HS) \
-	      $(SYNTAX_HS) $(SEMANTIC_HS) $(UNIQUE_HS) \
-	      $(TYPES_HS) $(PORT_HS) $(NODE_HS) \
-	      $(SUPERS_EXTRACT) $(SUPERS_EMIT)
+	  -odir $(EXE_SUPERS).obj -hidir $(EXE_SUPERS).hi \
+	  -o $@ \
+	  $(MAIN_SUPERS_HS) $(LEXER_HS) $(PARSER_HS) \
+	  $(SYNTAX_HS) $(SEMANTIC_HS) $(UNIQUE_HS) \
+	  $(TYPES_HS) $(PORT_HS) $(NODE_HS) \
+	  $(SUPERS_EXTRACT) $(SUPERS_EMIT)
 
-.PHONY: supers
-supers: $(EXE_SUPERS) $(PY_FIX)
+# Gera TODAS as libs de supers chamando o script em tools/
+supers: $(EXE_SUPERS)
 	@mkdir -p $(SUPERS_DIR)
-	@set -e; \
-	for f in $(TESTS); do \
-	  base=$$(basename $$f .hsk); \
-	  outdir=$(SUPERS_DIR)/$$base; \
-	  depdir=$$outdir/ghc-deps; \
-	  sofile=$$outdir/libsupers.so; \
-	  mkdir -p $$outdir; \
-	  echo "[SUPERS] $$f → $$outdir/Supers.hs"; \
-	  GHC_ENVIRONMENT=- ./$(EXE_SUPERS) $$f > $$outdir/Supers.hs.tmp; \
-	  if [ -s $$outdir/Supers.hs.tmp ]; then \
-	    mv $$outdir/Supers.hs.tmp $$outdir/Supers.hs; \
-	    echo "[GHC  ] $$sofile"; \
-	    rtsbase="$(RTS_BASE_LIB)"; \
-	    if [ -z "$$rtsbase" ]; then \
-	      rtsbase=$$(basename $$(ls "$(GHC_RTS_DIR)"/libHSrts-ghc*.so | head -n1) .so | sed 's/^lib//'); \
-	    fi; \
-	    GHC_ENVIRONMENT=- $(GHC) $(SUPERS_LINK_FLAGS) \
-	           -optl -L"$(GHC_RTS_DIR)" -optl -l$$rtsbase \
-	           -o $$sofile $$outdir/Supers.hs; \
-	    mkdir -p $$depdir; \
-	    for pat in $(DEPS_PATTERNS); do \
-	      for so in "$(GHC_LIBDIR)"/$$pat; do \
-	        [ -f "$$so" ] && cp -L "$$so" "$$depdir/"; \
-	      done; \
-	    done; \
-	    for g in $(GMP_CANDIDATES); do \
-	      if [ -f "$$g" ]; then cp -L "$$g" "$$depdir/"; break; fi; \
-	    done; \
-	    if command -v patchelf >/dev/null 2>&1; then \
-	      patchelf --force-rpath --set-rpath '$$ORIGIN/ghc-deps:$$ORIGIN' "$$sofile" || true; \
-	    fi; \
-	    echo "[STACK] removendo EXEC de $$sofile e deps (via Python)"; \
-	    python3 "$(PY_FIX)" "$$sofile" "$$depdir"/*.so || true; \
-	  else \
-	    rm -f $$outdir/Supers.hs.tmp $$outdir/Supers.hs $$sofile; \
-	    rm -rf $$depdir; \
-	  fi; \
-	done
+	@EXE_SUPERS="$(EXE_SUPERS)" \
+	 GHC="$(GHC)" \
+	 GHC_LIBDIR="$(GHC_LIBDIR)" \
+	 GHC_RTS_DIR="$(GHC_RTS_DIR)" \
+	 SUPERS_DIR="$(SUPERS_DIR)" \
+	 DEPS_PATTERNS='$(DEPS_PATTERNS)' \
+	 SUPERS_LINK_FLAGS='$(SUPERS_LINK_FLAGS)' \
+	 PY_ALIAS="tools/alias_supers.py" \
+	 PY_FIX="tools/fix_execstack.py" \
+	 GMP_CANDIDATES='$(GMP_CANDIDATES)' \
+	 TESTS='$(TESTS)' \
+	 bash tools/build_supers.sh
+
 
 # ---------- Dataflow & AST pipelines -------------------------
 df: tokens images        
