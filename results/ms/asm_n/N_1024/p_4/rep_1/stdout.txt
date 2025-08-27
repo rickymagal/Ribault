@@ -1,2 +1,0 @@
-CMD: ['/home/ricky/Área de trabalho/TALM/interp/interp', '4', '/home/ricky/Área de trabalho/Ribault/results/ms/asm_n/N_1024/N_1024.flb', '/home/ricky/Área de trabalho/Ribault/results/ms/asm_n/N_1024/N_1024.pla']
-LD_LIBRARY_PATH: /home/ricky/Área de trabalho/TALM/interp/rts-local

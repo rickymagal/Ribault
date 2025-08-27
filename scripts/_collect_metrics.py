@@ -1,64 +1,65 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import argparse, pathlib, re, json, csv
 
-def parse_triplet(path: pathlib.Path):
-    # .../N_32/p_4/rep_2/ -> (n=32, p=4, rep=2)
-    mN   = re.search(r"N_(\d+)", str(path))
-    mP   = re.search(r"/p_(\d+)/", str(path))
-    mRep = re.search(r"/rep_(\d+)/", str(path))
-    if not (mN and mP and mRep): return None
-    return int(mN.group(1)), int(mP.group(1)), int(mRep.group(1))
+import argparse
+import csv
+import os
+import sys
+from pathlib import Path
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--root", required=True)
-    ap.add_argument("--raw",  required=True)
-    ap.add_argument("--out",  required=True)
-    args = ap.parse_args()
+import pandas as pd
 
-    root = pathlib.Path(args.root)
+
+def discover_runs(root: Path):
+    """Walk result tree and collect run.json/csv-like data."""
     rows = []
-    for meta in root.rglob("run_meta.json"):
-        trip = parse_triplet(meta)
-        if not trip: continue
-        n,p,rep = trip
+    for p in root.rglob("*/rep_*/run.csv"):
+        # expected columns: variant,n,p,rep,dt_ms (and optionally others)
         try:
-            data = json.loads(meta.read_text(encoding="utf-8"))
-            ms = float(data.get("elapsed_ms", "nan"))
+            df = pd.read_csv(p)
         except Exception:
             continue
-        rows.append({"n": n, "p": p, "rep": rep, "elapsed_ms": ms, "dir": str(meta.parent)})
+        for _, r in df.iterrows():
+            rows.append(dict(r))
+    return rows
 
-    rows.sort(key=lambda r: (r["p"], r["n"], r["rep"]))
 
-    # RAW
-    rawp = pathlib.Path(args.raw)
-    rawp.parent.mkdir(parents=True, exist_ok=True)
-    with rawp.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["n","p","rep","elapsed_ms","dir"])
-        w.writeheader()
-        w.writerows(rows)
+def main():
+    ap = argparse.ArgumentParser(description="Collect raw runs and produce metrics CSV.")
+    ap.add_argument("--root", required=True, help="Root path to scan (results dir).")
+    ap.add_argument("--raw", required=True, help="Output CSV with all raw rows.")
+    ap.add_argument("--out", required=True, help="Output CSV with aggregated metrics.")
+    args = ap.parse_args()
 
-    # MÉTRICAS agregadas por (n, p) -> média
-    outp = pathlib.Path(args.out)
-    outp.parent.mkdir(parents=True, exist_ok=True)
-    agg = {}
-    for r in rows:
-        k = (r["n"], r["p"])
-        agg.setdefault(k, []).append(r["elapsed_ms"])
-    aggr = []
-    for (n,p), vals in sorted(agg.items()):
-        if not vals: continue
-        mean = sum(vals)/len(vals)
-        aggr.append({"n": n, "p": p, "mean_ms": mean, "samples": len(vals)})
+    root = Path(args.root)
+    rows = discover_runs(root)
 
-    with outp.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["n","p","mean_ms","samples"])
-        w.writeheader()
-        w.writerows(aggr)
+    if not rows:
+        # still create empty files that are valid CSVs
+        empty_cols = ["variant", "n", "p", "rep", "dt_ms"]
+        pd.DataFrame(columns=empty_cols).to_csv(args.raw, index=False)
+        pd.DataFrame(columns=empty_cols).to_csv(args.out, index=False)
+        print(f"[collect] No runs found under {root}. Wrote empty CSVs.")
+        return 0
 
-    print(f"[collect] OK: {outp}")
+    raw = pd.DataFrame(rows)
+    raw.to_csv(args.raw, index=False)
+
+    # normalize column names if present with different spellings
+    if "elapsed_ms" in raw.columns and "dt_ms" not in raw.columns:
+        raw = raw.rename(columns={"elapsed_ms": "dt_ms"})
+    if "runtime_ms" in raw.columns and "dt_ms" not in raw.columns:
+        raw = raw.rename(columns={"runtime_ms": "dt_ms"})
+
+    # Simple aggregated metrics (mean per variant/n/p)
+    have_rep = "rep" in raw.columns
+    gcols = ["variant", "n", "p"] + (["rep"] if not have_rep else [])
+    agg = raw.groupby(["variant", "n", "p"], as_index=False)["dt_ms"].mean().rename(columns={"dt_ms": "mean_dt_ms"})
+
+    agg.to_csv(args.out, index=False)
+    print(f"[collect] OK: {args.out}")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
