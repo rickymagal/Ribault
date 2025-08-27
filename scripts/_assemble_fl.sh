@@ -1,51 +1,78 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Uso: _assemble_fl.sh input.fl out_dir
-if [[ $# -ne 2 ]]; then
-  echo "uso: $0 input.fl out_dir" >&2
+# Uso:
+#   _assemble_fl.sh <input.fl> <outdir> [--threads P]
+#
+# Faz:
+#   1) roda o montador Python2 do TALM (gera .flb e .pla)
+#   2) se --threads P for passado, reescreve o .pla para range [0..P-1]
+
+if [[ $# -lt 2 ]]; then
+  echo "[assemble] usage: $0 <input.fl> <outdir> [--threads P]" >&2
   exit 2
 fi
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
-INFL="$(readlink -f "$1")"
-OUTDIR="$(readlink -f "$2")"
-mkdir -p "$OUTDIR"
+IN_FL="$1"
+OUTDIR="$2"
+shift 2 || true
 
-# TALM é irmão do HTC
-TALM_DIR="$(readlink -f "$ROOT/../TALM")"
-ASM_DIR="$TALM_DIR/asm"
-if [[ ! -d "$ASM_DIR" ]]; then
-  echo "ERRO: não encontrei TALM/asm em: $ASM_DIR" >&2
-  exit 3
-fi
+THREADS=""
+while (($#)); do
+  case "$1" in
+    --threads) THREADS="$2"; shift 2;;
+    *) echo "[assemble] ignoring unknown flag: $1" >&2; shift;;
+  esac
+done
 
-BASENAME="$(basename "$INFL")"
-NAME="${BASENAME%.fl}"
-
-if ! command -v python2 >/dev/null 2>&1; then
-  echo "ERRO: preciso de python2 para rodar o assembler legado do TALM." >&2
-  echo "Instale python2 ou ajuste o wrapper para outra estratégia." >&2
-  exit 5
+# Descobrir TALM/asm:
+#  1) TALM_ASM_DIR (se setado)
+#  2) irmão do repo:  <repo_root>/../TALM/asm
+#  3) embutido:       <repo_root>/TALM/asm
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -n "${TALM_ASM_DIR:-}" ]]; then
+  ASM_DIR="$TALM_ASM_DIR"
+elif [[ -d "$REPO_ROOT/../TALM/asm" ]]; then
+  ASM_DIR="$REPO_ROOT/../TALM/asm"
+elif [[ -d "$REPO_ROOT/TALM/asm" ]]; then
+  ASM_DIR="$REPO_ROOT/TALM/asm"
+else
+  echo "[assemble] ERRO: não encontrei TALM/asm.
+  Sete TALM_ASM_DIR para o caminho absoluto (ex.: /home/<user>/.../TALM/asm)." >&2
+  exit 1
 fi
 
 echo "[assemble] usando python2 em $ASM_DIR"
-(
-  cd "$ASM_DIR"
-  # o assembler aceita: python2 assembler.py -o <BASENAME SEM EXT> <INPUT.fl>
-  python2 assembler.py -o "$OUTDIR/$NAME" "$INFL"
-)
+mkdir -p "$OUTDIR"
 
-# Confere/copias de segurança (se o assembler largar no CWD)
-for ext in flb pla; do
-  [[ -f "$OUTDIR/$NAME.$ext" ]] && continue
-  [[ -f "$ASM_DIR/$NAME.$ext" ]] && cp -f "$ASM_DIR/$NAME.$ext" "$OUTDIR/" && continue
-  [[ -f "$(dirname "$INFL")/$NAME.$ext" ]] && cp -f "$(dirname "$INFL")/$NAME.$ext" "$OUTDIR/" && continue
-done
+# Monta: gera <OUTDIR>/<basename>.flb e .pla
+base="$(basename "$IN_FL" .fl)"
+outbase="$OUTDIR/$base"
+python2 "$ASM_DIR/assembler.py" "$IN_FL" -o "$outbase"
 
-if [[ ! -f "$OUTDIR/$NAME.flb" || ! -f "$OUTDIR/$NAME.pla" ]]; then
-  echo "ERRO: não encontrei $NAME.flb/.pla após montar." >&2
-  exit 4
+FLB="$outbase.flb"
+PLA="$outbase.pla"
+
+if [[ ! -s "$FLB" || ! -s "$PLA" ]]; then
+  echo "[assemble] ERRO: não gerou $FLB ou $PLA" >&2
+  exit 1
 fi
 
-echo "[assemble] gerados: $OUTDIR/$NAME.flb  e  $OUTDIR/$NAME.pla"
+echo "[assemble] gerados: $FLB  e  $PLA"
+
+# Opcional: alinhar placement ao número de threads pedido
+if [[ -n "${THREADS}" ]]; then
+  python3 - "$PLA" "$THREADS" <<'PY'
+import sys
+pla_path = sys.argv[1]
+P = int(sys.argv[2])
+with open(pla_path, 'r') as f:
+    lines = [ln.strip() for ln in f if ln.strip()]
+n = int(lines[0]); placement = [int(x) for x in lines[1:1+n]]
+fixed = [(p % P) for p in placement]
+with open(pla_path, 'w') as f:
+    f.write(str(n) + "\n")
+    for p in fixed: f.write(str(p) + "\n")
+PY
+  echo "[assemble] PLA corrigido para P=$THREADS (round-robin)."
+fi
