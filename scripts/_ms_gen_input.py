@@ -1,39 +1,60 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import random, re
 
-def make_list(n: int, seed: int = 42):
-    rng = random.Random(seed)
-    return [rng.randrange(0, 10**6) for _ in range(n)]
+import argparse
+import textwrap
+from pathlib import Path
 
-def format_hs_list(xs):
-    return "[" + ",".join(str(x) for x in xs) + "]"
+MS_SRC = """\
+-- Merge two sorted lists into a single sorted list
+merge xs ys = case xs of
+    [] -> ys;
+    (x:xt) -> case ys of
+        [] -> xs;
+        (y:yt) -> if x <= y
+                  then x : merge xt ys
+                  else y : merge xs yt;;
+;
 
-def patch_main_line(template_text: str, new_list_src: str) -> str:
-    """
-    Troca **apenas** a lista do main, preservando o nome da função chamada.
-    Aceita espaços/; no fim da linha.
-    Exemplos que casa:
-      main = mergeSort0 [1,2,3];
-      main    =   merge (foo)   [9,8]   ;
-    """
-    # pega a linha de main com a lista entre [ ... ] e o ; final
-    pat = re.compile(
-        r'(?m)^(?P<indent>\s*)main\s*=\s*(?P<head>.*?\[)'
-        r'(?P<list>[^\]]*)'
-        r'(?P<tail>\]\s*;)\s*$'
-    )
-    m = pat.search(template_text)
-    if not m:
-        # fallback: se o ; não está na mesma linha (raro), tente sem o ;
-        pat2 = re.compile(
-            r'(?m)^(?P<indent>\s*)main\s*=\s*(?P<head>.*?\[)'
-            r'(?P<list>[^\]]*)'
-            r'(?P<tail>\])\s*$'
-        )
-        m = pat2.search(template_text)
-        if not m:
-            raise SystemExit("ERRO: não achei a linha do `main = ...` com lista no template .hsk")
+-- Split a list into two approximately equal halves
+split lst = case lst of
+  []   -> ([], []);
+  [x]  -> ([x], []);
+  x:y:zs ->
+    case split zs of
+      (xs, ys) -> (x:xs, y:ys);;
+;
 
-    repl = f"{m.group('indent')}main = {m.group('head')}{new_list_src}{m.group('tail')}"
-    return template_text[:m.start()] + repl + template_text[m.end():]
+-- Merge Sort function
+mergeSort lst = case lst of
+    [] -> [];
+    (x:[]) -> [x];
+    _ -> case split lst of
+           (left, right) -> merge (mergeSort left) (mergeSort right);;
+;
+"""
+
+def ones_list(n: int) -> str:
+    # lista literal: [1,1,1,...]
+    if n <= 0:
+        return "[]"
+    return "[" + ",".join(["1"] * n) + "]"
+
+def main():
+    ap = argparse.ArgumentParser(description="Generate HSK MergeSort with a list of ones")
+    ap.add_argument("--n", type=int, required=True, help="list size")
+    ap.add_argument("--out", type=Path, required=True, help="output .hsk path")
+    # flags futuras (placeholder para manter compatibilidade de chamada)
+    ap.add_argument("--variant", choices=["asm","super"], default="asm")
+    ap.add_argument("--threads", type=int, default=1)
+    args = ap.parse_args()
+
+    lst = ones_list(args.n)
+    hsk = MS_SRC + "\n-- Main expression for testing\nmain = mergeSort " + lst + "\n"
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(hsk, encoding="utf-8")
+    print(f"[ms_gen_input] wrote {args.out} (N={args.n})")
+
+if __name__ == "__main__":
+    main()
