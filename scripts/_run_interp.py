@@ -1,58 +1,55 @@
 #!/usr/bin/env python3
-import argparse, json, os, subprocess, time
-from pathlib import Path
-import re
-
-def parse_triplet(outdir: Path):
-    s = str(outdir)
-    def grab(rx):
-        m = re.search(rx, s)
-        return int(m.group(1)) if m else None
-    return grab(r"/N_(\d+)(/|$)"), grab(r"/p_(\d+)(/|$)"), grab(r"/rep_(\d+)(/|$)")
-
-def write_meta(path, **kw):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(kw, f)
+import argparse, os, sys, subprocess, shlex, time
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description="Run interp with proper LD_LIBRARY_PATH.")
     ap.add_argument("--interp", required=True)
     ap.add_argument("--flb",    required=True)
     ap.add_argument("--pla",    required=True)
-    ap.add_argument("--threads", type=int, required=True)
-    ap.add_argument("--variant", choices=["asm","super"], required=True)
-    ap.add_argument("--outdir", required=True)
-    ap.add_argument("--superlib", default=None)
+    ap.add_argument("--P",      required=True, type=int)
+    ap.add_argument("--lib",    default="")
+    ap.add_argument("--cwd",    default="")
+    ap.add_argument("--extra-ld", default="")
     args = ap.parse_args()
 
-    outdir = Path(args.outdir)
-    stdout_path = outdir/"stdout.txt"
-    stderr_path = outdir/"stderr.txt"
-    meta_path   = outdir/"result.json"
-    N,P,rep     = parse_triplet(outdir)
+    interp = os.path.abspath(args.interp)
+    flb    = os.path.abspath(args.flb)
+    pla    = os.path.abspath(args.pla)
+    lib    = os.path.abspath(args.lib) if args.lib else ""
+    workdir = os.path.abspath(args.cwd) if args.cwd else os.getcwd()
 
-    cmd = [args.interp, str(args.threads), args.flb, args.pla]
+    interp_dir = os.path.dirname(interp)
+    ghc_deps   = os.path.join(interp_dir, "ghc-deps")
+    rts_local  = os.path.join(interp_dir, "rts-local")
+    libdir     = os.path.dirname(lib) if lib else ""
 
-    # Para super: se tiver lib, usamos; se não tiver, seguimos sem ela.
-    sl = None
-    if args.variant == "super":
-        cand = (args.superlib or os.environ.get("SUPERLIB") or "").strip()
-        if cand and Path(cand).is_file():
-            sl = cand
-            cmd.append(sl)
+    pieces = []
+    if libdir:    pieces.append(libdir)
+    if os.path.isdir(ghc_deps):  pieces.append(ghc_deps)
+    if os.path.isdir(rts_local): pieces.append(rts_local)
+    if args.extra_ld: pieces.extend([p for p in args.extra_ld.split(":") if p])
 
-    t0 = time.monotonic()
-    outdir.mkdir(parents=True, exist_ok=True)
-    with open(stdout_path, "wb") as so, open(stderr_path, "wb") as se:
-        proc = subprocess.run(cmd, stdout=so, stderr=se)
-    dt = (time.monotonic() - t0) * 1000.0
-    rc = proc.returncode
+    env = os.environ.copy()
+    env["LD_LIBRARY_PATH"] = ":".join([p for p in pieces if p] + [env.get("LD_LIBRARY_PATH","")])
 
-    meta = dict(variant=args.variant, N=N, P=P, rep=rep, rc=rc, elapsed_ms=dt, superlib=sl or "")
-    write_meta(meta_path, **meta)
-    print(f"[run] variant={args.variant} N={N} P={P} rep={rep} rc={rc} t={dt:.2f}ms")
-    return 0
+    cmd = [interp, str(args.P), flb, pla] + ([lib] if lib else [])
+    sys.stderr.write(f"[run] exec: {' '.join(shlex.quote(c) for c in cmd)}\n")
+    sys.stderr.write(f"[run] LD_LIBRARY_PATH={env['LD_LIBRARY_PATH']}\n")
+
+    t0 = time.perf_counter()
+    proc = subprocess.Popen(cmd, cwd=workdir, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1)
+    try:
+        for line in proc.stdout:
+            sys.stdout.write(line)
+    finally:
+        rc = proc.wait()
+    ms = (time.perf_counter() - t0) * 1000.0
+    # Não muda o formato dos logs que você já está usando:
+    print(f"[rc] {rc}")
+    print(f"[ms] {ms:.2f}")
+    sys.exit(rc)
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
