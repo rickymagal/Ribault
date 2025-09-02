@@ -1,33 +1,47 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VARIANT="asm"
-CODEGEN=""
-SUPERSGEN=""
-IN=""
-OUT=""
-LOG="/dev/null"
+# Uso: _build_fl_from_hsk.sh <CODEGEN> <HSK> <OUT_FL>
+# - <CODEGEN>: pode ser o diretório que contém o binário `codegen` OU o próprio binário
+# - <HSK>: arquivo .hsk de entrada
+# - <OUT_FL>: arquivo .fl de saída
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --variant)   VARIANT="$2";    shift 2;;
-    --codegen)   CODEGEN="$2";    shift 2;;
-    --supersgen) SUPERSGEN="$2";  shift 2;;  # aceito mas não obrigatório
-    --in)        IN="$2";         shift 2;;
-    --out)       OUT="$2";        shift 2;;
-    --log)       LOG="$2";        shift 2;;
-    *) echo "[build_fl] unknown arg: $1"; exit 2;;
-  esac
-done
+GEN="${1:?}"
+HSK="${2:?}"
+OUT="${3:?}"
 
-[[ -n "$CODEGEN" ]] || { echo "[build_fl] erro: faltou --codegen"; exit 2; }
-[[ -x "$CODEGEN" ]] || { echo "[build_fl] erro: $CODEGEN não é executável"; exit 2; }
-[[ -n "$IN" && -f "$IN" ]] || { echo "[build_fl] erro: faltou --in <hsk>"; exit 2; }
-[[ -n "$OUT" ]] || { echo "[build_fl] erro: faltou --out <fl>"; exit 2; }
+echo "[build_fl] GEN=${GEN}"
+echo "[build_fl] SUPERSGEN='(não setado)'"
+echo "[build_fl] HSK=${HSK}"
+echo "[build_fl] OUT=${OUT}"
 
-mkdir -p "$(dirname "$OUT")"
-echo "[codegen] $IN -> $OUT (variant=$VARIANT)" | tee -a "$LOG"
-# O codegen gera TALM .fl de ambos (asm e super)
-# Saída no stdout → redireciona para OUT; stderr → LOG
-"$CODEGEN" "$IN" > "$OUT" 2>>"$LOG"
-[[ -s "$OUT" ]] || { echo "[build_fl] erro: codegen não produziu $OUT"; exit 1; }
+# Descobre o binário do codegen
+CG=""
+if [[ -x "${GEN}" && ! -d "${GEN}" ]]; then
+  # GEN já é o binário (ex.: /home/.../Ribault/codegen ou /home/.../Ribault/lambdaflow-asm)
+  CG="${GEN}"
+elif [[ -x "${GEN%/}/codegen" ]]; then
+  CG="${GEN%/}/codegen"
+elif [[ -x "${GEN%/}/lambdaflow-asm" ]]; then
+  CG="${GEN%/}/lambdaflow-asm"
+else
+  echo "[build_fl][ERRO] codegen não encontrado/executável: '${GEN}' (procurei por 'codegen' e 'lambdaflow-asm')" >&2
+  exit 3
+fi
+
+# Garante diretório de saída
+mkdir -p "$(dirname -- "${OUT}")"
+
+# O codegen/lambdaflow-asm aceita **apenas** o arquivo de entrada.
+# A saída .fl vai para stdout -> redirecionamos para ${OUT}.
+set +e
+"${CG}" "${HSK}" > "${OUT}"
+rc=$?
+set -e
+
+if [[ ${rc} -ne 0 || ! -s "${OUT}" ]]; then
+  echo "[build_fl][ERRO] falha no codegen (rc=${rc}); saída '${OUT}' vazia ou inexistente." >&2
+  exit "${rc}"
+fi
+
+echo "[build_fl] OK -> ${OUT}"

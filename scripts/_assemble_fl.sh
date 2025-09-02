@@ -2,100 +2,106 @@
 set -euo pipefail
 
 # Uso:
-#   _assemble_fl.sh --asm-root <TALM/asm> --fl <in.fl> --outbase <out_base> --P <procs>
+#   _assemble_fl.sh --fl <arquivo.fl> --outdir <dir> -P <threads> \
+#                   --asm-root <dir> --py2 <python2> --assembler <assembler.py> [--autoplace yes|no]
 #
-# Gera:
-#   <out_base>.flb
-#   <out_base>.pla  (com distribuição RR forçada entre os P threads)
-#
-# Logs:
-#   <out_base>.assemble.log
-#   <out_base>.schedule.log
+# Saídas:
+#   <outdir>/<basename>.flb e <outdir>/<basename>.pla (rebalanceado i%P)
 
+FL=""
+OUTDIR=""
+THREADS=""
 ASM_ROOT=""
-FL_IN=""
-OUTBASE=""
-PROCS=""
+PY2="python2"
+ASSEMBLER=""
+AUTOPLACE="no"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --asm-root) ASM_ROOT="$2"; shift 2;;
-    --fl)       FL_IN="$2";   shift 2;;
-    --outbase)  OUTBASE="$2"; shift 2;;
-    --P)        PROCS="$2";   shift 2;;
-    *) echo "[assemble] unknown arg: $1"; exit 2;;
+    --fl)         FL="$2"; shift 2 ;;
+    --outdir)     OUTDIR="$2"; shift 2 ;;
+    -P|--threads) THREADS="$2"; shift 2 ;;
+    --asm-root)   ASM_ROOT="${2:-}"; shift 2 ;;
+    --py2)        PY2="$2"; shift 2 ;;
+    --assembler)  ASSEMBLER="$2"; shift 2 ;;
+    --autoplace)  AUTOPLACE="${2:-no}"; shift 2 ;;
+    *) echo "[assemble][ERRO] argumento desconhecido: $1"; exit 2 ;;
   esac
 done
 
-[[ -n "$ASM_ROOT" && -n "$FL_IN" && -n "$OUTBASE" && -n "$PROCS" ]] || {
-  echo "usage: $0 --asm-root <TALM/asm> --fl <in.fl> --outbase <out_base> --P <procs>"
-  exit 2
-}
+[[ -n "${FL}" && -n "${OUTDIR}" ]] || { echo "[assemble][ERRO] --fl e --outdir são obrigatórios"; exit 2; }
+THREADS="${THREADS:-1}"
+ASSEMBLER="${ASSEMBLER:-${ASM_ROOT:+$ASM_ROOT/assembler.py}}"
+[[ -n "${ASSEMBLER}" && -f "${ASSEMBLER}" ]] || { echo "[assemble][ERRO] assembler.py não encontrado: ${ASSEMBLER:-<vazio>}"; exit 2; }
 
-FLB="${OUTBASE}.flb"
-PLA="${OUTBASE}.pla"
-ASM_LOG="${OUTBASE}.assemble.log"
-SCH_LOG="${OUTBASE}.schedule.log"
+mkdir -p "${OUTDIR}"
 
-echo "[assemble] FL=${FL_IN}"
+OUTBASENAME="$(basename "${FL%.fl}")"
+OUTPREFIX="${OUTDIR}/${OUTBASENAME}"
+FLB="${OUTPREFIX}.flb"
+PLA="${OUTPREFIX}.pla"
 
-# 1) Assembler (python2): gera .flb
-#    (sem -i; o assembler aceita '-o <base>' e '<in.fl>' como últimos args)
-{
-  python2 "${ASM_ROOT}/assembler.py" -o "${OUTBASE}" "${FL_IN}"
-} > "${ASM_LOG}" 2>&1 || {
-  echo "error: assembler falhou (veja ${ASM_LOG})"
-  exit 1
-}
+echo "[assemble] FL=${FL}"
+echo "[assemble] OUTDIR=${OUTDIR}"
+echo "[assemble] P=${THREADS}"
+echo "[assemble] ASM_ROOT=${ASM_ROOT}"
+echo "[assemble] PY2=${PY2}"
+echo "[assemble] ASSEMBLER=${ASSEMBLER}"
 
-[[ -s "${FLB}" ]] || { echo "error: não gerou ${FLB}"; exit 1; }
-
-# 2) Scheduler (python2): gera .pla round-robin
-#    Primeiro tentamos com '-o'; se não aparecer, tentamos redirecionando stdout.
-set +e
-python2 "${ASM_ROOT}/scheduler.py" "${FLB}" -p "${PROCS}" --rr -o "${PLA}" > "${SCH_LOG}" 2>&1
-rc=$?
-set -e
-
-if [[ $rc -ne 0 || ! -s "${PLA}" ]]; then
-  # fallback: alguns schedulers só escrevem em stdout
-  set +e
-  python2 "${ASM_ROOT}/scheduler.py" "${FLB}" -p "${PROCS}" --rr > "${PLA}" 2>> "${SCH_LOG}"
-  rc2=$?
-  set -e
-  if [[ $rc2 -ne 0 || ! -s "${PLA}" ]]; then
-    echo "error: scheduler não produziu ${PLA} (veja ${SCH_LOG})"
-    exit 1
-  fi
+set -x
+if [[ "${AUTOPLACE}" == "yes" ]]; then
+  echo "[assemble] usando assembler.py (com -a, ntasks=-n ${THREADS})" >&2
+  "${PY2}" "${ASSEMBLER}" -a -n "${THREADS}" -o "${OUTPREFIX}" "${FL}"
+else
+  echo "[assemble] usando assembler.py (sem -a, ntasks=-n ${THREADS})" >&2
+  "${PY2}" "${ASSEMBLER}" -n "${THREADS}" -o "${OUTPREFIX}" "${FL}"
 fi
+set +x
 
-# 3) Garantia de balanceamento: reescreve o .pla em RR puro
-#    Formato: 1ª linha = NINST; linhas seguintes = id do thread por instrução.
-python3 - "$PLA" "$PROCS" << 'PY'
+# Rebalanceia o .pla ANTES do run (round-robin por índice)
+python3 - "$PLA" "$THREADS" <<'PY'
 import sys
 pla_path = sys.argv[1]
 P = int(sys.argv[2])
 
+# Lê mapeamento existente (se houver)
+lines = []
 with open(pla_path, 'r') as f:
-    lines = [ln.strip() for ln in f if ln.strip()!='']
+    for ln in f:
+        ln = ln.strip()
+        if ln:
+            lines.append(ln)
 
-try:
-    n = int(lines[0])
-    mapping = [int(x) for x in lines[1:]]
-except Exception:
-    # se o formato do PLA for binário/estranho, não mexe
-    sys.exit(0)
+# Header pode ser 'n' (qtd de tarefas) ou arquivo só com linhas de PE.
+def parse_map(ls):
+    # tenta header
+    try:
+        n = int(ls[0])
+        vals = [int(x) for x in ls[1:1+n]]
+        if len(vals) != n:
+            raise ValueError
+        return n, vals
+    except Exception:
+        # sem header: tudo são PEs
+        vals = [int(x) for x in ls]
+        return len(vals), vals
 
-# se já está balanceado e usa mais de 1 thread, mantemos;
-# se está degenerado (<=1 thread usado) OU desbalanceado, forçamos RR.
-used = set(mapping)
-need_fix = (len(used) <= 1) or (len(mapping) != n)
+n, _old = parse_map(lines)
 
-if need_fix:
-    newmap = [(i % P) for i in range(n)]
-    with open(pla_path, 'w') as g:
-        g.write(str(n) + "\n")
-        g.write("\n".join(map(str, newmap)) + "\n")
+# round-robin por índice de tarefa
+newmap = [i % P for i in range(n)]
+
+# grava com header 'n' para eliminar ambiguidade
+with open(pla_path, 'w') as f:
+    f.write(str(n) + "\n")
+    for p in newmap:
+        f.write(str(p) + "\n")
+
+# log de distribuição e "n_instrs" por thread (aqui = nº de tarefas atribuídas)
+dist = [newmap.count(i) for i in range(P)]
+print(f"[debug] pla: tarefas={n} P={P} dist={dist}")
+for i,c in enumerate(dist):
+    print(f"[debug] T[{i}]: n_instrs={c}")
 PY
 
 echo "[assemble] OK: ${FLB} + ${PLA}"
