@@ -1,65 +1,53 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import argparse, os, re, csv, sys, pathlib
 
-import argparse
-import csv
-import os
-import sys
-from pathlib import Path
-
-import pandas as pd
-
-
-def discover_runs(root: Path):
-    """Walk result tree and collect run.json/csv-like data."""
-    rows = []
-    for p in root.rglob("*/rep_*/run.csv"):
-        # expected columns: variant,n,p,rep,dt_ms (and optionally others)
-        try:
-            df = pd.read_csv(p)
-        except Exception:
-            continue
-        for _, r in df.iterrows():
-            rows.append(dict(r))
-    return rows
-
+def parse_workload(repdir):
+    sfile = os.path.join(repdir, "strace.txt")
+    total_calls, total_ms, threads = "?", "?", "?"
+    if os.path.isfile(sfile):
+        total_ms_acc = 0.0
+        calls = 0
+        rx = re.compile(r"<([\d\.]+)>$")
+        with open(sfile, 'r', errors='replace') as f:
+            for ln in f:
+                m = rx.search(ln.strip())
+                if m:
+                    calls += 1
+                    total_ms_acc += float(m.group(1))*1000.0
+        total_calls = calls
+        total_ms = round(total_ms_acc, 3)
+    # threads heurístico: conta de "worker start id="
+    wstart = 0
+    rxd = re.compile(r"\[debug\] worker start id=")
+    log = os.path.join(repdir, "log.txt")  # caso você redirecione stdout
+    if os.path.isfile(log):
+        with open(log, 'r', errors='replace') as f:
+            for ln in f:
+                if rxd.search(ln): wstart += 1
+    return str(total_calls), str(total_ms), str(wstart+1 if wstart else "?")
 
 def main():
-    ap = argparse.ArgumentParser(description="Collect raw runs and produce metrics CSV.")
-    ap.add_argument("--root", required=True, help="Root path to scan (results dir).")
-    ap.add_argument("--raw", required=True, help="Output CSV with all raw rows.")
-    ap.add_argument("--out", required=True, help="Output CSV with aggregated metrics.")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--repdir", required=True)
+    ap.add_argument("--variant", required=True)
+    ap.add_argument("--n", type=int, required=True)
+    ap.add_argument("--P", type=int, required=True)
+    ap.add_argument("--rep", type=int, required=True)
+    ap.add_argument("--out-tsv", required=True)
     args = ap.parse_args()
 
-    root = Path(args.root)
-    rows = discover_runs(root)
-
-    if not rows:
-        # still create empty files that are valid CSVs
-        empty_cols = ["variant", "n", "p", "rep", "dt_ms"]
-        pd.DataFrame(columns=empty_cols).to_csv(args.raw, index=False)
-        pd.DataFrame(columns=empty_cols).to_csv(args.out, index=False)
-        print(f"[collect] No runs found under {root}. Wrote empty CSVs.")
-        return 0
-
-    raw = pd.DataFrame(rows)
-    raw.to_csv(args.raw, index=False)
-
-    # normalize column names if present with different spellings
-    if "elapsed_ms" in raw.columns and "dt_ms" not in raw.columns:
-        raw = raw.rename(columns={"elapsed_ms": "dt_ms"})
-    if "runtime_ms" in raw.columns and "dt_ms" not in raw.columns:
-        raw = raw.rename(columns={"runtime_ms": "dt_ms"})
-
-    # Simple aggregated metrics (mean per variant/n/p)
-    have_rep = "rep" in raw.columns
-    gcols = ["variant", "n", "p"] + (["rep"] if not have_rep else [])
-    agg = raw.groupby(["variant", "n", "p"], as_index=False)["dt_ms"].mean().rename(columns={"dt_ms": "mean_dt_ms"})
-
-    agg.to_csv(args.out, index=False)
-    print(f"[collect] OK: {args.out}")
-    return 0
-
+    calls, tms, nthr = parse_workload(args.repdir)
+    row = dict(variant=args.variant, N=args.n, P=args.P, rep=args.rep,
+               syscalls=calls, t_sys_ms=tms, threads=nthr)
+    out = pathlib.Path(args.out_tsv)
+    newfile = not out.exists()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["variant","N","P","rep","syscalls","t_sys_ms","threads"], delimiter='\t')
+        if newfile: w.writeheader()
+        w.writerow(row)
+    print(f"[metrics] append -> {out} :: {row}")
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

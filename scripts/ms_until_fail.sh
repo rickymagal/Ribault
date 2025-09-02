@@ -1,146 +1,98 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-START_N=""; STEP=""; NMAX=""; REPS=""
-PROCS=""; VARIANTS=""
-INTERP=""; ASM_ROOT=""; CODEGEN=""; SUPERSGEN=""
-OUTROOT=""; VEC="desc"; PLOTS="no"
+# Defaults
+START_N=1
+STEP=1
+N_MAX=1
+REPS=1
+PROCS=1
+VARIANTS="asm"
+INTERP="${INTERP:-/home/ricky/Área de trabalho/TALM/interp/interp}"
+ASM_ROOT=""
+CODEGEN=""
+OUTROOT="./results"
+VEC="ones"
+PLOTS="no"
+STRACE_BIN="${STRACE:-}"
+
+SCRIPTDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<EOF
+uso: $0 --start-N <n0> --step <k> --n-max <nmax> --reps <r> --procs <P> --variants <asm|super> \
+        --interp <interp_bin> --asm-root <dir> --codegen <dir> --outroot <dir> --vec <ones|desc> [--plots no|yes]
+EOF
+  exit 2
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --start-N)   START_N="$2"; shift 2;;
-    --step)      STEP="$2";    shift 2;;
-    --n-max)     NMAX="$2";    shift 2;;
-    --reps)      REPS="$2";    shift 2;;
-    --procs)     PROCS="$2";   shift 2;;
-    --variants)  VARIANTS="$2";shift 2;;
-    --interp)    INTERP="$2";  shift 2;;
-    --asm-root)  ASM_ROOT="$2";shift 2;;
-    --codegen)   CODEGEN="$2"; shift 2;;
-    --supersgen) SUPERSGEN="$2"; shift 2;;
-    --outroot)   OUTROOT="$2"; shift 2;;
-    --vec)       VEC="$2";     shift 2;;
-    --plots)     PLOTS="$2";   shift 2;;
-    *) echo "flag desconhecida: $1"; exit 2;;
+    --start-N) START_N="$2"; shift 2;;
+    --step)    STEP="$2"; shift 2;;
+    --n-max)   N_MAX="$2"; shift 2;;
+    --reps)    REPS="$2"; shift 2;;
+    --procs)   PROCS="$2"; shift 2;;
+    --variants) VARIANTS="$2"; shift 2;;
+    --interp)  INTERP="$2"; shift 2;;
+    --asm-root) ASM_ROOT="$2"; shift 2;;
+    --codegen) CODEGEN="$2"; shift 2;;
+    --outroot) OUTROOT="$2"; shift 2;;
+    --vec)     VEC="$2"; shift 2;;
+    --plots)   PLOTS="$2"; shift 2;;
+    *) echo "[until-fail][ERRO] arg desconhecido: $1"; usage;;
   esac
 done
 
-for v in START_N STEP NMAX REPS PROCS VARIANTS INTERP ASM_ROOT CODEGEN SUPERSGEN OUTROOT; do
-  [[ -n "${!v}" ]] || { echo "erro: faltou --${v,,}"; exit 2; }
-done
+[[ -z "${INTERP:-}" ]] && { echo "[until-fail][ERRO] --interp vazio"; exit 2; }
+[[ -z "${ASM_ROOT:-}" ]] && { echo "[until-fail][ERRO] --asm-root requerido"; exit 2; }
+[[ -z "${CODEGEN:-}" ]]  && { echo "[until-fail][ERRO] --codegen requerido"; exit 2; }
 
 echo "[until-fail] INTERP=$INTERP"
 echo "[until-fail] ASM_ROOT=$ASM_ROOT"
 echo "[until-fail] CODEGEN=$CODEGEN"
-echo "[until-fail] SUPERSGEN=$SUPERSGEN"
+echo "[until-fail] SUPERSGEN=${SUPERSGEN:-}"
 echo "[until-fail] OUTROOT=$OUTROOT"
 echo "[until-fail] PROCS=$PROCS VARIANTS=$VARIANTS REPS=$REPS VEC=$VEC"
+echo "[until-fail] STRACE_BIN=${STRACE_BIN:-}"
 
-REPO_ROOT="$(cd "$(dirname "$0")/.."; pwd)"
-mkdir -p "$OUTROOT"
+# Loop (aqui você está rodando 1 N só, mas deixei genérico)
+for (( N=$START_N; N<=$N_MAX; N+=$STEP )); do
+  for variant in $VARIANTS; do
+    OUTDIR="$OUTROOT/$variant/N_${N}/P_${PROCS}"
+    mkdir -p "$OUTDIR"
 
-# --------- prepara lib da SUPER no OUTROOT ---------
-SUPERS_NAME="21_merge_sort_super"
-SUPER_SRC_DIR="${REPO_ROOT}/test/supers/${SUPERS_NAME}"   # <- CORRIGIDO
-SUPER_OUT_DIR="${OUTROOT}/_super_lib"
-mkdir -p "${SUPER_OUT_DIR}/ghc-deps"
+    # 1) Gera .hsk
+    HSK="$OUTDIR/mergesort_${variant}_N${N}_P${PROCS}.hsk"
+    echo "[ms_gen_input] gerando $HSK (variant=$variant N=$N P=$PROCS vec=$VEC)"
+    python3 "$SCRIPTDIR/_ms_gen_input.py" --n "$N" --P "$PROCS" --variant "$variant" --vec "$VEC" --out "$HSK"
+    echo "[ms_gen_input] wrote $HSK"
 
-copy_super_outputs() {
-  cp -f "${SUPER_SRC_DIR}/libsupers.so" "${SUPER_OUT_DIR}/libsupers.so"
-  [[ -d "${SUPER_SRC_DIR}/ghc-deps" ]] && cp -f "${SUPER_SRC_DIR}/ghc-deps/"* "${SUPER_OUT_DIR}/ghc-deps/" || true
-  [[ -f "${SUPER_SRC_DIR}/supers_rts_init.o" ]] && cp -f "${SUPER_SRC_DIR}/supers_rts_init.o" "${SUPER_OUT_DIR}/" || true
-}
+    # 2) Constrói .fl a partir do .hsk (não mudo o que já está OK)
+    FL="$OUTDIR/mergesort_${variant}_N${N}_P${PROCS}.fl"
+    echo "[build_fl] GEN=$CODEGEN"
+    echo "[build_fl] SUPERSGEN='(não setado)'"
+    echo "[build_fl] HSK=$HSK"
+    echo "[build_fl] OUT=$FL"
+    "$SCRIPTDIR/_build_fl_from_hsk.sh" "$CODEGEN" "$HSK" "$FL"
+    echo "[build_fl] OK -> $FL"
 
-if [[ -s "${SUPER_SRC_DIR}/libsupers.so" ]]; then
-  copy_super_outputs || true
-else
-  echo "[until-fail] libsupers.so não encontrada em ${SUPER_SRC_DIR}; tentando 'make supers'…"
-  ( cd "$REPO_ROOT" && make supers )
-  copy_super_outputs
-fi
+    # 3) Monta + balanceia PLA
+    bash "$SCRIPTDIR/_assemble_fl.sh" --asm-root "$ASM_ROOT" --fl "$FL" --outdir "$OUTDIR" -P "$PROCS"
 
-if [[ ! -s "${SUPER_OUT_DIR}/libsupers.so" ]]; then
-  echo "erro: não consegui gerar/copiar libsupers.so em ${SUPER_OUT_DIR}"; exit 1
-fi
-
-SUPERS_LIB="${SUPER_OUT_DIR}/libsupers.so"
-EXTRA_LD_SUPER="${SUPER_OUT_DIR}/ghc-deps:${SUPER_OUT_DIR}:${ASM_ROOT}/../interp/ghc-deps:${ASM_ROOT}/../interp/rts-local"
-
-IFS=',' read -r -a PROCS_ARR <<< "$PROCS"
-IFS=',' read -r -a VARS_ARR  <<< "$VARIANTS"
-
-run_case() {
-  local variant="$1" N="$2" P="$3"
-  local base_dir="${OUTROOT}/${variant}/N_${N}/P_${P}"
-  mkdir -p "$base_dir"
-
-  local base="${base_dir}/mergesort_${variant}_N${N}_P${P}"
-  local HSK="${base}.hsk"
-  local FL="${base}.fl"
-  local FLB="${base}.flb"
-  local PLA="${base}.pla"
-
-  # 1) HSK (p = P; vetor conforme --vec)
-  python3 "${REPO_ROOT}/scripts/_ms_gen_input.py" \
-    --variant "$variant" --N "$N" --P "$P" --vec "$VEC" --out "$HSK"
-
-  # 2) HSK -> FL
-  bash "${REPO_ROOT}/scripts/_build_fl_from_hsk.sh" \
-    --variant "$variant" \
-    --codegen "$CODEGEN" \
-    --supersgen "$SUPERSGEN" \
-    --in "$HSK" --out "$FL" \
-    --log "${base_dir}/codegen.log"
-
-  [[ -s "$FL" ]] || { echo "error: faltou FL ($FL)"; exit 1; }
-
-  # 3) .fl -> .flb/.pla
-  bash "${REPO_ROOT}/scripts/_assemble_fl.sh" \
-    --asm-root "$ASM_ROOT" \
-    --fl "$FL" \
-    --outbase "$base" \
-    --P "$P"
-
-  # 4) reps
-  for rep in $(seq 1 "$REPS"); do
-    local rep_dir="${base_dir}/rep_${rep}"
-    mkdir -p "$rep_dir"
-    echo "---- run: variant=${variant} N=${N} P=${P} rep=${rep} -> ${rep_dir}"
-    if [[ "$variant" == "super" ]]; then
-      python3 "${REPO_ROOT}/scripts/_run_interp.py" \
+    # 4) Run (com strace se disponível)
+    for (( rep=1; rep<=REPS; rep++ )); do
+      REP_DIR="$OUTDIR/rep_${rep}"
+      mkdir -p "$REP_DIR"
+      python3 "$SCRIPTDIR/_run_interp.py" \
         --interp "$INTERP" \
-        --flb "$FLB" \
-        --pla "$PLA" \
-        --P "$P" \
-        --lib "$SUPERS_LIB" \
-        --extra-ld "$EXTRA_LD_SUPER" \
-        --cwd "$rep_dir"
-    else
-      python3 "${REPO_ROOT}/scripts/_run_interp.py" \
-        --interp "$INTERP" \
-        --flb "$FLB" \
-        --pla "$PLA" \
-        --P "$P" \
-        --cwd "$rep_dir"
-    fi
-  done
-}
-
-for variant in "${VARS_ARR[@]}"; do
-  N="$START_N"
-  while [[ "$N" -le "$NMAX" ]]; do
-    for P in "${PROCS_ARR[@]}"; do
-      run_case "$variant" "$N" "$P"
+        --flb "$OUTDIR/mergesort_${variant}_N${N}_P${PROCS}.flb" \
+        --pla "$OUTDIR/mergesort_${variant}_N${N}_P${PROCS}.pla" \
+        --threads "$PROCS" \
+        --variant "$variant" \
+        --N "$N" \
+        --outdir "$REP_DIR" \
+        --strace-bin "${STRACE_BIN:-}"
     done
-    N=$(( N + STEP ))
   done
 done
-
-python3 "${REPO_ROOT}/scripts/_collect_metrics.py" --root "$OUTROOT" || true
-
-if [[ "$PLOTS" == "yes" ]]; then
-  python3 "${REPO_ROOT}/scripts/_plot_scaling.py" --root "$OUTROOT" || true
-  python3 "${REPO_ROOT}/scripts/_plot_vs_n.py"     --root "$OUTROOT" || true
-fi
-
-echo "[until-fail] DONE. Resultados em: $OUTROOT"
