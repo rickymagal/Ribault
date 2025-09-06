@@ -1,0 +1,64 @@
+const z0, 0
+const n0, -1
+const n1, 10
+const n2, 15
+const n3, 1000003
+mul n4, n2, n3
+add n5, n4, n0
+const n6, 1000003
+mul n7, n1, n6
+add n8, n7, n5
+callgroup("c9","headList")
+callsnd headList[0], n8, c9
+retsnd headList[0], z0, c9
+ret main, headList[0], z0
+const n13, 0
+const n14, -1
+equal n15, n-1, n14
+const n16, 0
+equal n17, n13, n16
+band n18, n15, n17
+const n19, 0
+steer s20, n18, n19
+add n21, n13, n15
+const n22, 0
+gthan n23, n21, n22
+const n24, -1
+equal n25, n-1, n24
+const n26, 0
+equal n27, n25, n26
+const n28, 1000003
+div n29, n-1, n28
+mul n30, n29, n28
+sub n31, n-1, n30
+const n32, -1
+equal n33, n31, n32
+band n34, n27, n33
+const n35, 1000003
+div n36, n-1, n35
+const n37, 0
+equal n38, n23, n37
+band n39, n34, n38
+steer s40, n39, n36
+add n41, n23, n34
+const n42, 0
+gthan n43, n41, n42
+const n44, 1
+const n45, 0
+equal n46, n43, n45
+band n47, n44, n46
+add n48, z0, z0
+steer s49, n47, n48
+add n50, n43, n44
+const n51, 0
+gthan n52, n50, n51
+const n53, 1
+const n54, 0
+equal n55, n52, n54
+band n56, n53, n55
+const n57, 0
+steer s58, n56, n57
+add n59, n52, n53
+const n60, 0
+gthan n61, n59, n60
+ret headList, [s58.t, s49.t, s40.t, s20.t], z0

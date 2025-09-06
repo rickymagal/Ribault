@@ -1,0 +1,31 @@
+digraph AST {
+  rankdir=TB;
+  node [shape=box,fontname="monospace"];
+  0 [shape=box,label="Program"];
+  1 [shape=box,label="FunDecl main"];
+  2 [shape=box,label="App"];
+  3 [shape=box,label="Var max"];
+  2 -> 3;
+  4 [shape=box,label="Lit 3"];
+  2 -> 4;
+  5 [shape=box,label="Lit 2"];
+  2 -> 5;
+  1 -> 2;
+  0 -> 1;
+  6 [shape=box,label="FunDecl max"];
+  7 [shape=box,label="Lambda b a"];
+  8 [shape=box,label="If"];
+  9 [shape=box,label="BinOp >"];
+  10 [shape=box,label="Var a"];
+  9 -> 10;
+  11 [shape=box,label="Var b"];
+  9 -> 11;
+  8 -> 9;
+  12 [shape=box,label="Var a"];
+  8 -> 12;
+  13 [shape=box,label="Var b"];
+  8 -> 13;
+  7 -> 8;
+  6 -> 7;
+  0 -> 6;
+}

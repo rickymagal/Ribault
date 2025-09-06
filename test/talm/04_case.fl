@@ -1,0 +1,35 @@
+const z0, 0
+const n0, 10
+const n1, 15
+const n2, 1000003
+mul n3, n0, n2
+add n4, n3, n1
+callgroup("c5","fstPair")
+callsnd fstPair[0], n4, c5
+retsnd fstPair[0], z0, c5
+ret main, fstPair[0], z0
+const n9, 0
+const n10, 1000003
+div n11, n-1, n10
+const n12, 1000003
+div n13, n-1, n12
+mul n14, n13, n12
+sub n15, n-1, n14
+const n16, 1
+const n17, 0
+equal n18, n9, n17
+band n19, n16, n18
+steer s20, n19, n11
+add n21, n9, n16
+const n22, 0
+gthan n23, n21, n22
+const n24, 1
+const n25, 0
+equal n26, n23, n25
+band n27, n24, n26
+const n28, 0
+steer s29, n27, n28
+add n30, n23, n24
+const n31, 0
+gthan n32, n30, n31
+ret fstPair, [s29.t, s20.t], z0
