@@ -1,0 +1,23 @@
+const z0, 0
+const n0, 10
+callgroup("c1","fib")
+callsnd fib[0], n0, c1
+retsnd fib[0], z0, c1
+ret main, fib[0], z0
+add n5, z0, z0
+const n6, 1
+lthan n7, n5, n6
+const n8, 1
+sub n9, n5, n8
+callgroup("c10","fib")
+callsnd fib[0], n9, c10
+retsnd fib[0], z0, c10
+const n13, 2
+sub n14, n5, n13
+callgroup("c15","fib")
+callsnd fib[0], n14, c15
+retsnd fib[0], z0, c15
+add n18, fib[0], fib[0]
+steer s19, n7, n5
+steer s20, n7, n18
+ret fib, [s20.f, s19.t], z0

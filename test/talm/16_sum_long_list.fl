@@ -1,0 +1,73 @@
+const z0, 0
+const n0, -1
+const n1, 1
+const n2, 2
+const n3, 3
+const n4, 4
+const n5, 5
+const n6, 6
+const n7, 7
+const n8, 8
+const n9, 9
+const n10, 10
+const n11, 1000003
+mul n12, n10, n11
+add n13, n12, n0
+const n14, 1000003
+mul n15, n9, n14
+add n16, n15, n13
+const n17, 1000003
+mul n18, n8, n17
+add n19, n18, n16
+const n20, 1000003
+mul n21, n7, n20
+add n22, n21, n19
+const n23, 1000003
+mul n24, n6, n23
+add n25, n24, n22
+const n26, 1000003
+mul n27, n5, n26
+add n28, n27, n25
+const n29, 1000003
+mul n30, n4, n29
+add n31, n30, n28
+const n32, 1000003
+mul n33, n3, n32
+add n34, n33, n31
+const n35, 1000003
+mul n36, n2, n35
+add n37, n36, n34
+const n38, 1000003
+mul n39, n1, n38
+add n40, n39, n37
+callgroup("c41","sumList")
+callsnd sumList[0], n40, c41
+retsnd sumList[0], z0, c41
+ret main, sumList[0], z0
+add n45, z0, z0
+const n46, 0
+const n47, -1
+equal n48, n45, n47
+const n49, 0
+equal n50, n46, n49
+band n51, n48, n50
+const n52, 0
+steer s53, n51, n52
+add n54, n46, n48
+const n55, 0
+gthan n56, n54, n55
+const n57, 1
+const n58, 0
+equal n59, n56, n58
+band n60, n57, n59
+add n61, z0, z0
+add n62, z0, z0
+callgroup("c63","sumList")
+callsnd sumList[0], n62, c63
+retsnd sumList[0], z0, c63
+add n66, n61, sumList[0]
+steer s67, n60, n66
+add n68, n56, n57
+const n69, 0
+gthan n70, n68, n69
+ret sumList, [s67.t, s53.t], z0

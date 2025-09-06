@@ -1,0 +1,11 @@
+const z0, 0
+const n0, 1
+callgroup("c1","squarePlusOne")
+callsnd squarePlusOne[0], n0, c1
+retsnd squarePlusOne[0], z0, c1
+ret main, squarePlusOne[0], z0
+mul n5, n-1, n-1
+ret sq, n5, z0
+const n7, 1
+add n8, n5, n7
+ret squarePlusOne, n8, z0
