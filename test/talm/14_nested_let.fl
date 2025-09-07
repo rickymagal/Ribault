@@ -1,9 +1,0 @@
-const z0, 0
-const n0, 2
-ret y, n0, z0
-const n2, 1
-ret x, n2, z0
-add n4, n2, n0
-ret z, n4, z0
-mul n6, n4, n4
-ret main, n6, z0

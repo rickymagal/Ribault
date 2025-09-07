@@ -1,0 +1,31 @@
+[debug] T[0]: n_instrs=6027 n_edges=9
+[debug] T[1]: n_instrs=6027 n_edges=9
+[debug] T[2]: n_instrs=6027 n_edges=9
+[debug] T[3]: n_instrs=6027 n_edges=9
+[debug] T[4]: n_instrs=6027 n_edges=9
+[debug] T[5]: n_instrs=6026 n_edges=9
+[debug] T[6]: n_instrs=6026 n_edges=9
+[debug] T[7]: n_instrs=6026 n_edges=9
+[debug] T[8]: n_instrs=6026 n_edges=9
+[debug] T[9]: n_instrs=6026 n_edges=9
+Procs 12
+[debug] worker start id=6 TID=16940 CPU=5
+[debug] worker start id=7 TID=16941 CPU=1
+[debug] worker start id=0 TID=16934 CPU=10
+[debug] worker start id=9 TID=16943 CPU=5
+[debug] worker start id=4 TID=16938 CPU=0
+[debug] worker start id=5 TID=16939 CPU=5
+[debug] worker start id=1 TID=16935 CPU=11
+[debug] worker start id=8 TID=16942 CPU=3
+[debug] worker start id=2 TID=16936 CPU=2
+[debug] worker start id=3 TID=16937 CPU=5
+[debug] worker end id=3
+[debug] worker end id=0
+[debug] worker end id=4
+[debug] worker end id=2
+[debug] worker end id=1
+[debug] worker end id=5
+[debug] worker end id=9
+[debug] worker end id=7
+[debug] worker end id=6
+[debug] worker end id=8

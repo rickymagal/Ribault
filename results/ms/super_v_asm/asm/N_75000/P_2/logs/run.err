@@ -1,0 +1,7 @@
+[debug] T[0]: n_instrs=150108 n_edges=1
+[debug] T[1]: n_instrs=150107 n_edges=1
+Procs 12
+[debug] worker start id=0 TID=6610 CPU=11
+[debug] worker start id=1 TID=6611 CPU=6
+[debug] worker end id=0
+[debug] worker end id=1
