@@ -1,24 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ================= args =================
+# ============================================================
+# super_vs_asm_merge_sort/run.sh — SEM AUTOPLACE + PLA manual
+# ============================================================
+
 START_N=0; STEP=0; N_MAX=0; REPS=1
 PROCS_CSV=""; VARIANTS=""
 INTERP=""; ASM_ROOT=""; CODEGEN_ROOT=""
 OUTROOT=""; VEC_MODE="range"; PLOTS="yes"; TAG="super_v_asm"
-
-# opcionais
-PY3="${PY3:-python3}"
 PY2="${PY2:-python2}"
-LOG_ERR="${LOG_ERR:-0}"          # 1 = grava stdout/stderr por repetição em .../logs/
-DLDBG="${DLDBG:-0}"              # 1 = LD_DEBUG=libs,files
-SUPERS_FIXED=""                  # caminho absoluto para test/supers/21_merge_sort_super
+PY3="${PY3:-python3}"
+
+# rr | chunk
+PLACE_MODE="${PLACE_MODE:-rr}"
+
+# supers fixa (default aponta para test/supers/21_merge_sort_super)
+SUPERS_FIXED="${SUPERS_FIXED:-}"
 
 usage(){
-  echo "uso: $0 --start-N A --step B --n-max C --reps R --procs \"1,2,...\" --variants \"asm super\" --interp PATH --asm-root PATH --codegen PATH --outroot PATH [--vec range|rand] [--plots yes|no] [--tag nome] [--supers-fixed DIR]"
+  echo "uso: $0 --start-N A --step B --n-max C --reps R --procs \"1,2,...\" --variants \"asm super\" \\"
+  echo "          --interp PATH --asm-root PATH --codegen PATH --outroot PATH [--vec range|rand] [--plots yes|no] [--tag nome]"
+  echo "env: PLACE_MODE=rr|chunk  SUPERS_FIXED=/abs/path/test/supers/21_merge_sort_super  LOG_ERR=1"
   exit 2
 }
 
+# ----------------- parse -----------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --start-N) START_N="$2"; shift 2;;
@@ -34,43 +41,47 @@ while [[ $# -gt 0 ]]; do
     --vec) VEC_MODE="$2"; shift 2;;
     --plots) PLOTS="$2"; shift 2;;
     --tag) TAG="$2"; shift 2;;
-    --supers-fixed) SUPERS_FIXED="$2"; shift 2;;
     *) usage;;
   esac
 done
 
 [[ -n "$START_N$STEP$N_MAX$REPS$PROCS_CSV$VARIANTS$INTERP$ASM_ROOT$CODEGEN_ROOT$OUTROOT" ]] || usage
-[[ -x "$INTERP" ]] || { echo "interp não executável: $INTERP"; exit 1; }
-[[ -f "$ASM_ROOT/assembler.py" && -f "$ASM_ROOT/scheduler.py" ]] || { echo "ASM_ROOT inválido: $ASM_ROOT"; exit 1; }
-[[ -x "$CODEGEN_ROOT/codegen" ]] || { echo "codegen não encontrado em $CODEGEN_ROOT/codegen"; exit 1; }
+
+echo "[env ] PY3=${PY3} ; PY2=${PY2}"
+
+[[ -x "$INTERP" ]] || { echo "[ERRO] interp não executável: $INTERP"; exit 1; }
+[[ -f "$ASM_ROOT/assembler.py" ]] || { echo "[ERRO] ASM_ROOT inválido: $ASM_ROOT"; exit 1; }
+
+if [[ -x "$CODEGEN_ROOT/codegen" ]]; then
+  CODEGEN="${CODEGEN_ROOT}/codegen"
+else
+  echo "[ERRO] não achei 'codegen' em: $CODEGEN_ROOT"; exit 1
+fi
+echo "[talm ] usando codegen: $CODEGEN"
+
+# SUPERS fixa
+if [[ -z "${SUPERS_FIXED}" ]]; then
+  CAND="${CODEGEN_ROOT}/test/supers/21_merge_sort_super"
+  [[ -f "$CAND/libsupers.so" ]] && SUPERS_FIXED="$CAND" || SUPERS_FIXED=""
+fi
+if [[ -n "$SUPERS_FIXED" ]]; then
+  echo "[sup ] usando supers fixa: $SUPERS_FIXED"
+  [[ -f "$SUPERS_FIXED/libsupers.so" ]] || { echo "[ERRO] libsupers.so não encontrada em SUPERS_FIXED"; exit 1; }
+fi
 
 MS_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# Descobre supers fixa se não foi passada
-if [[ -z "$SUPERS_FIXED" ]]; then
-  for rel in "../../test/supers/21_merge_sort_super" "../test/supers/21_merge_sort_super" "../../../test/supers/21_merge_sort_super"; do
-    try="$(cd "$MS_DIR/$rel" 2>/dev/null && pwd || true)"
-    if [[ -n "$try" && -f "$try/libsupers.so" && -d "$try/ghc-deps" ]]; then SUPERS_FIXED="$try"; break; fi
-  done
-fi
-[[ -n "$SUPERS_FIXED" ]] || { echo "[ERRO] não achei test/supers/21_merge_sort_super. Use --supers-fixed DIR"; exit 1; }
-[[ -f "$SUPERS_FIXED/libsupers.so" && -d "$SUPERS_FIXED/ghc-deps" ]] || { echo "[ERRO] supers fixa inválida em: $SUPERS_FIXED"; exit 1; }
-
 GEN_PY="$MS_DIR/_ms_gen_input.py"
 PLOT_PY="$MS_DIR/plot.py"
-
-echo "[env ] PY3=$PY3 ; PY2=$PY2"
 echo "[hsk ] usando gerador: $GEN_PY"
-echo "[sup ] usando supers fixa: $SUPERS_FIXED"
 
-mkdir -p "$OUTROOT"
+rm -rf "$OUTROOT"; mkdir -p "$OUTROOT"
 METRICS_CSV="$OUTROOT/metrics_${TAG}.csv"
 echo "variant,N,P,rep,seconds,rc" > "$METRICS_CSV"
 
 IFS=',' read -r -a PROCS <<< "$PROCS_CSV"
 read -r -a VARIANTS_ARR <<< "$VARIANTS"
 
-# ================= helpers =================
+# ----------------- helpers -----------------
 gen_hsk() {
   local variant="$1" N="$2" P="$3" out_hsk="$4"
   echo "[build_fl] generating HSK (N=${N}, variant=${variant}, threads=${P})"
@@ -80,76 +91,103 @@ gen_hsk() {
 build_fl() {
   local hsk="$1" fl="$2"
   echo "[talm ] codegen $hsk -> $fl"
-  "$CODEGEN_ROOT/codegen" "$hsk" > "$fl"
+  "$CODEGEN" "$hsk" > "$fl"
 }
 
-assemble_with_place() {
-  local fl="$1" prefix="$2" P="$3"
+assemble_baseline() {
+  local fl="$1" prefix="$2"
   pushd "$ASM_ROOT" >/dev/null
-
-    if [[ "$P" -le 1 ]]; then
-      echo "[asm  ] baseline (P=1)" >&2
-      "$PY2" assembler.py -o "$prefix" "$fl" >/dev/null 2>&1
-      [[ -f "${prefix}.flb" && -f "${prefix}.pla" ]] || { echo "ERRO: baseline não gerou flb/pla (P=1)"; popd >/dev/null; exit 1; }
-      # força mapeamento sequencial (todos em 0), mantendo 1a linha = ntasks
-      local nt; nt=$(head -n1 "${prefix}.pla" | tr -d '\r')
-      awk -v N="$nt" 'BEGIN{print N} NR>1{print 0}' "${prefix}.pla" > "${prefix}.pla.seq"
-      mv "${prefix}.pla.seq" "${prefix}.pla"
-    else
-      echo "[asm  ] autoplace -n $P (sem timeout, sem fallback)" >&2
-      "$PY2" assembler.py -a -n "$P" -o "$prefix" "$fl" >/dev/null 2>&1 || {
-        echo "ERRO: assembler.py -a -n $P falhou"; popd >/dev/null; exit 1;
-      }
-      [[ -f "${prefix}_auto.pla" && -f "${prefix}.flb" ]] || {
-        echo "ERRO: autoplace não gerou ${prefix}_auto.pla ou ${prefix}.flb"; popd >/dev/null; exit 1;
-      }
-      mv "${prefix}_auto.pla" "${prefix}.pla"
-      echo "[asm  ] usando placement automático: ${prefix}.pla" >&2
-    fi
-
+    echo "[asm  ] baseline (sem -a)"
+    "$PY2" assembler.py -o "$prefix" "$fl" >/dev/null
   popd >/dev/null
-  echo "${prefix}.flb|${prefix}.pla"
+  [[ -f "${prefix}.flb" && -f "${prefix}.pla" ]] || { echo "[ERRO] baseline não gerou .flb/.pla"; exit 1; }
+  cp "${prefix}.pla" "${prefix}.pla.base"
 }
 
-run_interp_time() {
-  local P="$1" flb="$2" pla="$3" lib="${4:-}" case_dir="$5" rep="$6"
-  local -a envvars
-  local libpath="$SUPERS_FIXED:$SUPERS_FIXED/ghc-deps"
-  envvars+=( "LD_LIBRARY_PATH=${libpath}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" )
-  [[ "$DLDBG" == "1" ]] && envvars+=( "LD_DEBUG=libs,files" )
+rewrite_pla_manual() {
+  local prefix="$1" P="$2" mode="$3"
+  local base="${prefix}.pla.base"
+  local pla="${prefix}.pla"
+  local nt; nt="$(head -n1 "$base" | tr -d '\r')"
+  [[ "$nt" =~ ^[0-9]+$ ]] || { echo "[ERRO] primeira linha de ${base} inválida"; exit 1; }
 
-  local t0 t1 secs rc
+  if [[ "$P" -le 1 ]]; then
+    echo "[pla  ] P=1 -> tudo no proc 0"
+    awk -v N="$nt" 'BEGIN{print N} NR>1{print 0}' "$base" > "$pla"
+    return
+  fi
+
+  case "$mode" in
+    rr|RR)
+      echo "[pla  ] manual RR: ntasks=${nt}, P=${P}"
+      awk -v P="$P" -v N="$nt" 'BEGIN{print N} NR>1{ i=NR-2; print (i%P) }' "$base" > "$pla"
+      ;;
+    chunk|CHUNK)
+      echo "[pla  ] manual CHUNK: ntasks=${nt}, P=${P}"
+      awk -v P="$P" -v N="$nt" 'BEGIN{print N} NR>1{ i=NR-2; printf "%d\n", int((i*P)/N) }' "$base" > "$pla"
+      ;;
+    *) echo "[ERRO] PLACE_MODE inválido: $mode"; exit 1;;
+  esac
+}
+
+print_pla_load() {
+  local pla="$1" P="$2"
+  local line; line="$(awk -v P="$P" '
+    NR==1{N=$1; next}
+    {c[$1]++}
+    END{
+      for(i=0;i<P;i++){
+        n=(i in c? c[i]:0);
+        printf "%d:%d%s", i, n, (i<P-1?" ":"\n")
+      }
+    }' "$pla")"
+  echo "[pla  ] carga: $line"
+}
+
+stage_supers_fixed() {
+  local src="$1" case_dir="$2"
+  local dst="$case_dir/supers/pkg"
+  rm -rf "$dst"; mkdir -p "$dst"
+  (cd "$src" && cp -a . "$dst/")
+  [[ -f "$dst/libsupers.so" ]] || { echo "[ERRO] cópia da supers falhou"; exit 1; }
+  echo "$dst/libsupers.so"
+}
+
+run_interp_time_rc() {
+  # stdout: "<secs> <rc>"
+  local P="$1" flb="$2" pla="$3" lib="${4:-}" case_dir="$5"
+  local logs="$case_dir/logs"; mkdir -p "$logs"
+  local outlog="$logs/run.out" errlog="$logs/run.err"
+
+  >&2 echo "[run  ] interp: P=${P}"
+  >&2 echo "[run  ] flb=${flb}"
+  >&2 echo "[run  ] pla=${pla}"
+  [[ -n "$lib" ]] && >&2 echo "[run  ] lib=${lib}"
+
+  local t0 t1 pid rc=0
   t0=$(date +%s%N)
 
-  if [[ "$LOG_ERR" == "1" ]]; then
-    mkdir -p "$case_dir/logs"
-    local OUT="$case_dir/logs/rep_${rep}.out"
-    local ERR="$case_dir/logs/rep_${rep}.err"
-    set +e
-    if [[ -n "$lib" ]]; then
-      env "${envvars[@]}" "$INTERP" "$P" "$flb" "$pla" "$lib" >"$OUT" 2>"$ERR"
-    else
-      env "${envvars[@]}" "$INTERP" "$P" "$flb" "$pla" >"$OUT" 2>"$ERR"
-    fi
-    rc=$?
-    set -e
+  if [[ -n "$lib" ]]; then
+    local libdir; libdir="$(dirname "$lib")"
+    local ghcdeps="$libdir/ghc-deps"
+    LD_LIBRARY_PATH="$libdir:$ghcdeps" "$INTERP" "$P" "$flb" "$pla" "$lib" >"$outlog" 2>"$errlog" &
   else
-    set +e
-    if [[ -n "$lib" ]]; then
-      env "${envvars[@]}" "$INTERP" "$P" "$flb" "$pla" "$lib" >/dev/null 2>&1
-    else
-      env "${envvars[@]}" "$INTERP" "$P" "$flb" "$pla" >/dev/null 2>&1
-    fi
+    "$INTERP" "$P" "$flb" "$pla" >"$outlog" 2>"$errlog" &
+  fi
+  pid=$!
+  echo "$pid" >"$logs/pid"
+  >&2 echo "[run  ] pid=${pid}"
+
+  # espera terminar (SEM timeout)
+  if ! wait "$pid"; then
     rc=$?
-    set -e
   fi
 
   t1=$(date +%s%N)
-  secs=$(awk -v A="$t0" -v B="$t1" 'BEGIN{printf "%.6f",(B-A)/1e9}')
-  echo "$secs|$rc"
+  awk -v A="$t0" -v B="$t1" -v R="$rc" 'BEGIN{ printf "%.6f %d", (B-A)/1e9, R }'
 }
 
-# ================= main =================
+# ----------------- main -----------------
 for variant in "${VARIANTS_ARR[@]}"; do
   N="$START_N"
   while [[ "$N" -le "$N_MAX" ]]; do
@@ -161,26 +199,34 @@ for variant in "${VARIANTS_ARR[@]}"; do
       PREFIX="$CASE_DIR/mergesort_${variant}_N${N}_P${P}"
 
       gen_hsk "$variant" "$N" "$P" "$HSK"
-      [[ -f "$HSK" ]] || { echo "[ERRO] geração do HSK"; exit 1; }
-
       build_fl "$HSK" "$FL"
-      [[ -f "$FL" ]] || { echo "[ERRO] FL não gerado: $FL"; exit 1; }
+      assemble_baseline "$FL" "$PREFIX"
+      rewrite_pla_manual "$PREFIX" "$P" "$PLACE_MODE"
+      print_pla_load "${PREFIX}.pla" "$P"
 
       LIBSUP=""
       if [[ "$variant" == "super" ]]; then
-        LIBSUP="$SUPERS_FIXED/libsupers.so"
-        [[ -f "$LIBSUP" ]] || { echo "ERRO: libsupers.so não encontrada: $LIBSUP"; exit 1; }
+        [[ -n "$SUPERS_FIXED" ]] || { echo "[ERRO] SUPERS_FIXED não definida para 'super'"; exit 1; }
+        LIBSUP="$(stage_supers_fixed "$SUPERS_FIXED" "$CASE_DIR")"
       fi
 
-      IFS='|' read -r FLB PLA < <(assemble_with_place "$FL" "$PREFIX" "$P")
-      [[ -f "$FLB" && -f "$PLA" ]] || { echo "ERRO: FLB/PLA não gerados"; exit 1; }
-
       for ((rep=1; rep<=REPS; rep++)); do
-        IFS='|' read -r secs rc < <(run_interp_time "$P" "$FLB" "$PLA" "$LIBSUP" "$CASE_DIR" "$rep")
+        set +e
+        out="$(run_interp_time_rc "$P" "${PREFIX}.flb" "${PREFIX}.pla" "$LIBSUP" "$CASE_DIR")"
+        st=$?
+        set -e
+        secs="NaN"; rc=999
+        if [[ $st -eq 0 ]]; then
+          # out deve ter exatamente dois campos
+          read -r secs rc <<< "$out" || { secs="NaN"; rc=998; }
+        fi
+
         echo "variant=${variant}, N=${N}, P=${P}, rep=${rep}, secs=${secs}, rc=${rc}"
         echo "${variant},${N},${P},${rep},${secs},${rc}" >> "$METRICS_CSV"
-        if [[ "$LOG_ERR" == "1" && "$rc" != "0" ]]; then
-          echo "[err ] $CASE_DIR/logs/rep_${rep}.err"
+
+        if [[ "${LOG_ERR:-0}" -eq 1 && "$rc" -ne 0 ]]; then
+          echo "[err ] $CASE_DIR/logs/run.err"
+          sed -n '1,120p' "$CASE_DIR/logs/run.err" || true
         fi
       done
     done
