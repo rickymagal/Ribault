@@ -13,25 +13,20 @@ import           Types           (DGraph(..), NodeId)
 import           Node            (DNode(..))
 import           Port            (Port(..))
 
--- Saída principal
-assemble :: DGraph DNode -> T.Text
-assemble g =
-  T.unlines $
-    ["const z0, 0"] ++ concatMap (emitNode g inMap) nodes
-  where
-    nodes = sortOn fst (M.toList (dgNodes g))
-    inMap = buildInputs g
-
--- Utilitários ---------------------------------------------------------------
-
+----------------------------------------------------------------
+-- Utilitários
+----------------------------------------------------------------
 showT :: Show a => a -> T.Text
 showT = T.pack . show
 
-dstN :: NodeId -> T.Text
+dstN, dstS :: NodeId -> T.Text
 dstN nid = "n" <> showT nid
-
-dstS :: NodeId -> T.Text
 dstS nid = "s" <> showT nid
+
+-- tag   ----------------------------------------------------------------
+-- Força sempre cg NN, com NN ∈ [10..99]; evita “08”
+tagName :: NodeId -> T.Text
+tagName nid = "cg" <> showT ((nid `mod` 90) + 10)
 
 -- "fun#i" -> "fun[i]"
 argAsFunSlot :: String -> T.Text
@@ -44,12 +39,15 @@ argAsFunSlot nm =
 outName :: DGraph DNode -> NodeId -> String -> T.Text
 outName g s sp =
   case M.lookup s (dgNodes g) of
-    Just NSteer{} -> dstS s <> "." <> T.pack sp
+    -- steer t -> .w / f -> .g
+    Just NSteer{} ->
+      dstS s <> "." <> case sp of
+                         "t" -> "w"
+                         "f" -> "g"
+                         _   -> T.pack sp
     Just n ->
       case n of
-        -- retorno de função deve ser referenciado como fun[0]
         NRetSnd{..} -> T.pack nName <> "[0]"
-        -- Dois outputs: base = n<s>; saída 0 = n<s>, saída 1 = n<s>.1
         NDiv{}      -> if sp=="0" then dstN s else dstN s <> ".1"
         NDivI{}     -> if sp=="0" then dstN s else dstN s <> ".1"
         NCommit{}   -> if sp=="0" then dstN s else dstN s <> ".1"
@@ -62,7 +60,9 @@ fmtOp []  = "z0"
 fmtOp [x] = x
 fmtOp xs  = "[" <> T.intercalate ", " xs <> "]"
 
--- Mapa de entradas: (dest,porta) -> [fontes]
+----------------------------------------------------------------
+-- Construção do mapa de entradas
+----------------------------------------------------------------
 buildInputs :: DGraph DNode -> M.Map (NodeId,String) [T.Text]
 buildInputs g =
   let step m (s,sp,d,dp) =
@@ -70,131 +70,136 @@ buildInputs g =
         in M.insertWith (++) (d,dp) [src] m
   in foldl step M.empty (dgEdges g)
 
--- acha o callgroup (porta 1) para callsnd/retsnd
-findCallgroupTag :: DGraph DNode -> M.Map (NodeId,String) [T.Text] -> NodeId -> Maybe T.Text
+findCallgroupTag
+  :: DGraph DNode
+  -> M.Map (NodeId,String) [T.Text]
+  -> NodeId
+  -> Maybe T.Text
 findCallgroupTag g _im nid =
   case [ s | (s,_sp,d,dp) <- dgEdges g, d==nid, dp=="1"
            , case M.lookup s (dgNodes g) of
                Just NCallGroup{} -> True
-               _                  -> False ] of
-    (cg:_) -> Just ("c" <> showT cg)
+               _                 -> False ] of
+    (cg:_) -> Just (tagName cg)
     _      -> Nothing
 
 orderedPins :: M.Map (NodeId,String) [T.Text] -> NodeId -> [String]
 orderedPins im k = [ p | (n,p) <- M.keys im, n==k ]
 
--- Emissão -------------------------------------------------------------------
-
-emitNode :: DGraph DNode -> M.Map (NodeId,String) [T.Text] -> (NodeId, DNode) -> [T.Text]
+----------------------------------------------------------------
+-- Emissão nó-a-nó
+----------------------------------------------------------------
+emitNode
+  :: DGraph DNode
+  -> M.Map (NodeId,String) [T.Text]
+  -> (NodeId, DNode)
+  -> [T.Text]
 emitNode g im (nid, dn) =
   case dn of
-    -- Consts
-    NConstI{..} -> [ "const "  <> dstN nid <> ", " <> showT cInt ]
-    NConstF{..} -> [ "fconst " <> dstN nid <> ", " <> showT cFloat ]
-    NConstD{..} -> [ "dconst " <> dstN nid <> ", " <> showT cDouble ]
+    -------------------------------------------------- Consts
+    NConstI{..} -> ["const "  <> dstN nid <> ", " <> showT cInt]
+    NConstF{..} -> ["fconst " <> dstN nid <> ", " <> showT cFloat]
+    NConstD{..} -> ["dconst " <> dstN nid <> ", " <> showT cDouble]
 
-    -- Binárias
+    -------------------------------------------------- Binárias
     NAdd{}  -> bin2 "add"
     NSub{}  -> bin2 "sub"
     NMul{}  -> bin2 "mul"
-    NDiv{}  ->
-      let a0 = fmtOp (getInputs "0")
-          a1 = fmtOp (getInputs "1")
-      in [ "div " <> dstN nid <> ", " <> a0 <> ", " <> a1 ]
+    NDiv{}  -> ["div "  <> dstN nid <> ", " <> fmtOp (gi "0") <> ", " <> fmtOp (gi "1")]
     NFAdd{} -> bin2 "fadd"
+    NFSub{} -> bin2 "fsub"
+    NFMul{} -> bin2 "fmult"
+    NFDiv{} -> bin2 "fdiv"
     NDAdd{} -> bin2 "dadd"
     NBand{} -> bin2 "band"
 
-    -- Imediatas
+    -------------------------------------------------- Imediatas
     NAddI{..}  -> bin1imm "addi"  (showT iImm)
     NSubI{..}  -> bin1imm "subi"  (showT iImm)
     NMulI{..}  -> bin1imm "muli"  (showT iImm)
     NFMulI{..} -> bin1imm "fmuli" (showT fImm)
-    NDivI{..}  ->
-      let a0 = fmtOp (getInputs "0")
-      in [ "divi " <> dstN nid <> ", " <> a0 <> ", " <> showT iImm ]
+    NDivI{..}  -> ["divi " <> dstN nid <> ", "
+                          <> fmtOp (gi "0") <> ", " <> showT iImm]
 
-    -- Comparações e steer
+    -------------------------------------------------- Comparações / steer
     NLThan{}    -> bin2 "lthan"
     NGThan{}    -> bin2 "gthan"
     NEqual{}    -> bin2 "equal"
     NLThanI{..} -> bin1imm "lthani" (showT iImm)
     NGThanI{..} -> bin1imm "gthani" (showT iImm)
-    NSteer{}    ->
-      let g0 = fmtOp (getInputs "1")
-          v0 = fmtOp (getInputs "0")
-      in [ "steer " <> dstS nid <> ", " <> g0 <> ", " <> v0 ]
+    NSteer{}    -> ["steer " <> dstS nid <> ", "
+                           <> fmtOp (gi "1") <> ", " <> fmtOp (gi "0")]
 
-    -- TALM: grupos/chamadas/retornos
+    -------------------------------------------------- TALM runtime
     NCallGroup{..} ->
-      [ "callgroup(\"c" <> showT nid <> "\",\"" <> T.pack nName <> "\")" ]
+      [ "callgroup(\"" <> tagName nid <> "\",\"" <> T.pack nName <> "\")" ]
 
     NCallSnd{..} ->
-      let src0    = fmtOp (getInputs "0")
+      let src0    = fmtOp (gi "0")
           tag     = maybe "0" id (findCallgroupTag g im nid)
-          slotTxt = argAsFunSlot nName
-      in [ "callsnd " <> slotTxt <> ", " <> src0 <> ", " <> tag ]
+      in  [ "callsnd " <> argAsFunSlot nName
+            <> ", " <> src0 <> ", " <> tag ]
 
-    -- >>> correção: retsnd SEM payload; valor vem do 'ret <fun>, ...'
     NRetSnd{..} ->
-      let tag  = maybe "0" id (findCallgroupTag g im nid)
-          dstF = T.pack nName <> "[0]"
-      in [ "retsnd " <> dstF <> ", z0, " <> tag ]
+      let tag = maybe "0" id (findCallgroupTag g im nid)
+      in  [ "retsnd " <> T.pack nName <> "[0], z0, " <> tag ]
 
-    -- ret da função
     NRet{..} ->
-      let src0 = fmtOp (getInputs "0")
-      in [ "ret " <> T.pack nName <> ", " <> src0 <> ", z0" ]
+      let src0 = case gi "0" of
+                   (h:_) -> h
+                   []    -> "z0"
+      in  [ "ret " <> T.pack nName <> ", " <> src0 <> ", z0" ]
 
-    -- tag/val
+    -------------------------------------------------- tag/val
     NTagVal{} -> one1 "tagval"
     NValTag{} -> bin2 "valtag"
 
-    -- DMA / spec
-    NCpHToDev{}  -> [ "cphtodev " <> dstN nid <> ", 0" ]
-    NCpDevToH{}  -> [ "cpdevtoh " <> dstN nid <> ", 0" ]
+    -------------------------------------------------- DMA / spec
+    NCpHToDev{}  -> ["cphtodev " <> dstN nid <> ", 0"]
+    NCpDevToH{}  -> ["cpdevtoh " <> dstN nid <> ", 0"]
 
-    -- commit / stopspec
-    NCommit{} ->
-      let pins = orderedPins im nid
-          srcs = map (\p -> fmtOp (getInputs p)) pins
-      in [ "commit " <> T.intercalate ", " (dstN nid : srcs) ]
-    NStopSpec{} ->
-      let pins = orderedPins im nid
-          srcs = map (\p -> fmtOp (getInputs p)) pins
-      in [ "stopspec " <> T.intercalate ", " (dstN nid : srcs) ]
+    -------------------------------------------------- commit / stopspec
+    NCommit{}   -> multi "commit"
+    NStopSpec{} -> multi "stopspec"
 
-    -- Formal
-    NArg{} ->
-      let a0 = fmtOp (getInputs "0")
-      in [ "add " <> dstN nid <> ", " <> a0 <> ", z0" ]
+    -------------------------------------------------- Formal arg
+    NArg{} -> ["add " <> dstN nid <> ", " <> fmtOp (gi "0") <> ", z0"]
 
-    -- Super
+    -------------------------------------------------- Super-inst
     NSuper{..} ->
-      let pins   = orderedPins im nid
-          srcs   = map (\p -> fmtOp (getInputs p)) pins
-          base   = case (superSpec, superImm) of
-                     (False, Nothing) -> "super"
-                     (True,  Nothing) -> "specsuper"
-                     (False, Just _)  -> "superi"
-                     (True,  Just _)  -> "specsuperi"
-          imm    = maybe [] (\t -> [showT t]) superImm
-          headOp = T.pack base <> " " <> dstN nid
-          line   = T.intercalate ", "
-                     ( headOp
-                     : [ showT superNum
-                       , showT (max 1 superOuts)
-                       ] ++ srcs ++ imm )
-      in [ line ]
+      let pins = orderedPins im nid
+          srcs = map (\p -> fmtOp (gi p)) pins
+          base = case (superSpec, superImm) of
+                   (False, Nothing) -> "super"
+                   (True , Nothing) -> "specsuper"
+                   (False, Just _)  -> "superi"
+                   (True , Just _)  -> "specsuperi"
+          imm  = maybe [] (\t -> [showT t]) superImm
+      in  [ T.intercalate ", " $
+              (T.pack base <> " " <> dstN nid)
+              : [ showT superNum
+                , showT (max 1 superOuts)
+                ]
+              ++ srcs ++ imm
+          ]
   where
-    getInputs pin = M.findWithDefault [] (nid, pin) im
-    bin2 mnem =
-      let a0 = fmtOp (getInputs "0")
-          a1 = fmtOp (getInputs "1")
-      in [ T.pack mnem <> " " <> dstN nid <> ", " <> a0 <> ", " <> a1 ]
-    bin1imm mnem immTxt =
-      let a0 = fmtOp (getInputs "0")
-      in [ T.pack mnem <> " " <> dstN nid <> ", " <> a0 <> ", " <> immTxt ]
-    one1 mnem =
-      let a0 = fmtOp (getInputs "0")
-      in [ T.pack mnem <> " " <> dstN nid <> ", " <> a0 ]
+    gi  p     = M.findWithDefault [] (nid,p) im
+    bin2 mnem = [ T.pack mnem <> " " <> dstN nid <> ", "
+                              <> fmtOp (gi "0") <> ", " <> fmtOp (gi "1") ]
+    bin1imm m immTxt =
+      [ T.pack m <> " " <> dstN nid <> ", " <> fmtOp (gi "0") <> ", " <> immTxt ]
+    one1 mnem  = [ T.pack mnem <> " " <> dstN nid <> ", " <> fmtOp (gi "0") ]
+    multi base =
+      let pins = orderedPins im nid
+          srcs = map (\p -> fmtOp (gi p)) pins
+      in  [ T.pack base <> " " <> T.intercalate ", " (dstN nid : srcs) ]
+
+----------------------------------------------------------------
+-- assemble : entrada = grafo; saída = .fl text
+----------------------------------------------------------------
+assemble :: DGraph DNode -> T.Text
+assemble g =
+  T.unlines $ "const z0, 0" : concatMap (emitNode g inMap) nodes
+  where
+    nodes = sortOn fst (M.toList (dgNodes g))
+    inMap = buildInputs g

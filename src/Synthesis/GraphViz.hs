@@ -37,36 +37,54 @@ toInt t | T.all isDigit t && not (T.null t) = read (T.unpack t)
 toInt _ = 0
 
 ppNode :: DGraph DNode -> (NodeId, DNode) -> Text
-ppNode _ (_nid, dn) =
-  T.concat [ "  n", T.pack (show (_nid)), " [label=\"", opSymbol dn, "\"];" ]
+ppNode _ (nid, dn) =
+  T.concat [ "  n", T.pack (show nid), " [label=\"", opSymbol dn, "\"];" ]
 
 opSymbol :: DNode -> Text
 opSymbol = \case
+  -- Constantes
   NConstI{..}   -> T.pack ("const "  ++ show cInt)
   NConstF{..}   -> T.pack ("fconst " ++ show cFloat)
   NConstD{..}   -> T.pack ("dconst " ++ show cDouble)
+
+  -- Inteiro
   NAdd{}        -> "+"
   NSub{}        -> "-"
   NMul{}        -> "*"
   NDiv{}        -> "/"
+
+  -- Float
   NFAdd{}       -> "f+"
+  NFSub{}       -> "f-"
+  NFMul{}       -> "f*"
+  NFDiv{}       -> "f/"
+
+  -- Double (só add por enquanto)
   NDAdd{}       -> "d+"
+
+  -- Bool/bitwise e controle
   NBand{}       -> "band"
   NSteer{}      -> "steer"
   NLThan{}      -> "<"
   NGThan{}      -> ">"
   NEqual{}      -> "=="
-  NLThanI{..}   -> T.pack ("<i " ++ show iImm)
-  NGThanI{..}   -> T.pack (">i " ++ show iImm)
-  NAddI{..}     -> T.pack ("+i " ++ show iImm)
-  NSubI{..}     -> T.pack ("-i " ++ show iImm)
-  NMulI{..}     -> T.pack ("*i " ++ show iImm)
-  NFMulI{..}    -> T.pack ("*fi "++ show fImm)
-  NDivI{..}     -> T.pack ("/i " ++ show iImm)
+
+  -- Imediatos
+  NLThanI{..}   -> T.pack ("<i "  ++ show iImm)
+  NGThanI{..}   -> T.pack (">i "  ++ show iImm)
+  NAddI{..}     -> T.pack ("+i "  ++ show iImm)
+  NSubI{..}     -> T.pack ("-i "  ++ show iImm)
+  NMulI{..}     -> T.pack ("*i "  ++ show iImm)
+  NFMulI{..}    -> T.pack ("*fi " ++ show fImm)
+  NDivI{..}     -> T.pack ("/i "  ++ show iImm)
+
+  -- Chamadas
   NCallGroup{..}-> T.pack ("callgroup " <> nName)
   NCallSnd{..}  -> T.pack ("callsnd "   <> nName)
   NRetSnd{..}   -> T.pack ("retsnd "    <> nName)
   NRet{..}      -> T.pack ("ret "       <> nName)
+
+  -- Outros
   NTagVal{}     -> "tagval"
   NValTag{}     -> "valtag"
   NCpHToDev{}   -> "cphtodev"
