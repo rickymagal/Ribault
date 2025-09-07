@@ -1,0 +1,25 @@
+[debug] T[0]: n_instrs=5027 n_edges=7
+[debug] T[1]: n_instrs=5027 n_edges=7
+[debug] T[2]: n_instrs=5027 n_edges=7
+[debug] T[3]: n_instrs=5027 n_edges=7
+[debug] T[4]: n_instrs=5027 n_edges=7
+[debug] T[5]: n_instrs=5027 n_edges=7
+[debug] T[6]: n_instrs=5027 n_edges=7
+[debug] T[7]: n_instrs=5026 n_edges=7
+Procs 12
+[debug] worker start id=6 TID=24966 CPU=5
+[debug] worker start id=2 TID=24962 CPU=1
+[debug] worker start id=7 TID=24967 CPU=0
+[debug] worker start id=0 TID=24960 CPU=5
+[debug] worker start id=1 TID=24961 CPU=11
+[debug] worker start id=5 TID=24965 CPU=4
+[debug] worker start id=3 TID=24963 CPU=3
+[debug] worker start id=4 TID=24964 CPU=9
+[debug] worker end id=7
+[debug] worker end id=0
+[debug] worker end id=1
+[debug] worker end id=6
+[debug] worker end id=4
+[debug] worker end id=5
+[debug] worker end id=2
+[debug] worker end id=3

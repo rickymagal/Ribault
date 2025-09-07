@@ -1,0 +1,19 @@
+[debug] T[0]: n_instrs=63378 n_edges=5
+[debug] T[1]: n_instrs=63378 n_edges=5
+[debug] T[2]: n_instrs=63378 n_edges=5
+[debug] T[3]: n_instrs=63377 n_edges=5
+[debug] T[4]: n_instrs=63377 n_edges=5
+[debug] T[5]: n_instrs=63377 n_edges=5
+Procs 12
+[debug] worker start id=0 TID=5146 CPU=10
+[debug] worker start id=2 TID=5148 CPU=0
+[debug] worker start id=1 TID=5147 CPU=11
+[debug] worker start id=5 TID=5151 CPU=9
+[debug] worker start id=4 TID=5150 CPU=6
+[debug] worker start id=3 TID=5149 CPU=4
+[debug] worker end id=5
+[debug] worker end id=0
+[debug] worker end id=2
+[debug] worker end id=3
+[debug] worker end id=1
+[debug] worker end id=4
