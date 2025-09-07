@@ -25,6 +25,10 @@ data DNode
   | NFAdd    { nName :: !String }
   | NDAdd    { nName :: !String }
   | NBand    { nName :: !String }
+  | NFSub    { nName :: !String }   -- << novo
+  | NFMul    { nName :: !String }   -- << novo
+  | NFDiv    { nName :: !String }   -- << novo
+
 
   -- ALU imediatas
   | NAddI    { nName :: !String, iImm :: !Int }

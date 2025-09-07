@@ -8,10 +8,11 @@ module Synthesis.Builder
   ) where
 
 import           Prelude hiding (lookup)
-import           Control.Monad          (forM_, zipWithM_)
+import           Control.Monad          (forM_, zipWithM_, when)
 import           Control.Monad.State    (StateT, get, put, runStateT, gets, modify)
 import           Control.Monad.Trans    (lift)
 import qualified Data.Map              as M
+import qualified Data.Set              as S
 
 import           Semantic              (assignSuperNames)
 import           Syntax
@@ -19,6 +20,7 @@ import           Types                  (DGraph(..), Edge, NodeId, emptyGraph, a
 import           Port                   (Port(..), (-->))
 import           Unique                 (Unique, evalUnique, freshId)
 import           Node                   (DNode(..))
+
 -- Grafo final
 type DFG = DGraph DNode
 
@@ -30,14 +32,15 @@ type AliasMap    = M.Map (NodeId, String) [Port]
 type ActiveStack = [Ident]
 
 data BuildS = BuildS
-  { bsGraph   :: !DFG
-  , bsEnv     :: ![Env]
-  , bsAliases :: !AliasMap
-  , bsActive  :: !ActiveStack
+  { bsGraph      :: !DFG
+  , bsEnv        :: ![Env]
+  , bsAliases    :: !AliasMap
+  , bsActive     :: !ActiveStack
+  , bsFloatFuns  :: !(S.Set Ident)
   }
 
 emptyS :: BuildS
-emptyS = BuildS emptyGraph [M.empty] M.empty []
+emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty
 
 newtype Build a = Build { unBuild :: StateT BuildS Unique a }
   deriving (Functor, Applicative, Monad)
@@ -45,7 +48,7 @@ newtype Build a = Build { unBuild :: StateT BuildS Unique a }
 runBuild :: Build a -> (a, BuildS)
 runBuild m = evalUnique (runStateT (unBuild m) emptyS)
 
--- escopo ---------------------------------------------------------------
+-- escopo ----------------------------------------------------------------
 
 pushEnv, popEnv :: Build ()
 pushEnv = Build $ modify (\s -> s { bsEnv = M.empty : bsEnv s })
@@ -64,6 +67,23 @@ lookupB x = Build $ gets $ \s ->
   let go []     = Nothing
       go (e:rs) = maybe (go rs) Just (M.lookup x e)
   in go (bsEnv s)
+
+-- marcação de função float ---------------------------------------------
+
+markFloatFun :: Ident -> Build ()
+markFloatFun f = Build $ modify (\s -> s { bsFloatFuns = S.insert f (bsFloatFuns s) })
+
+isFloatFun :: Ident -> Build Bool
+isFloatFun f = Build $ gets (\s -> S.member f (bsFloatFuns s))
+
+isFloatActive :: Build Bool
+isFloatActive = Build $ gets $ \s -> case bsActive s of
+  (f:_) -> S.member f (bsFloatFuns s)
+  _     -> False
+
+-- helper: está construindo 'f' agora?
+isActiveFun :: Ident -> Build Bool
+isActiveFun f = Build $ gets (\s -> f `elem` bsActive s)
 
 -- edges + aliases ------------------------------------------------------
 
@@ -120,6 +140,9 @@ setName l n = case n of
   NFMulI{}    -> n{ nName = l }
   NDivI{}     -> n{ nName = l }
   NFAdd{}     -> n{ nName = l }
+  NFSub{}     -> n{ nName = l }
+  NFMul{}     -> n{ nName = l }
+  NFDiv{}     -> n{ nName = l }
   NDAdd{}     -> n{ nName = l }
   NBand{}     -> n{ nName = l }
   NSteer{}    -> n{ nName = l }
@@ -141,13 +164,33 @@ setName l n = case n of
   NArg{}      -> n{ nName = l }
   NSuper{}    -> n{ nName = l }
 
--- codificação aritmética de pares/listas --------------------------------
+-- codificação pares/listas ---------------------------------------------
 
 pairBase :: Int
 pairBase = 1000003
 
 constI :: Int -> Build Port
 constI k = newNode ("const_" ++ show k) (NConstI "" k) >>= \nid -> pure (out0 nid)
+
+-- immediates (sem aliases!)
+addI :: Port -> Int -> Build Port
+addI p k = do
+  nid <- newNode ("addi_" ++ show k) (NAddI "" k)
+  connect p (InstPort nid "0")
+  pure (out0 nid)
+
+subI :: Port -> Int -> Build Port
+subI p k = do
+  nid <- newNode ("subi_" ++ show k) (NSubI "" k)
+  connect p (InstPort nid "0")
+  pure (out0 nid)
+
+-- fmuli helper (sem aliases!)
+fmulI :: Port -> Float -> Build Port
+fmulI p k = do
+  nid <- newNode ("fmuli_" ++ show k) (NFMulI "" k)
+  connect p (InstPort nid "0")
+  pure (out0 nid)
 
 nilP :: Build Port
 nilP = constI (-1)
@@ -157,23 +200,28 @@ isNilP xs = do
   n <- nilP
   bin2 "equal" (NEqual "") xs n
 
+-- cons(a,b) = (a+2)*B + (b+2)
 pairEnc :: Port -> Port -> Build Port
 pairEnc a b = do
+  a2 <- addI a 2
+  b2 <- addI b 2
   k  <- constI pairBase
-  m  <- bin2Node "mul" (NMul "") a k
-  bin2 "add" (NAdd "") (out0 m) b
+  m  <- bin2Node "mul" (NMul "") a2 k
+  bin2 "add" (NAdd "") (out0 m) b2
 
 fstDec :: Port -> Build Port
 fstDec p = do
-  k <- constI pairBase
-  bin2 "div" (NDiv "") p k
+  k  <- constI pairBase
+  qN <- bin2Node "div" (NDiv "") p k
+  subI (out0 qN) 2
 
 sndDec :: Port -> Build Port
 sndDec p = do
   k  <- constI pairBase
   qN <- bin2Node "div" (NDiv "") p k
   mN <- bin2Node "mul" (NMul "") (out0 qN) k
-  bin2 "sub" (NSub "") p (out0 mN)
+  r  <- bin2 "sub" (NSub "") p (out0 mN)
+  subI r 2
 
 -- foldrM local
 foldrM' :: (a -> b -> Build b) -> b -> [a] -> Build b
@@ -189,43 +237,66 @@ buildProgram :: Program -> DFG
 buildProgram p0 =
   let Program decls = assignSuperNames p0
       (_, st) = runBuild $ do
-        -- PASSO 1: todo topo visível no ambiente
         mapM_ (\(FunDecl f ps body) -> insertB f (BLam ps body)) decls
-        -- PASSO 2: agora constrói de fato (gera ret, nós etc.)
-        mapM_ goDecl decls
+        mapM_ buildZero decls
   in bsGraph st
-
-
-
--- Declarações ----------------------------------------------------------
-
-goDecl :: Decl -> Build ()
-goDecl (FunDecl f ps body)
-  | null ps   = do
+  where
+    buildZero (FunDecl f ps body) | null ps = do
       p <- withEnv (goExpr body)
       insertB f (BPort p)
       r <- newNode f (NRet f)
       connectPlus p (InstPort r "0")
-  | otherwise = do
-      insertB f (BLam ps body)
-      _ <- withActive f $ withEnv $ do
-             forM_ (zip [0..] ps) $ \(i, v) -> do
-               a <- argNode f i
-               insertB v (BPort a)
-             res <- goExpr body
-             r   <- newNode f (NRet f)
-             connectPlus res (InstPort r "0")
-      pure ()
+    buildZero _ = pure ()
 
--- Expressões -----------------------------------------------------------
+-- função já construída?
+funBuilt :: Ident -> Build Bool
+funBuilt f = Build $ gets $ \s -> any isRet (M.toList (dgNodes (bsGraph s)))
+  where isRet (_, n) = case n of { NRet f' -> f' == f; _ -> False }
 
--- variável livre -> NArg materializado e guardado no env
+-- evita reentrada recursiva
+ensureBuilt :: Ident -> [Ident] -> Expr -> Build ()
+ensureBuilt f ps body = do
+  done   <- funBuilt f
+  active <- isActiveFun f
+  if done || active
+     then pure ()
+     else do
+       _ <- withActive f $ withEnv $ do
+              forM_ (zip [0..] ps) $ \(i, v) -> do
+                a <- argNode f i
+                insertB v (BPort a)
+              res <- goExpr body
+              r   <- newNode f (NRet f)
+              connectPlus res (InstPort r "0")
+       pure ()
+
+-- variável livre -> NArg
 freeVar :: Ident -> Build Port
 freeVar x = do
   nid <- newNode x (NArg x)
   let p = out0 nid
   insertB x (BPort p)
   pure p
+
+-- detecta se um Port carrega float (por origem)
+portIsFloat :: Port -> Build Bool
+portIsFloat p = Build $ gets $ \s -> case M.lookup (pNode p) (dgNodes (bsGraph s)) of
+  Just NConstF{}     -> True
+  Just NFAdd{}       -> True
+  Just NFSub{}       -> True
+  Just NFMul{}       -> True
+  Just NFDiv{}       -> True
+  Just (NRetSnd f _) -> S.member f (bsFloatFuns s)
+  _                  -> False
+
+isFloatContext :: Port -> Port -> Build Bool
+isFloatContext a b = do
+  af <- isFloatActive
+  pa <- portIsFloat a
+  pb <- portIsFloat b
+  pure (af || pa || pb)
+
+-- Expressões -----------------------------------------------------------
 
 goExpr :: Expr -> Build Port
 goExpr = \case
@@ -234,11 +305,10 @@ goExpr = \case
       Just (BPort p) -> pure p
       Just (BLam ps body) ->
         if null ps
-          then do
-            p <- withEnv (goExpr body)  -- avalia p=4 uma vez
-            insertB x (BPort p)         -- cache: futuras leituras pegam o valor
-            pure p
-          else freeVar x                -- funções com aridade > 0: continua como antes
+          then do p <- withEnv (goExpr body)
+                  insertB x (BPort p)
+                  pure p
+          else freeVar x
       Nothing -> freeVar x
 
   Lit lit -> litNode lit
@@ -266,12 +336,12 @@ goExpr = \case
     registerAlias outT [outF]
     pure outT
 
-  -- listas / tuplas via codificação aritmética
-  Cons a b -> do pa <- goExpr a; pb <- goExpr b; pairEnc pa pb
-  List xs  -> do z <- nilP; es <- mapM goExpr xs; foldrM' pairEnc z es
-  Tuple [a,b] -> do pa <- goExpr a; pb <- goExpr b; pairEnc pa pb
-  Tuple (a:_) -> goExpr a
-  Tuple []    -> constI 0
+  -- listas / tuplas
+  Cons a b     -> do pa <- goExpr a; pb <- goExpr b; pairEnc pa pb
+  List xs      -> do z <- nilP; es <- mapM goExpr xs; foldrM' pairEnc z es
+  Tuple [a,b]  -> do pa <- goExpr a; pb <- goExpr b; pairEnc pa pb
+  Tuple (a:_)  -> goExpr a
+  Tuple []     -> constI 0
 
   Case scr alts -> compileCase scr alts
 
@@ -279,40 +349,50 @@ goExpr = \case
 
   App f x -> let (g,args) = flattenApp (App f x) in goApp g args
 
-  BinOp op l r -> case op of
-      Add -> go2 (NAdd  "") ; Sub -> go2 (NSub  "")
-      Mul -> go2 (NMul  "") ; Div -> go2 (NDiv  "")
+  BinOp op l r -> do
+    pl <- goExpr l
+    pr <- goExpr r
+    fctx <- isFloatContext pl pr
+    case op of
+      Add | fctx      -> bin2 "fadd" (NFAdd "")  pl pr
+          | otherwise -> bin2 "add"  (NAdd  "")  pl pr
+      Sub | fctx      -> do ny <- fmulI pr (-1.0)     -- fsub = fadd(x, y*-1)
+                            bin2 "fadd" (NFAdd "") pl ny
+          | otherwise -> bin2 "sub"  (NSub  "")  pl pr
+      Mul | fctx      -> bin2 "mul"  (NMul  "")  pl pr  -- sem fmult no ASM
+          | otherwise -> bin2 "mul"  (NMul  "")  pl pr
+      Div | fctx      -> bin2 "div"  (NDiv  "")  pl pr  -- sem fdiv no ASM
+          | otherwise -> bin2 "div"  (NDiv  "")  pl pr
       Mod -> do
-        pl <- goExpr l; pr <- goExpr r
         qN <- bin2Node "div" (NDiv "") pl pr
         mN <- bin2Node "mul" (NMul "") (out0 qN) pr
         bin2 "sub" (NSub "") pl (out0 mN)
-      Eq  -> go2 (NEqual"") ; Lt  -> go2 (NLThan"")
-      Gt  -> go2 (NGThan"") ; And -> go2 (NBand "")
-      Or  -> do pl <- goExpr l; pr <- goExpr r; orP pl pr
-      Le  -> do pl <- goExpr l; pr <- goExpr r
-                lt <- bin2 "lthan" (NLThan "") pl pr
-                eq <- bin2 "equal" (NEqual "") pl pr
+      Eq  -> bin2 "equal" (NEqual "") pl pr
+      Lt  -> bin2 "lthan" (NLThan "") pl pr
+      Gt  -> bin2 "gthan" (NGThan "") pl pr
+      And -> bin2 "band"  (NBand  "") pl pr
+      Or  -> do s <- bin2Node "add" (NAdd "") pl pr
+                z <- constI 0
+                bin2 "gthan" (NGThan "") (out0 s) z
+      Le  -> do lt <- bin2 "lthan" (NLThan "") pl pr
+                eq <- bin2 "equal" (NEqual "")  pl pr
                 orP lt eq
-      Ge  -> do pl <- goExpr l; pr <- goExpr r
-                gt <- bin2 "gthan" (NGThan "") pl pr
-                eq <- bin2 "equal" (NEqual "") pl pr
+      Ge  -> do gt <- bin2 "gthan" (NGThan "") pl pr
+                eq <- bin2 "equal" (NEqual "")  pl pr
                 orP gt eq
-      Neq -> do pl <- goExpr l; pr <- goExpr r
-                eq <- bin2 "equal" (NEqual "") pl pr
+      Neq -> do eq <- bin2 "equal" (NEqual "")  pl pr
                 notP eq
-    where
-      go2 nd = do pl <- goExpr l; pr <- goExpr r; bin2 "op" nd pl pr
 
   UnOp u e -> do
     pe <- goExpr e
     case u of
       Neg -> do z <- constI 0; bin2 "sub" (NSub "") z pe
       Not -> notP pe
+
   Super nm kind inp out _ -> do
     pIn <- goExpr (Var inp)
     nid <- naryNode nm NSuper
-             { nName     = ""                          -- será substituído pelo setName nm
+             { nName     = ""
              , superNum  = 0
              , superOuts = 1
              , superSpec = case kind of { SuperParallel -> True; SuperSingle -> False }
@@ -321,7 +401,10 @@ goExpr = \case
     insertB out (BPort (out0 nid))
     pure (out0 nid)
 
+-- Declarações ----------------------------------------------------------
 
+goDecl :: Decl -> Build ()
+goDecl (FunDecl f ps body) = insertB f (BLam ps body)
 
 -- Aplicação n-ária -----------------------------------------------------
 
@@ -340,9 +423,6 @@ withActive f m = Build $ do
   s' <- get
   put s'{ bsActive = tail (bsActive s') }
   pure r
-
-isActive :: Ident -> Build Bool
-isActive f = Build $ gets (\s -> f `elem` bsActive s)
 
 -- taskId determinístico
 funTaskId :: Ident -> Int
@@ -368,36 +448,39 @@ argNode fun i = Build $ do
              pure nid'
   pure (out0 nid)
 
-
 -- formal + alias para o real
 bindFormal :: String -> Int -> Ident -> Port -> Build ()
 bindFormal fun i formal actual = do
   ap <- argNode fun i
   insertB formal (BPort ap)
   case ap of
-    InstPort nid _ -> connectPlus actual (InstPort nid "0")  -- alimenta o NArg
+    InstPort nid _ -> connectPlus actual (InstPort nid "0")
     _              -> pure ()
-
 
 goApp :: Expr -> [Expr] -> Build Port
 goApp fun args = case fun of
-  -- chamada de função nomeada: *não* inlinar o corpo.
-  -- só emite callgroup/callsnd/retsnd e devolve o port de retorno.
   Var f -> do
     argv <- mapM goExpr args
+    anyFloat <- or <$> mapM portIsFloat argv
+    when anyFloat (markFloatFun f)
+
+    lookupB f >>= \case
+      Just (BLam ps body) -> ensureBuilt f ps body
+      _                   -> pure ()
+
     let tid = funTaskId f
     cg <- newNode f (NCallGroup f)
     let tag = out0 cg
+
     forM_ (zip [0..] argv) $ \(i,a) -> do
       cs <- newNode (f ++ "#" ++ show i) (NCallSnd (f ++ "#" ++ show i) tid)
       connectPlus a   (InstPort cs "0")
       connectPlus tag (InstPort cs "1")
+
     rs <- newNode f (NRetSnd f tid)
     connectPlus tag (InstPort rs "1")
-    -- o corpo da função é gerado uma única vez em goDecl; os NArg "f#i" são alimentados pelos calls acima.
     pure (out0 rs)
 
-  -- lambda: continua materializando inline (não há decl global)
   Lambda ps body -> do
     let fname = "lambda"
         tid   = funTaskId fname
@@ -416,13 +499,11 @@ goApp fun args = case fun of
     connectPlus res (InstPort rs "0")
     pure res
 
-  -- fallback
   _ -> do
     _ <- mapM goExpr args
     case args of
       [] -> constI 0
       _  -> goExpr (last args)
-
 
 -- Literais -------------------------------------------------------------
 
@@ -477,20 +558,16 @@ compileCase scr alts = do
       (pPred, binds) <- patPred pscr p
       ntaken <- notP taken
       guardi <- andP pPred ntaken
-
       val <- withEnv $ do
                mapM_ (\(x,v) -> insertB x (BPort v)) binds
                goExpr e
-
       sid <- newNode "steer" (NSteer "")
       connect val    (InstPort sid "0")
       connect guardi (InstPort sid "1")
       let out = SteerPort sid "t"
-
       taken' <- orP taken pPred
       goAlts pscr taken' rs (out:acc)
 
--- Predicado do padrão e binders
 patPred :: Port -> Pattern -> Build (Port, [(Ident, Port)])
 patPred scr = \case
   PTuple [p1,p2] -> do
@@ -521,6 +598,5 @@ bindIfVar :: Pattern -> Port -> [(Ident, Port)]
 bindIfVar (PVar x) p = [(x,p)]
 bindIfVar _        _ = []
 
--- versão de literal que devolve Port direto (usada em patPred)
 litNode' :: Literal -> Build Port
 litNode' = litNode
