@@ -2,13 +2,12 @@
 set -euo pipefail
 
 # ============================================================
-# matrix_mul/run.sh — SEM AUTOPLACE + .PLA manual (RR/CHUNK)
-# Varre N (start/step/max), P (csv) e padrão da matriz (range|rand)
+# matrix_mul/run.sh — gera HSK, compila, monta, plota
 # ============================================================
 
 START_N=0; STEP=0; N_MAX=0; REPS=1
 PROCS_CSV=""; INTERP=""; ASM_ROOT=""; CODEGEN_ROOT=""
-OUTROOT=""; MAT_KIND="range"; PLOTS="yes"; TAG="mmul_plain"
+OUTROOT=""; MAT_KIND="range"; PLOTS="yes"; TAG="mm_plain"
 PY2="${PY2:-python2}"
 PY3="${PY3:-python3}"
 
@@ -17,9 +16,8 @@ PLACE_MODE="${PLACE_MODE:-rr}"
 
 usage(){
   echo "uso: $0 --start-N A --step B --n-max C --reps R --procs \"1,2,...\" \\"
-  echo "          --interp PATH --asm-root PATH --codegen PATH --outroot PATH \\"
-  echo "          [--mat range|rand] [--plots yes|no] [--tag nome]"
-  echo "env: PLACE_MODE=rr|chunk  LOG_ERR=1"
+  echo "          --interp PATH --asm-root PATH --codegen PATH --outroot PATH [--mat range|rand] [--plots yes|no] [--tag nome]"
+  echo "env: PLACE_MODE=rr|chunk"
   exit 2
 }
 
@@ -27,17 +25,17 @@ usage(){
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --start-N) START_N="$2"; shift 2;;
-    --step)    STEP="$2"; shift 2;;
-    --n-max)   N_MAX="$2"; shift 2;;
-    --reps)    REPS="$2"; shift 2;;
-    --procs)   PROCS_CSV="$2"; shift 2;;
-    --interp)  INTERP="$2"; shift 2;;
+    --step) STEP="$2"; shift 2;;
+    --n-max) N_MAX="$2"; shift 2;;
+    --reps) REPS="$2"; shift 2;;
+    --procs) PROCS_CSV="$2"; shift 2;;
+    --interp) INTERP="$2"; shift 2;;
     --asm-root) ASM_ROOT="$2"; shift 2;;
     --codegen) CODEGEN_ROOT="$2"; shift 2;;
     --outroot) OUTROOT="$2"; shift 2;;
-    --mat)     MAT_KIND="$2"; shift 2;;
-    --plots)   PLOTS="$2"; shift 2;;
-    --tag)     TAG="$2"; shift 2;;
+    --mat) MAT_KIND="$2"; shift 2;;
+    --plots) PLOTS="$2"; shift 2;;
+    --tag) TAG="$2"; shift 2;;
     *) usage;;
   esac
 done
@@ -61,7 +59,8 @@ GEN_PY="$MM_DIR/gen_mm_input.py"
 PLOT_PY="$MM_DIR/plot.py"
 echo "[hsk ] usando gerador: $GEN_PY"
 
-rm -rf "$OUTROOT"; mkdir -p "$OUTROOT"
+mkdir -p "$OUTROOT"
+OUTROOT="$(readlink -f "$OUTROOT")"
 METRICS_CSV="$OUTROOT/metrics_${TAG}.csv"
 echo "N,P,rep,seconds,rc" > "$METRICS_CSV"
 
@@ -70,7 +69,7 @@ IFS=',' read -r -a PROCS <<< "$PROCS_CSV"
 # ----------------- helpers -----------------
 gen_hsk() {
   local N="$1" P="$2" out_hsk="$3"
-  echo "[build_fl] generating HSK (N=${N}, P=${P}, mat=${MAT_KIND})"
+  echo "[build_fl] generating HSK (N=${N}, P=${P})"
   "$PY3" "$GEN_PY" --out "$out_hsk" --N "$N" --P "$P" --mat "$MAT_KIND"
 }
 
@@ -78,21 +77,26 @@ build_fl() {
   local hsk="$1" fl="$2"
   echo "[talm ] codegen $hsk -> $fl"
   "$CODEGEN" "$hsk" > "$fl"
-  [[ -s "$fl" ]] || { echo "[ERRO] codegen não gerou $fl"; exit 1; }
 }
 
 assemble_baseline() {
   local fl="$1" prefix="$2"
-  local fl_abs; fl_abs="$(readlink -f "$fl")"
-  local prefix_abs; prefix_abs="$(readlink -f "$prefix")"
+
+  # use caminhos absolutos para evitar o problema
+  local ABS_FL ABS_PREFIX
+  ABS_FL="$(readlink -f "$fl")"
+  ABS_PREFIX="$(readlink -f "$prefix")"
+
+  [[ -f "$ABS_FL" ]] || { echo "[ERRO] .fl não existe: $ABS_FL"; exit 1; }
+  mkdir -p "$(dirname "$ABS_PREFIX")"
 
   pushd "$ASM_ROOT" >/dev/null
     echo "[asm  ] baseline (sem -a)"
-    "$PY2" assembler.py -o "$prefix_abs" "$fl_abs" >/dev/null
+    "$PY2" assembler.py -o "$ABS_PREFIX" "$ABS_FL" >/dev/null
   popd >/dev/null
 
-  [[ -f "${prefix_abs}.flb" && -f "${prefix_abs}.pla" ]] || { echo "[ERRO] baseline não gerou .flb/.pla"; exit 1; }
-  cp "${prefix_abs}.pla" "${prefix_abs}.pla.base"
+  [[ -f "${ABS_PREFIX}.flb" && -f "${ABS_PREFIX}.pla" ]] || { echo "[ERRO] baseline não gerou .flb/.pla"; exit 1; }
+  cp "${ABS_PREFIX}.pla" "${ABS_PREFIX}.pla.base"
 }
 
 rewrite_pla_manual() {
@@ -147,14 +151,12 @@ run_interp_time_rc() {
 
   local t0 t1 pid rc=0
   t0=$(date +%s%N)
-
   "$INTERP" "$P" "$flb" "$pla" >"$outlog" 2>"$errlog" &
   pid=$!
   echo "$pid" >"$logs/pid"
   >&2 echo "[run  ] pid=${pid}"
 
   if ! wait "$pid"; then rc=$?; fi
-
   t1=$(date +%s%N)
   awk -v A="$t0" -v B="$t1" -v R="$rc" 'BEGIN{ printf "%.6f %d", (B-A)/1e9, R }'
 }
@@ -163,11 +165,11 @@ run_interp_time_rc() {
 N="$START_N"
 while [[ "$N" -le "$N_MAX" ]]; do
   for P in "${PROCS[@]}"; do
-    CASE_DIR="$OUTROOT/plain/N_${N}/P_${P}"
+    CASE_DIR="$OUTROOT/N_${N}/P_${P}"
     mkdir -p "$CASE_DIR"
-    HSK="$CASE_DIR/mmul_plain_N${N}_P${P}.hsk"
-    FL="$CASE_DIR/mmul_plain_N${N}_P${P}.fl"
-    PREFIX="$CASE_DIR/mmul_plain_N${N}_P${P}"
+    HSK="$CASE_DIR/mm_N${N}_P${P}.hsk"
+    FL="$CASE_DIR/mm_N${N}_P${P}.fl"
+    PREFIX="$CASE_DIR/mm_N${N}_P${P}"
 
     gen_hsk "$N" "$P" "$HSK"
     build_fl "$HSK" "$FL"
@@ -184,14 +186,8 @@ while [[ "$N" -le "$N_MAX" ]]; do
       if [[ $st -eq 0 ]]; then
         read -r secs rc <<< "$out" || { secs="NaN"; rc=998; }
       fi
-
       echo "N=${N}, P=${P}, rep=${rep}, secs=${secs}, rc=${rc}"
       echo "${N},${P},${rep},${secs},${rc}" >> "$METRICS_CSV"
-
-      if [[ "${LOG_ERR:-0}" -eq 1 && "$rc" -ne 0 ]]; then
-        echo "[err ] $CASE_DIR/logs/run.err"
-        sed -n '1,120p' "$CASE_DIR/logs/run.err" || true
-      fi
     done
   done
   N=$((N + STEP))

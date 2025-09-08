@@ -1,27 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import argparse, os, textwrap
+import argparse, os, random
 
-TMPL = """-- dyck_path.hsk (auto-generated)
+TMPL = r"""-- dyck_path_template.hsk
 -- ------------------------------------------------------------
--- Template para o problema do Caminho de Dyck
--- * Controle de Tamanho (n)
--- * Controle de Desequilíbrio de Parênteses (delta)
--- * Controle de Desequilíbrio de Trabalho (imb 0-100)
--- * Nº de Processadores (p)
+-- Controle: n, delta, imb, p
 -- ------------------------------------------------------------
-
--- PARÂMETROS (alterados por script)
 
 n x     = __N__;
 p x     = __P__;
 imb x   = __IMB__;
 delta x = __DELTA__;
 
--- ------------------------------------------------------------
--- Funções auxiliares (todas terminam com ';')
--- ------------------------------------------------------------
+-- Funções auxiliares ------------------------------------------
 
 len xs = case xs of
   []      -> 0;
@@ -42,10 +34,7 @@ splitAtN k xs = (takeN k xs, dropN k xs);
 
 replicateN k x = if k <= 0 then [] else x : replicateN (k-1) x;
 
--- ------------------------------------------------------------
--- Geração da sequência de parênteses controlada
--- '(' →  1 ; ')' → -1
--- ------------------------------------------------------------
+-- Geração da sequência ----------------------------------------
 
 repeatDyck m acc = if m == 0 then acc else repeatDyck (m - 1) (1 : -1 : acc);
 
@@ -55,20 +44,17 @@ append xs ys = case xs of
 ;
 
 generateDyck len d =
-         let base = repeatDyck (len / 2) [] in
-         if d == 0
-         then base
-         else if d > 0
-              then append base (replicateN d 1)
-          else append base (replicateN (0 - d) (-1))
+	     let base = repeatDyck (len / 2) [] in
+	     if d == 0
+	     then base
+	     else if d > 0
+	     	  then append base (replicateN d 1)
+		  else append base (replicateN (0 - d) (-1))
 ;
 
 inputSeq = generateDyck (n 0) (delta 0);
 
--- ------------------------------------------------------------
--- SUPER  ─  processamento sequencial de um fragmento
--- devolve (somaTotal, minPrefixo)
--- ------------------------------------------------------------
+-- SUPER: devolve (somaTotal, minPrefixo) ----------------------
 
 analyseChunk lst = super single input (lst) output (res)
   #BEGINSUPER
@@ -86,18 +72,13 @@ chunkPair lst = case analyseChunk lst of
   [s, mn] -> (s, mn);
 ;
 
--- ------------------------------------------------------------
--- Divisão desequilibrada controlada por IMB (work-skew)
--- IMB = 0 → 50/50 ; IMB ≈100 → ~75/25
--- ------------------------------------------------------------
+-- Divisão desequilibrada (IMB) --------------------------------
 
 splitImb xs =
   splitAtN (((len xs) * (100 + (imb 0))) / 200) xs
 ;
 
--- ------------------------------------------------------------
--- Recursão paralela com fallback para SUPER
--- ------------------------------------------------------------
+-- Recursão paralela com fallback para SUPER --------------------
 
 threshold = (n 0) / (p 0);
 
@@ -113,9 +94,7 @@ checkRec n0 lst = if (len lst) <= n0
               , if m1 < (s1 + m2) then m1 else (s1 + m2) );;;
 ;
 
--- ------------------------------------------------------------
--- Verificação final
--- ------------------------------------------------------------
+-- Verificação final -------------------------------------------
 
 validateDyck lst = case checkRec threshold lst of
   (tot, mn) -> (tot == 0) && (mn >= 0);
@@ -124,7 +103,7 @@ validateDyck lst = case checkRec threshold lst of
 main = validateDyck inputSeq;
 """
 
-def emit_hsk(path, N, P, IMB, DELTA):
+def emit_hsk(path, N, P, IMB, DELTA, vec_kind):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     src = (TMPL
            .replace("__N__", str(N))
@@ -142,8 +121,9 @@ def main():
     ap.add_argument("--P", type=int, required=True)
     ap.add_argument("--imb", type=int, required=True)
     ap.add_argument("--delta", type=int, required=True)
+    ap.add_argument("--vec", default="range", choices=["range","rand"])
     args = ap.parse_args()
-    emit_hsk(args.out, args.N, args.P, args.imb, args.delta)
+    emit_hsk(args.out, args.N, args.P, args.imb, args.delta, args.vec)
 
 if __name__ == "__main__":
     main()

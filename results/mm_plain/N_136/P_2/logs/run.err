@@ -1,0 +1,9 @@
+[debug] T[0]: n_instrs=112013 n_edges=1
+[debug] T[1]: n_instrs=112012 n_edges=1
+Procs 12
+[debug] worker start id=0 TID=1859 CPU=10
+[debug] worker start id=1 TID=1860 CPU=9
+[DIV0] DIV pe=1 instr=0x7fa3b423f860 tag=0 exec=1 a=0 b=0 immed=0 hits=1
+[DIV0] DIV pe=1 instr=0x7fa3b423f860 tag=0 exec=1 a=0 b=0 immed=0 hits=2
+[debug] worker end id=1
+[debug] worker end id=0

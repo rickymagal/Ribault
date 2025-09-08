@@ -1,0 +1,33 @@
+[debug] T[0]: n_instrs=56 n_edges=7
+[debug] T[1]: n_instrs=56 n_edges=7
+[debug] T[2]: n_instrs=56 n_edges=7
+[debug] T[3]: n_instrs=56 n_edges=7
+[debug] T[4]: n_instrs=56 n_edges=7
+[debug] T[5]: n_instrs=56 n_edges=7
+[debug] T[6]: n_instrs=56 n_edges=7
+[debug] T[7]: n_instrs=56 n_edges=7
+Procs 12
+[debug] worker start id=0 TID=4659 CPU=10
+[debug] worker start id=1 TID=4660 CPU=8
+[debug] worker start id=2 TID=4661 CPU=6
+[debug] worker start id=3 TID=4662 CPU=8
+[debug] worker start id=4 TID=4663 CPU=8
+[debug] worker start id=5 TID=4664 CPU=8
+[debug] worker start id=6 TID=4665 CPU=8
+[debug] worker start id=7 TID=4666 CPU=8
+[DIV0] DIV pe=0 instr=0x7f0b0195b660 tag=0 exec=1048577 a=0 b=0 immed=0 hits=1
+[DIV0] DIV pe=4 instr=0x7f0afa5b23b0 tag=0 exec=1048577 a=0 b=0 immed=0 hits=2
+[DIV0] DIV pe=0 instr=0x7f0b0195b660 tag=0 exec=1048577 a=0 b=0 immed=0 hits=3
+[DIV0] DIV pe=4 instr=0x7f0afa5b23b0 tag=0 exec=1 a=0 b=0 immed=0 hits=4
+[DIV0] DIV pe=4 instr=0x7f0afa5b23b0 tag=0 exec=1048577 a=0 b=0 immed=0 hits=6
+[DIV0] DIV pe=0 instr=0x7f0b0195b660 tag=0 exec=1 a=0 b=0 immed=0 hits=5
+[DIV0] DIV pe=4 instr=0x7f0afa5b23b0 tag=0 exec=1 a=0 b=0 immed=0 hits=7
+[DIV0] DIV pe=0 instr=0x7f0b0195b660 tag=0 exec=1 a=0 b=0 immed=0 hits=8
+[debug] worker end id=6
+[debug] worker end id=0
+[debug] worker end id=1
+[debug] worker end id=7
+[debug] worker end id=4
+[debug] worker end id=5
+[debug] worker end id=3
+[debug] worker end id=2

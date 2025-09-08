@@ -1,0 +1,26 @@
+[debug] T[0]: n_instrs=75 n_edges=5
+[debug] T[1]: n_instrs=75 n_edges=5
+[debug] T[2]: n_instrs=75 n_edges=5
+[debug] T[3]: n_instrs=75 n_edges=5
+[debug] T[4]: n_instrs=74 n_edges=5
+[debug] T[5]: n_instrs=74 n_edges=5
+Procs 12
+[debug] worker start id=0 TID=22585 CPU=9
+[debug] worker start id=2 TID=22587 CPU=8
+[debug] worker start id=1 TID=22586 CPU=9
+[debug] worker start id=3 TID=22588 CPU=5
+[debug] worker start id=4 TID=22589 CPU=10
+[debug] worker start id=5 TID=22590 CPU=10
+[DIV0] DIV pe=2 instr=0x7f336939d500 tag=0 exec=1048577 a=0 b=0 immed=0 hits=1
+[DIV0] DIV pe=2 instr=0x7f336939d500 tag=0 exec=1 a=0 b=0 immed=0 hits=2
+[DIV0] DIV pe=2 instr=0x7f336939d500 tag=0 exec=1 a=0 b=0 immed=0 hits=3
+[DIV0] DIV pe=4 instr=0x7f3365531f90 tag=0 exec=1 a=0 b=0 immed=0 hits=4
+[DIV0] DIV pe=4 instr=0x7f3365531f90 tag=0 exec=1 a=0 b=0 immed=0 hits=5
+[DIV0] DIV pe=4 instr=0x7f3365531f90 tag=0 exec=1048577 a=0 b=0 immed=0 hits=6
+[DIV0] DIV pe=2 instr=0x7f336939d500 tag=0 exec=1048577 a=0 b=0 immed=0 hits=7
+[debug] worker end id=3
+[debug] worker end id=1
+[debug] worker end id=2
+[debug] worker end id=0
+[debug] worker end id=4
+[debug] worker end id=5

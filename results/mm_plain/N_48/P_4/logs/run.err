@@ -1,0 +1,15 @@
+[debug] T[0]: n_instrs=7167 n_edges=3
+[debug] T[1]: n_instrs=7166 n_edges=3
+[debug] T[2]: n_instrs=7166 n_edges=3
+[debug] T[3]: n_instrs=7166 n_edges=3
+Procs 12
+[debug] worker start id=0 TID=28004 CPU=10
+[debug] worker start id=1 TID=28005 CPU=11
+[debug] worker start id=2 TID=28006 CPU=2
+[debug] worker start id=3 TID=28007 CPU=1
+[DIV0] DIV pe=3 instr=0x7fb0875f1780 tag=0 exec=1 a=0 b=0 immed=0 hits=1
+[DIV0] DIV pe=3 instr=0x7fb0875f1780 tag=0 exec=1 a=0 b=0 immed=0 hits=2
+[debug] worker end id=3
+[debug] worker end id=2
+[debug] worker end id=1
+[debug] worker end id=0

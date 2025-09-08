@@ -1,0 +1,486 @@
+const z0, 0
+const n0, 0
+add n1, z0, z0
+const n2, 2000
+ret n, n2, z0
+callgroup("cg14","n")
+callsnd n[0], n0, cg14
+retsnd n[0], z0, cg14
+const n7, 0
+add n8, z0, z0
+const n9, 2
+const n10, 0
+sub n11, n10, n9
+ret delta, n11, z0
+callgroup("cg23","delta")
+callsnd delta[0], n7, cg23
+retsnd delta[0], z0, cg23
+add n16, z0, z0
+add n17, z0, z0
+const n18, 0
+equal n19, n16, n18
+const n20, 2
+div n21, n17, n20
+const n22, -1
+add n23, z0, z0
+add n24, z0, z0
+const n25, 0
+equal n26, n24, n25
+const n27, 1
+sub n28, n24, n27
+const n29, 1
+const n30, 1
+const n31, 0
+sub n32, n31, n30
+addi n33, n32, 2
+addi n34, n23, 2
+const n35, 1000003
+mul n36, n33, n35
+add n37, n36, n34
+addi n38, n29, 2
+addi n39, n37, 2
+const n40, 1000003
+mul n41, n38, n40
+add n42, n41, n39
+callgroup("cg53","repeatDyck")
+callsnd repeatDyck[0], n28, cg53
+callsnd repeatDyck[1], n42, cg53
+retsnd repeatDyck[0], z0, cg53
+steer s47, n26, n23
+steer s48, n26, repeatDyck[0]
+ret repeatDyck, s48.g, z0
+callgroup("cg60","repeatDyck")
+callsnd repeatDyck[0], n21, cg60
+callsnd repeatDyck[1], n22, cg60
+retsnd repeatDyck[0], z0, cg60
+const n54, 0
+gthan n55, n16, n54
+const n56, 2
+div n57, n17, n56
+const n58, -1
+callgroup("cg69","repeatDyck")
+callsnd repeatDyck[0], n57, cg69
+callsnd repeatDyck[1], n58, cg69
+retsnd repeatDyck[0], z0, cg69
+const n63, 1
+add n64, z0, z0
+add n65, z0, z0
+const n66, 0
+lthan n67, n65, n66
+equal n68, n65, n66
+add n69, n67, n68
+const n70, 0
+gthan n71, n69, n70
+const n72, -1
+const n73, 1
+sub n74, n65, n73
+callgroup("cg85","replicateN")
+callsnd replicateN[0], n74, cg85
+callsnd replicateN[1], n64, cg85
+retsnd replicateN[0], z0, cg85
+addi n79, n64, 2
+addi n80, replicateN[0], 2
+const n81, 1000003
+mul n82, n79, n81
+add n83, n82, n80
+steer s84, n71, n72
+steer s85, n71, n83
+ret replicateN, s85.g, z0
+callgroup("cg97","replicateN")
+callsnd replicateN[0], n16, cg97
+callsnd replicateN[1], n63, cg97
+retsnd replicateN[0], z0, cg97
+add n91, z0, z0
+add n92, z0, z0
+const n93, 0
+const n94, -1
+equal n95, n92, n94
+const n96, 0
+equal n97, n93, n96
+band n98, n95, n97
+steer s99, n98, n91
+add n100, n93, n95
+const n101, 0
+gthan n102, n100, n101
+const n103, 1
+const n104, 0
+equal n105, n102, n104
+band n106, n103, n105
+add n107, z0, z0
+add n108, z0, z0
+callgroup("cg29","append")
+callsnd append[0], n108, cg29
+callsnd append[1], n91, cg29
+retsnd append[0], z0, cg29
+addi n113, n107, 2
+addi n114, append[0], 2
+const n115, 1000003
+mul n116, n113, n115
+add n117, n116, n114
+steer s118, n106, n117
+add n119, n102, n103
+const n120, 0
+gthan n121, n119, n120
+ret append, s118.w, z0
+callgroup("cg43","append")
+callsnd append[0], repeatDyck[0], cg43
+callsnd append[1], replicateN[0], cg43
+retsnd append[0], z0, cg43
+const n127, 2
+div n128, n17, n127
+const n129, -1
+callgroup("cg50","repeatDyck")
+callsnd repeatDyck[0], n128, cg50
+callsnd repeatDyck[1], n129, cg50
+retsnd repeatDyck[0], z0, cg50
+const n134, 0
+sub n135, n134, n16
+const n136, 1
+const n137, 0
+sub n138, n137, n136
+callgroup("cg59","replicateN")
+callsnd replicateN[0], n135, cg59
+callsnd replicateN[1], n138, cg59
+retsnd replicateN[0], z0, cg59
+callgroup("cg63","append")
+callsnd append[0], repeatDyck[0], cg63
+callsnd append[1], replicateN[0], cg63
+retsnd append[0], z0, cg63
+steer s147, n55, append[0]
+steer s148, n55, append[0]
+steer s149, n19, repeatDyck[0]
+steer s150, n19, s147.w
+ret generateDyck, s150.g, z0
+callgroup("cg72","generateDyck")
+callsnd generateDyck[0], n[0], cg72
+callsnd generateDyck[1], delta[0], cg72
+retsnd generateDyck[0], z0, cg72
+add n156, z0, z0
+const n157, 0
+callgroup("cg78","n")
+callsnd n[0], n157, cg78
+retsnd n[0], z0, cg78
+const n161, 0
+add n162, z0, z0
+const n163, 8
+ret p, n163, z0
+callgroup("cg85","p")
+callsnd p[0], n161, cg85
+retsnd p[0], z0, cg85
+div n168, n[0], p[0]
+add n169, z0, z0
+add n170, z0, z0
+add n171, z0, z0
+const n172, 0
+const n173, -1
+equal n174, n171, n173
+const n175, 0
+equal n176, n172, n175
+band n177, n174, n176
+const n178, 0
+steer s179, n177, n178
+add n180, n172, n174
+const n181, 0
+gthan n182, n180, n181
+const n183, 1
+const n184, 0
+equal n185, n182, n184
+band n186, n183, n185
+const n187, 1
+add n188, z0, z0
+callgroup("cg19","len")
+callsnd len[0], n188, cg19
+retsnd len[0], z0, cg19
+add n192, n187, len[0]
+steer s193, n186, n192
+add n194, n182, n183
+const n195, 0
+gthan n196, n194, n195
+ret len, s193.w, z0
+callgroup("cg28","len")
+callsnd len[0], n169, cg28
+retsnd len[0], z0, cg28
+lthan n201, len[0], n170
+equal n202, len[0], n170
+add n203, n201, n202
+const n204, 0
+gthan n205, n203, n204
+add n206, z0, z0
+add n207, z0, z0
+super n208, 0, 1, n207
+ret analyseChunk, n208, z0
+callgroup("cg40","analyseChunk")
+callsnd analyseChunk[0], n206, cg40
+retsnd analyseChunk[0], z0, cg40
+const n213, 0
+const n214, 1
+const n215, 0
+equal n216, n213, n215
+band n217, n214, n216
+add n218, z0, z0
+add n219, z0, z0
+addi n220, n218, 2
+addi n221, n219, 2
+const n222, 1000003
+mul n223, n220, n222
+add n224, n223, n221
+steer s225, n217, n224
+add n226, n213, n214
+const n227, 0
+gthan n228, n226, n227
+ret chunkPair, s225.w, z0
+callgroup("cg60","chunkPair")
+callsnd chunkPair[0], n169, cg60
+retsnd chunkPair[0], z0, cg60
+add n233, z0, z0
+callgroup("cg64","len")
+callsnd len[0], n233, cg64
+retsnd len[0], z0, cg64
+const n237, 100
+const n238, 0
+add n239, z0, z0
+const n240, 25
+ret imb, n240, z0
+callgroup("cg72","imb")
+callsnd imb[0], n238, cg72
+retsnd imb[0], z0, cg72
+add n245, n237, imb[0]
+mul n246, len[0], n245
+const n247, 200
+div n248, n246, n247
+add n249, z0, z0
+add n250, z0, z0
+add n251, z0, z0
+add n252, z0, z0
+const n253, 0
+lthan n254, n252, n253
+equal n255, n252, n253
+add n256, n254, n255
+const n257, 0
+gthan n258, n256, n257
+const n259, -1
+const n260, 0
+const n261, -1
+equal n262, n251, n261
+const n263, 0
+equal n264, n260, n263
+band n265, n262, n264
+const n266, -1
+steer s267, n265, n266
+add n268, n260, n262
+const n269, 0
+gthan n270, n268, n269
+const n271, 1
+const n272, 0
+equal n273, n270, n272
+band n274, n271, n273
+add n275, z0, z0
+const n276, 1
+sub n277, n252, n276
+add n278, z0, z0
+callgroup("cg19","takeN")
+callsnd takeN[0], n277, cg19
+callsnd takeN[1], n278, cg19
+retsnd takeN[0], z0, cg19
+addi n283, n275, 2
+addi n284, takeN[0], 2
+const n285, 1000003
+mul n286, n283, n285
+add n287, n286, n284
+steer s288, n274, n287
+add n289, n270, n271
+const n290, 0
+gthan n291, n289, n290
+steer s292, n258, n259
+steer s293, n258, s267.w
+ret takeN, s293.g, z0
+callgroup("cg35","takeN")
+callsnd takeN[0], n250, cg35
+callsnd takeN[1], n249, cg35
+retsnd takeN[0], z0, cg35
+add n299, z0, z0
+add n300, z0, z0
+const n301, 0
+lthan n302, n300, n301
+equal n303, n300, n301
+add n304, n302, n303
+const n305, 0
+gthan n306, n304, n305
+const n307, 0
+const n308, -1
+equal n309, n299, n308
+const n310, 0
+equal n311, n307, n310
+band n312, n309, n311
+const n313, -1
+steer s314, n312, n313
+add n315, n307, n309
+const n316, 0
+gthan n317, n315, n316
+const n318, 1
+const n319, 0
+equal n320, n317, n319
+band n321, n318, n320
+const n322, 1
+sub n323, n300, n322
+add n324, z0, z0
+callgroup("cg65","dropN")
+callsnd dropN[0], n323, cg65
+callsnd dropN[1], n324, cg65
+retsnd dropN[0], z0, cg65
+steer s329, n321, dropN[0]
+add n330, n317, n318
+const n331, 0
+gthan n332, n330, n331
+steer s333, n306, n299
+steer s334, n306, s314.w
+ret dropN, s334.g, z0
+callgroup("cg76","dropN")
+callsnd dropN[0], n250, cg76
+callsnd dropN[1], n249, cg76
+retsnd dropN[0], z0, cg76
+addi n340, takeN[0], 2
+addi n341, dropN[0], 2
+const n342, 1000003
+mul n343, n340, n342
+add n344, n343, n341
+ret splitAtN, n344, z0
+callgroup("cg86","splitAtN")
+callsnd splitAtN[0], n248, cg86
+callsnd splitAtN[1], n233, cg86
+retsnd splitAtN[0], z0, cg86
+ret splitImb, splitAtN[0], z0
+callgroup("cg91","splitImb")
+callsnd splitImb[0], n169, cg91
+retsnd splitImb[0], z0, cg91
+const n354, 0
+const n355, 1000003
+div n356, splitImb[0], n355
+subi n357, n356, 2
+const n358, 1000003
+div n359, splitImb[0], n358
+mul n360, n359, n358
+sub n361, splitImb[0], n360
+subi n362, n361, 2
+const n363, 1
+const n364, 0
+equal n365, n354, n364
+band n366, n363, n365
+callgroup("cg17","checkRec")
+callsnd checkRec[0], n170, cg17
+callsnd checkRec[1], n357, cg17
+retsnd checkRec[0], z0, cg17
+const n371, 0
+const n372, 1000003
+div n373, checkRec[0], n372
+subi n374, n373, 2
+const n375, 1000003
+div n376, checkRec[0], n375
+mul n377, n376, n375
+sub n378, checkRec[0], n377
+subi n379, n378, 2
+const n380, 1
+const n381, 0
+equal n382, n371, n381
+band n383, n380, n382
+callgroup("cg34","checkRec")
+callsnd checkRec[0], n170, cg34
+callsnd checkRec[1], n362, cg34
+retsnd checkRec[0], z0, cg34
+const n388, 0
+const n389, 1000003
+div n390, checkRec[0], n389
+subi n391, n390, 2
+const n392, 1000003
+div n393, checkRec[0], n392
+mul n394, n393, n392
+sub n395, checkRec[0], n394
+subi n396, n395, 2
+const n397, 1
+const n398, 0
+equal n399, n388, n398
+band n400, n397, n399
+add n401, n374, n391
+add n402, n374, n396
+lthan n403, n379, n402
+add n404, n374, n396
+steer s405, n403, n379
+steer s406, n403, n404
+addi n407, n401, 2
+addi n408, s405.w, 2
+const n409, 1000003
+mul n410, n407, n409
+add n411, n410, n408
+steer s412, n400, n411
+add n413, n388, n397
+const n414, 0
+gthan n415, n413, n414
+steer s416, n383, s412.w
+add n417, n371, n380
+const n418, 0
+gthan n419, n417, n418
+steer s420, n366, s416.w
+add n421, n354, n363
+const n422, 0
+gthan n423, n421, n422
+steer s424, n205, chunkPair[0]
+steer s425, n205, s420.w
+ret checkRec, s425.g, z0
+callgroup("cg77","checkRec")
+callsnd checkRec[0], n168, cg77
+callsnd checkRec[1], n156, cg77
+retsnd checkRec[0], z0, cg77
+const n431, 0
+const n432, 1000003
+div n433, checkRec[0], n432
+subi n434, n433, 2
+const n435, 1000003
+div n436, checkRec[0], n435
+mul n437, n436, n435
+sub n438, checkRec[0], n437
+subi n439, n438, 2
+const n440, 1
+const n441, 0
+equal n442, n431, n441
+band n443, n440, n442
+const n444, 0
+equal n445, n434, n444
+const n446, 0
+gthan n447, n439, n446
+equal n448, n439, n446
+add n449, n447, n448
+const n450, 0
+gthan n451, n449, n450
+band n452, n445, n451
+steer s453, n443, n452
+add n454, n431, n440
+const n455, 0
+gthan n456, n454, n455
+ret validateDyck, s453.w, z0
+callgroup("cg18","validateDyck")
+callsnd validateDyck[0], generateDyck[0], cg18
+retsnd validateDyck[0], z0, cg18
+ret main, validateDyck[0], z0
+const n462, 0
+callgroup("cg23","n")
+callsnd n[0], n462, cg23
+retsnd n[0], z0, cg23
+const n466, 0
+callgroup("cg27","p")
+callsnd p[0], n466, cg27
+retsnd p[0], z0, cg27
+div n470, n[0], p[0]
+ret threshold, n470, z0
+const n472, 0
+callgroup("cg33","n")
+callsnd n[0], n472, cg33
+retsnd n[0], z0, cg33
+const n476, 0
+callgroup("cg37","delta")
+callsnd delta[0], n476, cg37
+retsnd delta[0], z0, cg37
+callgroup("cg40","generateDyck")
+callsnd generateDyck[0], n[0], cg40
+callsnd generateDyck[1], delta[0], cg40
+retsnd generateDyck[0], z0, cg40
+ret inputSeq, generateDyck[0], z0

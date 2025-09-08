@@ -1,0 +1,2 @@
+[filter] N=20 imb=1 delta=0
+[sets]   Ribault Ps=[] ; Haskell Ps=[]
