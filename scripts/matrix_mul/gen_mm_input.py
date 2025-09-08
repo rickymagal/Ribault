@@ -113,7 +113,6 @@ main =
 """
 
 def mat_range(n):
-    # A[i][j] = float(i*n + j + 1), B[i][j] = float((i+j) % n + 1)
     A = [[float(i*n + j + 1) for j in range(n)] for i in range(n)]
     B = [[float((i + j) % n + 1) for j in range(n)] for i in range(n)]
     return A, B
@@ -127,7 +126,6 @@ def mat_rand(n, seed=1337):
 def to_hsk_matrix(M):
     rows = []
     for r in M:
-        # garantir sufixo .0 quando inteiro
         xs = []
         for v in r:
             if float(v).is_integer():
@@ -139,7 +137,6 @@ def to_hsk_matrix(M):
 
 def emit_hsk(path, n, p, kind):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-
     if kind == "range":
         A, B = mat_range(n)
     elif kind == "rand":
@@ -147,14 +144,10 @@ def emit_hsk(path, n, p, kind):
     else:
         raise SystemExit("mat precisa ser 'range' ou 'rand'")
 
-    a_txt = to_hsk_matrix(A)
-    b_txt = to_hsk_matrix(B)
-
     src = (TMPL
            .replace("__P__", str(p))
-           .replace("__A__", a_txt)
-           .replace("__B__", b_txt))
-
+           .replace("__A__", to_hsk_matrix(A))
+           .replace("__B__", to_hsk_matrix(B)))
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
     print(f"[mm_gen_input] wrote {path} (N={n}, P={p}, mat={kind})")

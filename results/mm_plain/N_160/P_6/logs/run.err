@@ -1,0 +1,20 @@
+[debug] T[0]: n_instrs=51594 n_edges=5
+[debug] T[1]: n_instrs=51594 n_edges=5
+[debug] T[2]: n_instrs=51594 n_edges=5
+[debug] T[3]: n_instrs=51593 n_edges=5
+[debug] T[4]: n_instrs=51593 n_edges=5
+[debug] T[5]: n_instrs=51593 n_edges=5
+Procs 12
+[debug] worker start id=0 TID=9507 CPU=11
+[debug] worker start id=5 TID=9512 CPU=3
+[debug] worker start id=1 TID=9508 CPU=8
+[debug] worker start id=4 TID=9511 CPU=9
+[debug] worker start id=3 TID=9510 CPU=8
+[debug] worker start id=2 TID=9509 CPU=6
+[DIV0] DIV pe=3 instr=0x7fb2845151b0 tag=0 exec=1 a=0 b=0 immed=0 hits=1
+[debug] worker end id=5
+[debug] worker end id=1
+[debug] worker end id=0
+[debug] worker end id=3
+[debug] worker end id=2
+[debug] worker end id=4

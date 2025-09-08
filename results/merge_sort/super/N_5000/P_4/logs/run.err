@@ -1,0 +1,13 @@
+[debug] T[0]: n_instrs=7573 n_edges=3
+[debug] T[1]: n_instrs=7573 n_edges=3
+[debug] T[2]: n_instrs=7573 n_edges=3
+[debug] T[3]: n_instrs=7572 n_edges=3
+Procs 12
+[debug] worker start id=3 TID=16410 CPU=1
+[debug] worker start id=0 TID=16395 CPU=1
+[debug] worker start id=1 TID=16398 CPU=11
+[debug] worker start id=2 TID=16399 CPU=8
+[debug] worker end id=1
+[debug] worker end id=2
+[debug] worker end id=3
+[debug] worker end id=0
