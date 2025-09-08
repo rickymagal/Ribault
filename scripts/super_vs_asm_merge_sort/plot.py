@@ -40,11 +40,11 @@ def plot_time_vs_N(summary, outdir):
         for r in rows: byP[r["P"]].append(r)
         plt.figure()
         for P,its in sorted(byP.items()):
-            its=sorted(its,key=lambda x:x["N"])
+            its=sorted(its,key=lambda x:x["Number of elements in vector"])
             xs=[i["N"] for i in its]; ys=[i["mean"] for i in its]; yerr=[i["std"] for i in its]
-            plt.errorbar(xs,ys,yerr=yerr,label=f"P={P}")
-        plt.xlabel("N"); plt.ylabel("Tempo (s)")
-        plt.title(f"Tempo vs N ({v})"); plt.grid(True,alpha=.3); plt.legend(); plt.tight_layout()
+            plt.errorbar(xs,ys,yerr=yerr,label=f"Number of working units = {P}")
+        plt.xlabel("N"); plt.ylabel("Time (s)")
+        plt.title(f"Time against Size of Vector (N)"); plt.grid(True,alpha=.3); plt.legend(); plt.tight_layout()
         plt.savefig(os.path.join(outdir,f"time_vs_N_{v}.png")); plt.close()
 
 def plot_speedup_eff(summary, outdir):
@@ -56,11 +56,11 @@ def plot_speedup_eff(summary, outdir):
         xs=[i["P"] for i in its]
         su=[base/i["mean"] for i in its]
         ef=[(base/i["mean"])/i["P"] for i in its]
-        plt.figure(); plt.plot(xs,su,marker="o"); plt.xlabel("P"); plt.ylabel("Speedup")
-        plt.title(f"Speedup ({v}, N={N})"); plt.grid(True,alpha=.3); plt.tight_layout()
+        plt.figure(); plt.plot(xs,su,marker="o"); plt.xlabel("Number of working units"); plt.ylabel("Speedup")
+        plt.title(f"Speedup (N={N})"); plt.grid(True,alpha=.3); plt.tight_layout()
         plt.savefig(os.path.join(outdir,f"speedup_{v}_N{N}.png")); plt.close()
         plt.figure(); plt.plot(xs,ef,marker="o"); plt.xlabel("P"); plt.ylabel("Efficiency")
-        plt.title(f"Efficiency ({v}, N={N})"); plt.grid(True,alpha=.3); plt.tight_layout()
+        plt.title(f"Efficiency (N={N})"); plt.grid(True,alpha=.3); plt.tight_layout()
         plt.savefig(os.path.join(outdir,f"efficiency_{v}_N{N}.png")); plt.close()
 
 def plot_best_vs_best(summary, outdir):
@@ -76,11 +76,11 @@ def plot_best_vs_best(summary, outdir):
     plt.figure()
     for v,rs in byv.items():
         its=[x for x in rs if x["P"]==Pstar]
-        its=sorted(its,key=lambda x:x["N"])
+        its=sorted(its,key=lambda x:x["Number of Elements in Vector (N)"])
         xs=[i["N"] for i in its]; ys=[i["mean"] for i in its]; yerr=[i["std"] for i in its]
         plt.errorbar(xs,ys,yerr=yerr,label=f"{v} (P={Pstar})")
-    plt.xlabel("N"); plt.ylabel("Tempo (s)")
-    plt.title(f"Melhor vs Melhor (P={Pstar})"); plt.grid(True,alpha=.3); plt.legend(); plt.tight_layout()
+    plt.xlabel("N"); plt.ylabel("Time (s)")
+    plt.title(f"Super vs. ASM"); plt.grid(True,alpha=.3); plt.legend(); plt.tight_layout()
     plt.savefig(os.path.join(outdir,f"best_vs_best_P{Pstar}.png")); plt.close()
 
 def main():
