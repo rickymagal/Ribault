@@ -1,8 +1,9 @@
-{-# LANGUAGE LambdaCase, FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 
--- | Module providing semantic analysis and type checking for a simple functional language.
--- It includes desugaring of top-level lambdas, semantic error checking, and Hindley–Milner-ish
--- type inference with support for Case, Let, application, binary/unary ops and Super nodes.
+-- | Análise semântica + checagem/inferência de tipos para a linguagem.
+-- Inclui dessugar de lambdas toplevel, checagens semânticas e
+-- um HM-ish simples para Case, Let, aplicação, bin/un ops e Super.
 module Semantic where
 
 import Syntax
@@ -10,10 +11,10 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Control.Monad.Except
 import Control.Monad.State
-import Control.Monad (forM, when, foldM, zipWithM)
+import Control.Monad (forM, when, foldM, zipWithM, unless)
 
 -- ======================================================
--- 1) Desugaring: transform top-level lambdas into parameters
+-- 1) Dessugar: lambdas toplevel -> parâmetros
 -- ======================================================
 
 desugarDecl :: Decl -> Decl
@@ -24,7 +25,7 @@ desugarProgram :: Program -> Program
 desugarProgram (Program ds) = Program (map desugarDecl ds)
 
 -- ======================================================
--- 2) Errors (semantic and type errors)
+-- 2) Erros (semânticos e de tipo)
 -- ======================================================
 
 data SemanticError
@@ -42,7 +43,7 @@ data TypeError
   | BinOpTypeErr BinOperator Type Type
   | UnOpTypeErr UnOperator Type
   | UnknownVar Ident
-  deriving Show
+  deriving Show  -- <- sem Eq (Expr não tem Eq)
 
 data Error
   = SemErr SemanticError
@@ -50,7 +51,7 @@ data Error
   deriving Show
 
 -- ======================================================
--- 3) Environments and signatures
+-- 3) Ambientes e assinaturas
 -- ======================================================
 
 type Sig     = Map.Map Ident Int
@@ -71,7 +72,7 @@ data InferState = InferState { count :: Int }
 type Infer a    = ExceptT TypeError (State InferState) a
 
 -- ======================================================
--- 4) Building signatures and function environment
+-- 4) Construção de assinaturas e ambiente de funções
 -- ======================================================
 
 buildSig :: [Decl] -> Sig
@@ -86,14 +87,13 @@ buildFuncEnv = Map.fromList . map (\(FunDecl f args _) ->
   in (f, (tvs, tr)))
 
 -- ======================================================
--- 5) Semantic checking
+-- 5) Checagens semânticas
 -- ======================================================
 
 semanticCheck :: Program -> [Error]
 semanticCheck prog =
   let Program ds = desugarProgram prog
       sig0       = buildSig ds
-      -- detecta funções duplicadas
       counts     = foldr (\f m -> Map.insertWith (+) f 1 m)
                          Map.empty
                          [f | FunDecl f _ _ <- ds]
@@ -142,10 +142,10 @@ checkExpr sig env expr = case expr of
     in errsDecl ++ checkExpr sig env' body
 
   App{} ->
-    let (fn,args) = flattenApp expr
-        eFn       = checkExpr sig env fn
+    let (fn0,args) = flattenApp expr
+        eFn       = checkExpr sig env fn0
         eAs       = concatMap (checkExpr sig env) args
-        arErr     = case fn of
+        arErr     = case fn0 of
           Var f
             | Just ar <- Map.lookup f sig
             , ar /= length args
@@ -165,19 +165,18 @@ checkExpr sig env expr = case expr of
   Tuple xs ->
     concatMap (checkExpr sig env) xs
 
-  -- Super node: precisa que o identificador de entrada exista
   Super _ _ inId _ _ ->
     [UndefinedVar inId | not (Set.member inId env || Map.member inId sig)]
 
 checkAlt :: Sig -> Env -> (Pattern, Expr) -> [SemanticError]
 checkAlt sig env (pat, bd) =
   let vs   = patVars pat
-      dupV = [ DuplicatePatternVar v | v <- vs, length (filter (==v) vs) > 1 ]
+      dupV = [ DuplicatePatternVar v | v <- vs, length (filter (== v) vs) > 1 ]
       env' = Set.union env (Set.fromList vs)
   in dupV ++ checkExpr sig env' bd
 
 flattenApp :: Expr -> (Expr, [Expr])
-flattenApp (App f x) = let (fn,xs) = flattenApp f in (fn, xs ++ [x])
+flattenApp (App f x) = let (fn0,xs) = flattenApp f in (fn0, xs ++ [x])
 flattenApp e         = (e, [])
 
 patVars :: Pattern -> [Ident]
@@ -190,7 +189,7 @@ patVars = \case
   PCons p ps  -> patVars p ++ patVars ps
 
 -- ======================================================
--- 6) Type checking and inference
+-- 6) Checagem/inferência de tipos
 -- ======================================================
 
 checkProgram :: Program -> [Error]
@@ -230,11 +229,13 @@ isTVar _        = False
 
 inferExpr :: FuncEnv -> TypeEnv -> Expr -> Infer Type
 inferExpr fenv tenv expr = case expr of
+  -- VAR: se for função de aridade 0 no fenv, trata como constante (retorno).
   Var x -> case Map.lookup x tenv of
              Just t  -> return t
              Nothing -> case Map.lookup x fenv of
-                          Just (argTys, retT) -> return (TFun argTys retT)
-                          Nothing             -> throwError (UnknownVar x)
+               Just ([], retT)     -> return retT
+               Just (argTys, retT) -> return (TFun argTys retT)
+               Nothing             -> throwError (UnknownVar x)
 
   Lit l -> return $ literalType l
 
@@ -279,8 +280,8 @@ inferExpr fenv tenv expr = case expr of
     inferExpr fenv' tenv' e
 
   App{} -> do
-    let (fn,args) = flattenApp expr
-    fty   <- inferExpr fenv tenv fn
+    let (fn0,args) = flattenApp expr
+    fty   <- inferExpr fenv tenv fn0
     argTs <- mapM (inferExpr fenv tenv) args
     case fty of
       TFun ps r
@@ -315,7 +316,7 @@ inferExpr fenv tenv expr = case expr of
     te <- inferExpr fenv tenv e
     case op of
       Neg | te `elem` [TInt,TFloat] -> return te
-          | isPoly te               -> return TInt
+          | isPoly te               -> freshTypeVar
           | otherwise               -> throwError (UnOpTypeErr op te)
       Not | te == TBool             -> return TBool
           | isPoly te               -> return TBool
@@ -324,21 +325,20 @@ inferExpr fenv tenv expr = case expr of
   List xs -> do
     ts    <- mapM (inferExpr fenv tenv) xs
     eltTy <- case ts of
-      []      -> freshTypeVar
-      (t:ts') -> foldM (unifyTypes expr) t ts'
+               []      -> freshTypeVar
+               (t:ts') -> foldM (unifyTypes expr) t ts'
     return (TList eltTy)
 
   Tuple xs -> TTuple <$> mapM (inferExpr fenv tenv) xs
 
-  -- Super node: treat as an opaque call that returns the same type as its input var.
-  -- If the input ident is unknown, assume a fresh type variable.
+  -- Super: chamada opaca que devolve o mesmo tipo da entrada.
   Super _ _ inId _ _ ->
     case Map.lookup inId tenv of
       Just t  -> return t
       Nothing -> freshTypeVar
 
   where
-    -- unifica dois tipos, descendo em listas e tuplas
+    -- unificação recursiva p/ listas/tuplas
     unifyTypes :: Expr -> Type -> Type -> Infer Type
     unifyTypes e t1 t2 = case (t1,t2) of
       (TVar _, t)            -> return t
@@ -349,7 +349,7 @@ inferExpr fenv tenv expr = case expr of
       _ | t1 == t2           -> return t1
       _                      -> throwError (Mismatch e t1 t2)
 
--- | Match two types, allowing type variables.
+-- | Match permissivo com variáveis de tipo.
 match :: Type -> Type -> Bool
 match (TVar _) _ = True
 match _ (TVar _) = True
@@ -397,24 +397,25 @@ literalType = \case
   LChar _   -> TChar
   LString _ -> TString
 
--- binops
+-- Binops
 numBin, boolBin, compBin :: BinOperator -> Type -> Type -> Infer Type
 numBin _ TInt   TInt   = return TInt
 numBin _ TFloat TFloat = return TFloat
-numBin op a b
-  | isPoly a || isPoly b = return TInt
-  | otherwise            = throwError (BinOpTypeErr op a b)
+numBin _ (TVar _) t | t `elem` [TInt,TFloat] = return t
+numBin _ t (TVar _) | t `elem` [TInt,TFloat] = return t
+numBin _ (TVar _) (TVar _) = freshTypeVar
+numBin op a b = throwError (BinOpTypeErr op a b)
 
 boolBin _ TBool TBool = return TBool
-boolBin op a b
-  | isPoly a || isPoly b = return TBool
-  | otherwise            = throwError (BinOpTypeErr op a b)
+boolBin _ (TVar _) _  = return TBool
+boolBin _ _ (TVar _)  = return TBool
+boolBin op a b        = throwError (BinOpTypeErr op a b)
 
 compBin _ a b
   | a==b && a `elem` [TInt,TFloat,TChar,TString] = return TBool
-compBin _ a b
-  | isPoly a || isPoly b = return TBool
-compBin op a b = throwError (BinOpTypeErr op a b)
+compBin _ (TVar _) _ = return TBool
+compBin _ _ (TVar _) = return TBool
+compBin op a b       = throwError (BinOpTypeErr op a b)
 
 ensureBool :: Expr -> Type -> Infer ()
 ensureBool _ TBool    = return ()
@@ -439,7 +440,7 @@ isPoly _        = False
 checkAll :: Program -> [Error]
 checkAll p = semanticCheck p ++ checkProgram p
 
--- Atribui nomes s# às supers (feito na main, quando você quiser).
+-- Atribui nomes s# às supers (feito na main / pipeline).
 assignSuperNames :: Program -> Program
 assignSuperNames (Program ds) =
   Program (evalState (mapM goDecl ds) (1 :: Int))
@@ -455,15 +456,15 @@ assignSuperNames (Program ds) =
       Cons h t    -> Cons <$> goExpr h <*> goExpr t
       Case s as   -> do
         s'  <- goExpr s
-        as' <- mapM (\(p,e) -> do e' <- goExpr e; pure (p,e')) as
+        as' <- mapM (\(p,e0) -> do e1 <- goExpr e0; pure (p,e1)) as
         pure (Case s' as')
-      Let ds e    -> do
-        ds' <- mapM (\(FunDecl f ps b) -> FunDecl f ps <$> goExpr b) ds
-        e'  <- goExpr e
-        pure (Let ds' e')
+      Let ds0 e0  -> do
+        ds1 <- mapM (\(FunDecl f ps b) -> FunDecl f ps <$> goExpr b) ds0
+        e1  <- goExpr e0
+        pure (Let ds1 e1)
       App f x     -> App <$> goExpr f <*> goExpr x
       BinOp o l r -> BinOp o <$> goExpr l <*> goExpr r
-      UnOp  o e   -> UnOp  o <$> goExpr e
+      UnOp  o e0  -> UnOp  o <$> goExpr e0
       List xs     -> List  <$> mapM goExpr xs
       Tuple xs    -> Tuple <$> mapM goExpr xs
       -- injeta o nome s#
