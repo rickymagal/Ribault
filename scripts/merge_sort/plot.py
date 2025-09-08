@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import argparse, csv, os
+from collections import defaultdict
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+def read_metrics(path):
+    data = defaultdict(list)  # key: P -> list of (N, secs)
+    with open(path, newline="") as f:
+        cr = csv.DictReader(f)
+        for row in cr:
+            if row.get("variant","") != "super":
+                continue
+            try:
+                N   = int(row["N"])
+                P   = int(row["P"])
+                sec = float(row["seconds"])
+                rc  = int(row["rc"])
+            except Exception:
+                continue
+            if rc != 0:  # ignore failed runs
+                continue
+            data[P].append((N, sec))
+    for P in data:
+        data[P] = sorted(data[P], key=lambda x: x[0])
+    return data
+
+def plot_runtime(data, outdir, tag):
+    plt.figure()
+    for P, series in sorted(data.items()):
+        if not series: 
+            continue
+        Ns, secs = zip(*series)
+        plt.plot(Ns, secs, marker="o", label=f"P={P}")
+    plt.title("Merge Sort with SUPER: Runtime vs Input Size", fontsize=12)
+    plt.xlabel("Input size N", fontsize=11)
+    plt.ylabel("Runtime (seconds)", fontsize=11)
+    plt.grid(True, linestyle=":", linewidth=0.8)
+    plt.legend(title="Threads", fontsize=9)
+    plt.tight_layout()
+    png = os.path.join(outdir, f"runtime_{tag}.png")
+    pdf = os.path.join(outdir, f"runtime_{tag}.pdf")
+    plt.savefig(png, dpi=180)
+    plt.savefig(pdf)
+    print(f"[plot] saved {png} and {pdf}")
+
+def plot_speedup(data, outdir, tag, baseline=None):
+    # baseline = min P by default
+    Ps = sorted(p for p, s in data.items() if s)
+    if not Ps:
+        return
+    baseP = baseline if baseline in Ps else Ps[0]
+    base = dict(data[baseP])  # N -> secs
+    plt.figure()
+    for P in Ps:
+        Ns, sp = [], []
+        for (N, tP) in data[P]:
+            if N in base and tP > 0:
+                Ns.append(N); sp.append(base[N] / tP)
+        if Ns:
+            plt.plot(Ns, sp, marker="o", label=f"P={P}")
+    plt.title("Merge Sort with SUPER: Parallel Speedup", fontsize=12)
+    plt.xlabel("Input size N", fontsize=11)
+    plt.ylabel(f"Speedup vs P={baseP}", fontsize=11)
+    plt.grid(True, linestyle=":", linewidth=0.8)
+    plt.legend(title="Threads", fontsize=9)
+    plt.tight_layout()
+    png = os.path.join(outdir, f"speedup_{tag}.png")
+    pdf = os.path.join(outdir, f"speedup_{tag}.pdf")
+    plt.savefig(png, dpi=180)
+    plt.savefig(pdf)
+    print(f"[plot] saved {png} and {pdf}")
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--metrics", required=True)
+    ap.add_argument("--outdir", required=True)
+    ap.add_argument("--tag", required=True)
+    args = ap.parse_args()
+
+    os.makedirs(args.outdir, exist_ok=True)
+    data = read_metrics(args.metrics)
+    if not data:
+        print("[plot] no data to plot (did all runs fail?)")
+        return
+    plot_runtime(data, args.outdir, args.tag)
+    plot_speedup(data, args.outdir, args.tag)
+
+if __name__ == "__main__":
+    main()
