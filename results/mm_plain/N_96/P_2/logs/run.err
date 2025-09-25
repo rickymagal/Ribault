@@ -1,9 +1,0 @@
-[debug] T[0]: n_instrs=56093 n_edges=1
-[debug] T[1]: n_instrs=56092 n_edges=1
-Procs 12
-[debug] worker start id=1 TID=30814 CPU=11
-[debug] worker start id=0 TID=30813 CPU=9
-[DIV0] DIV pe=1 instr=0x7f03dc45f760 tag=0 exec=1 a=0 b=0 immed=0 hits=1
-[DIV0] DIV pe=1 instr=0x7f03dc45f760 tag=0 exec=1 a=0 b=0 immed=0 hits=2
-[debug] worker end id=1
-[debug] worker end id=0

@@ -67,24 +67,68 @@ CODE_FL      := $(patsubst $(TEST_DIR)/%.hsk,$(CODE_OUT_DIR)/%.fl,$(TESTS))
 # ------------------------------------------------------------
 .PHONY: all df ast code tokens images ast-dots ast-images supers clean
 
-all: df ast code supers 
+all: df ast code supers
+
+GHC_VER   := $(shell $(GHC) --numeric-version)
+SHIM_DIR  := build/ghc-shim
+
+.PHONY: supers_prepare
+supers_prepare:
+	@set -eu
+	@echo "[shim] preparando GHC shim em $(SHIM_DIR)"
+	@mkdir -p "$(SHIM_DIR)/rts"
+	@RTS_DIR="$$(ghc-pkg field rts library-dirs --simple-output)"; \
+	BASE_DIR="$$(dirname "$$RTS_DIR")"; \
+	RTS_SO="$$(ls "$$BASE_DIR"/libHSrts-*-ghc$(GHC_VER).so 2>/dev/null | head -n1)"; \
+	if [ -z "$$RTS_SO" ]; then \
+	  RTS_SO="$$(ls "$$RTS_DIR"/libHSrts-*-ghc$(GHC_VER).so 2>/dev/null | head -n1)"; \
+	fi; \
+	test -n "$$RTS_SO" || { \
+	  echo "[shim] ERRO: não achei libHSrts-*-ghc$(GHC_VER).so"; \
+	  echo "       Procurei em:"; \
+	  echo "         $$BASE_DIR"; \
+	  echo "         $$RTS_DIR"; \
+	  exit 2; \
+	}; \
+	ln -sfn "$$RTS_SO" "$(SHIM_DIR)/rts/libHSrts-ghc$(GHC_VER).so"; \
+	echo "[shim] RTS → $$RTS_SO"
+	@for pkg in base ghc-prim ghc-bignum integer-gmp; do \
+	  dir="$$(ghc-pkg field $$pkg library-dirs --simple-output)"; \
+	  [ -d "$$dir" ] && ln -sfn "$$dir" "$(SHIM_DIR)/$$(basename "$$dir")" || true; \
+	done
+	@INC_DIRS="$$(ghc-pkg field rts include-dirs --simple-output)"; \
+	CPP=""; for d in $$INC_DIRS; do CPP="$$CPP -I$$d"; done; \
+	printf "%s" "$$CPP" > "$(SHIM_DIR)/.cppflags"
+
 
 # ---------- biblioteca de super-instruções --------------------
 
-# ---------- biblioteca de super-instruções --------------------
-
-GHC_LIBDIR  := $(shell $(GHC) --print-libdir)
 GHC_RTS_DIR := $(GHC_LIBDIR)/rts
+# ----- GHC base ------------------------------------------------
+GHC_LIBDIR      := $(shell $(GHC) --print-libdir)         # .../ghc-9.6.6/lib
+GHC_VER         := $(shell $(GHC) --numeric-version)
+RTS_LIBDIR      := $(shell ghc-pkg field rts library-dirs --simple-output)
+RTS_INCDIRS     := $(shell ghc-pkg field rts include-dirs --simple-output)
+FEDORA_GHC_BASE := $(dir $(RTS_LIBDIR))                   # .../lib/x86_64-linux-ghc-9.6.6/
 
-# Tudo que a .so pode pedir em runtime (fecha TODOS os NEEDED Haskell + RTS)
+# ----- Shim local (sem sudo) ----------------------------------
+GHC_SHIM_DIR := build/ghc-shim
+GHC_LIBDIR_SHIM := $(GHC_SHIM_DIR)                        # será passado ao script
+GHC_RTS_DIR  := $(GHC_LIBDIR_SHIM)/rts
+
+# Includes do RTS (p/ HsFFI.h etc)
+CPP_RTS_INCS := $(foreach d,$(RTS_INCDIRS),-I$(d))
+
+# Tudo que a .so pode pedir (cobre layout clássico e Fedora)
 DEPS_PATTERNS := \
   rts/libHSrts*.so \
+  x86_64-linux-ghc-$(GHC_VER)/libHSrts*.so \
   ghc-prim-*/libHSghc-prim-*.so \
   base-*/libHSbase-*.so \
   integer-gmp-*/libHSinteger-gmp-*.so \
   ghc-bignum-*/libHSghc-bignum-*.so
 
-# (Opcional) copiar libgmp para evitar depender de /usr/lib em runtime
+# (Opcional) libgmp para runtime fechado
 GMP_CANDIDATES := /usr/lib64/libgmp.so.10 /usr/lib/libgmp.so.10
 
 # Link sem -threaded (evita *_thr); força noexecstack e rpath curto no bundle local
@@ -111,13 +155,13 @@ $(EXE_SUPERS): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
 	  $(TYPES_HS) $(PORT_HS) $(NODE_HS) \
 	  $(SUPERS_EXTRACT) $(SUPERS_EMIT)
 
-# Gera TODAS as libs de supers chamando o script em tools/
-supers: $(EXE_SUPERS)
+supers: supers_prepare $(EXE_SUPERS)
 	@mkdir -p $(SUPERS_DIR)
 	@EXE_SUPERS="$(EXE_SUPERS)" \
 	 GHC="$(GHC)" \
-	 GHC_LIBDIR="$(GHC_LIBDIR)" \
-	 GHC_RTS_DIR="$(GHC_RTS_DIR)" \
+	 GHC_LIBDIR="$(SHIM_DIR)" \
+	 GHC_RTS_DIR="$(SHIM_DIR)/rts" \
+	 CPPFLAGS="$$(cat $(SHIM_DIR)/.cppflags)" \
 	 SUPERS_DIR="$(SUPERS_DIR)" \
 	 DEPS_PATTERNS='$(DEPS_PATTERNS)' \
 	 SUPERS_LINK_FLAGS='$(SUPERS_LINK_FLAGS)' \
@@ -126,6 +170,7 @@ supers: $(EXE_SUPERS)
 	 GMP_CANDIDATES='$(GMP_CANDIDATES)' \
 	 TESTS='$(TESTS)' \
 	 bash tools/build_supers.sh
+
 
 
 # ---------- Dataflow & AST pipelines -------------------------
