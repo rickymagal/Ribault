@@ -97,8 +97,11 @@ supers_prepare:
 	  [ -d "$$dir" ] && ln -sfn "$$dir" "$(SHIM_DIR)/$$(basename "$$dir")" || true; \
 	done
 	@INC_DIRS="$$(ghc-pkg field rts include-dirs --simple-output)"; \
-	CPP=""; for d in $$INC_DIRS; do CPP="$$CPP -I$$d"; done; \
-	printf "%s" "$$CPP" > "$(SHIM_DIR)/.cppflags"
+	CPP=""; CP=""; \
+	for d in $$INC_DIRS; do CPP="$$CPP -I$$d"; CP="$$CP:$$d"; done; \
+	printf "%s" "$$CPP" > "$(SHIM_DIR)/.cppflags"; \
+	printf "%s" "$${CP#:}" > "$(SHIM_DIR)/.cpath"
+
 
 
 # ---------- biblioteca de super-instruções --------------------
@@ -162,6 +165,8 @@ supers: supers_prepare $(EXE_SUPERS)
 	 GHC_LIBDIR="$(SHIM_DIR)" \
 	 GHC_RTS_DIR="$(SHIM_DIR)/rts" \
 	 CPPFLAGS="$$(cat $(SHIM_DIR)/.cppflags)" \
+	 C_INCLUDE_PATH="$$(cat $(SHIM_DIR)/.cpath)" \
+	 CPATH="$$(cat $(SHIM_DIR)/.cpath)" \
 	 SUPERS_DIR="$(SUPERS_DIR)" \
 	 DEPS_PATTERNS='$(DEPS_PATTERNS)' \
 	 SUPERS_LINK_FLAGS='$(SUPERS_LINK_FLAGS)' \
@@ -170,6 +175,7 @@ supers: supers_prepare $(EXE_SUPERS)
 	 GMP_CANDIDATES='$(GMP_CANDIDATES)' \
 	 TESTS='$(TESTS)' \
 	 bash tools/build_supers.sh
+
 
 
 
@@ -278,5 +284,5 @@ clean:
 	        $(SRC_DIR)/Synthesis/*.hi $(SRC_DIR)/Synthesis/*.o \
 	        $(EXE_DF) $(EXE_AST) $(EXE_CODE) $(EXE_SUPERS) \
 		$(EXE_SUPERS).obj $(EXE_SUPERS).hi 
-	@rm -f $(LEXER_HS) $(PARSER_HS)
-	@rm -rf $(DF_OUT_DIR) $(AST_OUT_DIR) $(CODE_OUT_DIR) $(SUPERS_DIR)
+	@rm -f $(LEXER_HS) $(PARSER_HS) 
+	@rm -rf $(DF_OUT_DIR) $(AST_OUT_DIR) $(CODE_OUT_DIR) $(SUPERS_DIR) build
