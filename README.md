@@ -25,8 +25,8 @@ This work proposes the translation of programs written in a Haskell subset into 
 | `test/golden-df`  | Standard for Dataflow graphs .dot.                                                                                          |
 | `test/golden-ast` | Standard for AST .dot.                                                                                          |
 | `test/golden-talm` | Standard for TALM code.                                                                                          |
-| `scripts/          | Performance and correctness scripts                                                                                  |
-| `tools/            | Auxiliary scripts for compiling supers defined by users as a shared library                                                                                |
+| `scripts/`          | Performance and correctness scripts                                                                                  |
+| `tools/`            | Auxiliary scripts for compiling supers defined by users as a shared library                                                                                |
 
 ## Execution
 
