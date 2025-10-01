@@ -1,0 +1,113 @@
+const z0, 0
+const n0, -1
+const n1, 10
+const n2, 15
+const n3, 1000003
+mul n4, n2, n3
+add n5, n4, n0
+const n6, 1000003
+mul n7, n1, n6
+add n8, n7, n5
+callgroup("c9","headList")
+callsnd headList[0], n8, c9
+retsnd headList[0], z0, c9
+const n12, 0
+const n13, -1
+equal n14, n-1, n13
+const n15, 0
+equal n16, n12, n15
+band n17, n14, n16
+const n18, 0
+steer s19, n17, n18
+add n20, n12, n14
+const n21, 0
+gthan n22, n20, n21
+const n23, -1
+equal n24, n-1, n23
+const n25, 0
+equal n26, n24, n25
+const n27, 1000003
+div n28, n-1, n27
+mul n29, n28, n27
+sub n30, n-1, n29
+const n31, -1
+equal n32, n30, n31
+band n33, n26, n32
+const n34, 1000003
+div n35, n-1, n34
+const n36, 0
+equal n37, n22, n36
+band n38, n33, n37
+steer s39, n38, n35
+add n40, n22, n33
+const n41, 0
+gthan n42, n40, n41
+const n43, 1
+const n44, 0
+equal n45, n42, n44
+band n46, n43, n45
+add n47, z0, z0
+steer s48, n46, n47
+add n49, n42, n43
+const n50, 0
+gthan n51, n49, n50
+const n52, 1
+const n53, 0
+equal n54, n51, n53
+band n55, n52, n54
+const n56, 0
+steer s57, n55, n56
+add n58, n51, n52
+const n59, 0
+gthan n60, n58, n59
+ret main, [s57.t, s48.t, s39.t, s19.t], z0
+const n62, 0
+const n63, -1
+equal n64, n-1, n63
+const n65, 0
+equal n66, n62, n65
+band n67, n64, n66
+const n68, 0
+steer s69, n67, n68
+add n70, n62, n64
+const n71, 0
+gthan n72, n70, n71
+const n73, -1
+equal n74, n-1, n73
+const n75, 0
+equal n76, n74, n75
+const n77, 1000003
+div n78, n-1, n77
+mul n79, n78, n77
+sub n80, n-1, n79
+const n81, -1
+equal n82, n80, n81
+band n83, n76, n82
+const n84, 1000003
+div n85, n-1, n84
+const n86, 0
+equal n87, n72, n86
+band n88, n83, n87
+steer s89, n88, n85
+add n90, n72, n83
+const n91, 0
+gthan n92, n90, n91
+const n93, 1
+const n94, 0
+equal n95, n92, n94
+band n96, n93, n95
+add n97, z0, z0
+steer s98, n96, n97
+add n99, n92, n93
+const n100, 0
+gthan n101, n99, n100
+const n102, 1
+const n103, 0
+equal n104, n101, n103
+band n105, n102, n104
+const n106, 0
+steer s107, n105, n106
+add n108, n101, n102
+const n109, 0
+gthan n110, n108, n109
+ret headList, [s107.t, s98.t, s89.t, s69.t], z0

@@ -1,0 +1,12 @@
+const z0, 0
+const n0, 7
+callgroup("c1","neg")
+callsnd neg[0], n0, c1
+retsnd neg[0], z0, c1
+add n4, n0, z0
+const n5, 0
+sub n6, n5, n4
+ret main, n6, z0
+const n8, 0
+sub n9, n8, n4
+ret neg, n9, z0

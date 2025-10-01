@@ -1,0 +1,16 @@
+const z0, 0
+const n0, 15
+callgroup("c1","rem7")
+callsnd rem7[0], n0, c1
+retsnd rem7[0], z0, c1
+add n4, n0, z0
+const n5, 7
+div n6, n4, n5
+mul n7, n6, n5
+sub n8, n4, n7
+ret main, n8, z0
+const n10, 7
+div n11, n4, n10
+mul n12, n11, n10
+sub n13, n4, n12
+ret rem7, n13, z0

@@ -1,0 +1,18 @@
+const z0, 0
+const n0, 1
+const n1, 2
+const n2, 3
+callgroup("c3","addThree")
+callsnd addThree[0], n0, c3
+callsnd addThree[1], n1, c3
+callsnd addThree[2], n2, c3
+retsnd addThree[0], z0, c3
+add n8, n0, z0
+add n9, n1, z0
+add n10, n2, z0
+add n11, n10, n9
+add n12, n11, n8
+ret main, n12, z0
+add n14, n10, n9
+add n15, n14, n8
+ret addThree, n15, z0
