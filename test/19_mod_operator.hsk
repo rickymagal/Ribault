@@ -1,2 +1,0 @@
-rem7 x = x % 7;
-main  = rem7 15

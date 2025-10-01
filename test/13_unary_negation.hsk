@@ -1,2 +1,0 @@
-neg x = -x;
-main = neg 7

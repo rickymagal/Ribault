@@ -1,2 +1,0 @@
-sumFrom n acc = if n <= 0 then acc else sumFrom (n - 1) (acc + n);
-main = sumFrom 10000 0
