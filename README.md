@@ -15,43 +15,21 @@ This work proposes the translation of programs written in a Haskell subset into 
 
 | Directory         | Content                                                                                                                   |
 |-------------------|---------------------------------------------------------------------------------------------------------------------------|
-| `docs/`           | Project proposal (`anteprojeto.pdf`) and formal language definition (`haskell-subset.ebnf`).                             |
-| `docs/html`           | Haddock documents.                             |
 | `src/Analysis`    | Compiler's analysis step source code.                                                                                       |
 | `src/Synthesis`   | Compiler's synthesis step source code.                                                                                                     |
-| `src/Lib`         | Compiler's Super Instructions implementation                                                                                                     |
 | `test/`           | Unit and integration test cases.                                                                                          |
 | `test/ast-images` | Generated AST images.                                                                                                     |
 | `test/df-images`  | Generated Dataflow graph images.                                                                                          |
 | `test/talm`       | Generated TALM code.                                                                                                     |
+| `test/supers/`    | Generated shared library binaries for user-defined super instructions                                                                                                  |
 | `test/golden-df`  | Standard for Dataflow graphs .dot.                                                                                          |
-| `test/golden-ast`  | Standard for AST .dot.                                                                                          |
-| `test/golden-talm`  | Standard for TALM code.                                                                                          |
-| `scripts/test_unified.py`  | Correctness testing script (Python).                                                                                          |
+| `test/golden-ast` | Standard for AST .dot.                                                                                          |
+| `test/golden-talm` | Standard for TALM code.                                                                                          |
+| `scripts/          | Performance and correctness scripts                                                                                  |
+| `tools/            | Auxiliary scripts for compiling supers defined by users as a shared library                                                                                |
 
 ## Execution
 
 ```bash
 # From the root of the project, run:
 make
-# For pytest testing
-pytest -q
-```
-
-## Dependencies
-
-GHC (Glasgow Haskell Compiler)
-
-Cabal (Haskell Package Manager)
-
-Pytest (Unit testing tool for Python)
-
-Alex (Lexer generator)
-
-Happy (Parser generator)
-
-Haddock (Haskell documentation tool)
-
-Graphviz (for rendering DOT graphs)
-
-Make (build tool)
