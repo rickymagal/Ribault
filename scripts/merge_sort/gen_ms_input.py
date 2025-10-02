@@ -1,87 +1,124 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import argparse, os, random
+import argparse, os, random, sys
 
-HS_TMPL = r"""-- Auto-generated: parallel Merge Sort (GHC +RTS -N)
-{-# LANGUAGE BangPatterns #-}
-import Control.Parallel.Strategies
-import Control.DeepSeq
-import Data.Time.Clock (getCurrentTime, diffUTCTime)
+ASM_TMPL = """-- Merge Sort in the subset of the compiled functional language
 
--- split em duas metades
-split2 :: [Int] -> ([Int],[Int])
-split2 []         = ([],[])
-split2 [x]        = ([x],[])
-split2 (x:y:zs)   = let (xs,ys) = split2 zs in (x:xs, y:ys)
+-- Merge two sorted lists into a single sorted list
+merge xs ys = case xs of
+    [] -> ys;
+    (x:xt) -> case ys of
+        [] -> xs;
+        (y:yt) -> if x <= y
+                  then x : merge xt ys
+                  else y : merge xs yt;;
+;
 
--- merge (estável)
-merge :: [Int] -> [Int] -> [Int]
-merge xs [] = xs
-merge [] ys = ys
-merge (x:xs) (y:ys)
-  | x <= y    = x : merge xs (y:ys)
-  | otherwise = y : merge (x:xs) ys
+-- Split a list into two approximately equal halves
+split lst = case lst of
+  []   -> ([], []);
+  [x]  -> ([x], []);
+  x:y:zs ->
+    case split zs of
+      (xs, ys) -> (x:xs, y:ys);;
+;
 
--- mergesort com paralelismo explícito (2 sparks por nível)
-msort :: [Int] -> [Int]
-msort []  = []
-msort [x] = [x]
-msort xs  =
-  let (a,b) = split2 xs
-      goA   = msort a
-      goB   = msort b
-  in runEval $ do
-       a' <- rpar (force goA)
-       b' <- rpar (force goB)
-       rseq a'
-       rseq b'
-       return (merge a' b')
+-- Merge Sort function
+mergeSort lst = case lst of
+    [] -> [];
+    (x:[]) -> [x];
+    _ -> case split lst of
+           (left, right) -> merge (mergeSort left) (mergeSort right);;
+;
 
--- garante avaliação total
-forceList :: NFData a => [a] -> ()
-forceList xs = xs `deepseq` ()
+-- Main expression for testing
+main = mergeSort __VEC__
+"""
 
--- entrada (gerada pelo script)
-xsInput :: [Int]
-xsInput = __VEC__
+SUPER_TMPL = """-- Merge Sort (versão com SUPER e threshold)
 
-main :: IO ()
-main = do
-  let !_ = length xsInput  -- force spine
-  t0 <- getCurrentTime
-  let ys = msort xsInput
-  forceList ys `seq` return ()
-  t1 <- getCurrentTime
-  let secs = realToFrac (diffUTCTime t1 t0) :: Double
-  putStrLn $ "RUNTIME_SEC=" ++ show secs
+len xs = case xs of
+  []      -> 0;
+  (_:ys)  -> 1 + len ys;
+;
+
+merge xs ys = case xs of
+  []      -> ys;
+  (x:xt)  -> case ys of
+    []       -> xs;
+    (y:yt)   -> if x <= y
+                then x : merge xt ys
+                else y : merge xs yt;;
+;
+
+split lst = case lst of
+  []     -> ([], []);
+  [x]    -> ([x], []);
+  x:y:zs -> case split zs of
+    (xs, ys) -> (x:xs, y:ys);;
+;
+
+p = __P__;
+
+mergeSort0 lst = mergeSortT (len lst) lst;
+
+mergeSortT n0 lst = case lst of
+  []     -> [];
+  (x:[]) -> [x];
+  _      -> if (len lst) <= (n0 / p)
+            then super single input (lst) output (sorted)
+                 #BEGINSUPER
+                 insert x [] = [x]
+                 insert x (y:ys)
+                   | x <= y    = x:y:ys
+                   | otherwise = y : insert x ys
+                 isort []     = []
+                 isort (h:t)  = insert h (isort t)
+                 sorted = isort lst
+                 #ENDSUPER
+            else case split lst of
+              (left, right) ->
+                merge (mergeSortT n0 left) (mergeSortT n0 right);;
+;
+
+main = mergeSort0 __VEC__;
 """
 
 def make_vec(n, kind):
     if kind == "range":
+        # decrescente [n, n-1, ..., 1]
         return "[" + ",".join(str(i) for i in range(n, 0, -1)) + "]"
     elif kind == "rand":
-        rnd = random.Random(1337)
+        rnd = random.Random(1337)  # determinístico
         xs = [rnd.randint(0, n*2) for _ in range(n)]
         return "[" + ",".join(map(str, xs)) + "]"
     else:
         raise SystemExit("vec precisa ser 'range' ou 'rand'")
 
-def emit_hs(path, n, vec_kind):
+def emit_hsk(path, variant, n, p, vec_kind):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     vec = make_vec(n, vec_kind)
-    src = HS_TMPL.replace("__VEC__", vec)
+    if variant == "asm":
+        src = ASM_TMPL.replace("__VEC__", vec)
+    elif variant == "super":
+        src = SUPER_TMPL.replace("__VEC__", vec).replace("__P__", str(p))
+    else:
+        raise SystemExit("variant deve ser 'asm' ou 'super'")
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[hs_gen_input] wrote {path} (N={n}, vec={vec_kind})")
+    print(f"[ms_gen_input] wrote {path} (N={n}, P={p}, variant={variant})")
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--N", type=int, required=True)
+    ap.add_argument("--P", type=int, required=True)
     ap.add_argument("--vec", default="range", choices=["range","rand"])
+    # o run.sh não passa --variant; default precisa ser SUPER
+    ap.add_argument("--variant", default="super", choices=["asm","super"])
     args = ap.parse_args()
-    emit_hs(args.out, args.N, args.vec)
+    emit_hsk(args.out, args.variant, args.N, args.P, args.vec)
 
 if __name__ == "__main__":
     main()
