@@ -1,0 +1,41 @@
+const z0, 0
+const n0, -1
+const n1, 10
+const n2, 15
+addi n3, n2, 2
+addi n4, n0, 2
+const n5, 1000003
+mul n6, n3, n5
+add n7, n6, n4
+addi n8, n1, 2
+addi n9, n7, 2
+const n10, 1000003
+mul n11, n8, n10
+add n12, n11, n9
+add n13, z0, z0
+const n14, 0
+const n15, 1
+const n16, 0
+equal n17, n14, n16
+band n18, n15, n17
+add n19, z0, z0
+add n20, z0, z0
+add n21, n19, n20
+steer s22, n18, n21
+add n23, n14, n15
+const n24, 0
+gthan n25, n23, n24
+const n26, 1
+const n27, 0
+equal n28, n25, n27
+band n29, n26, n28
+const n30, 0
+steer s31, n29, n30
+add n32, n25, n26
+const n33, 0
+gthan n34, n32, n33
+ret sumTwo, s31.w, z0
+callgroup("cg46","sumTwo")
+callsnd sumTwo[0], n12, cg46
+retsnd sumTwo[0], z0, cg46
+ret main, sumTwo[0], z0

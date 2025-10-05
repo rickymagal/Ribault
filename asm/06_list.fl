@@ -1,0 +1,122 @@
+const z0, 0
+const n0, -1
+const n1, 10
+const n2, 15
+addi n3, n2, 2
+addi n4, n0, 2
+const n5, 1000003
+mul n6, n3, n5
+add n7, n6, n4
+addi n8, n1, 2
+addi n9, n7, 2
+const n10, 1000003
+mul n11, n8, n10
+add n12, n11, n9
+const n13, 0
+const n14, -1
+equal n15, n-1, n14
+const n16, 0
+equal n17, n13, n16
+band n18, n15, n17
+const n19, 0
+steer s20, n18, n19
+add n21, n13, n15
+const n22, 0
+gthan n23, n21, n22
+const n24, -1
+equal n25, n-1, n24
+const n26, 0
+equal n27, n25, n26
+const n28, 1000003
+div n29, n-1, n28
+mul n30, n29, n28
+sub n31, n-1, n30
+subi n32, n31, 2
+const n33, -1
+equal n34, n32, n33
+band n35, n27, n34
+const n36, 1000003
+div n37, n-1, n36
+subi n38, n37, 2
+const n39, 0
+equal n40, n23, n39
+band n41, n35, n40
+steer s42, n41, n38
+add n43, n23, n35
+const n44, 0
+gthan n45, n43, n44
+const n46, 1
+const n47, 0
+equal n48, n45, n47
+band n49, n46, n48
+add n50, z0, z0
+steer s51, n49, n50
+add n52, n45, n46
+const n53, 0
+gthan n54, n52, n53
+const n55, 1
+const n56, 0
+equal n57, n54, n56
+band n58, n55, n57
+const n59, 0
+steer s60, n58, n59
+add n61, n54, n55
+const n62, 0
+gthan n63, n61, n62
+ret headList, s60.w, z0
+callgroup("cg75","headList")
+callsnd headList[0], n12, cg75
+retsnd headList[0], z0, cg75
+ret main, headList[0], z0
+const n69, 0
+const n70, -1
+equal n71, n-1, n70
+const n72, 0
+equal n73, n69, n72
+band n74, n71, n73
+const n75, 0
+steer s76, n74, n75
+add n77, n69, n71
+const n78, 0
+gthan n79, n77, n78
+const n80, -1
+equal n81, n-1, n80
+const n82, 0
+equal n83, n81, n82
+const n84, 1000003
+div n85, n-1, n84
+mul n86, n85, n84
+sub n87, n-1, n86
+subi n88, n87, 2
+const n89, -1
+equal n90, n88, n89
+band n91, n83, n90
+const n92, 1000003
+div n93, n-1, n92
+subi n94, n93, 2
+const n95, 0
+equal n96, n79, n95
+band n97, n91, n96
+steer s98, n97, n94
+add n99, n79, n91
+const n100, 0
+gthan n101, n99, n100
+const n102, 1
+const n103, 0
+equal n104, n101, n103
+band n105, n102, n104
+add n106, z0, z0
+steer s107, n105, n106
+add n108, n101, n102
+const n109, 0
+gthan n110, n108, n109
+const n111, 1
+const n112, 0
+equal n113, n110, n112
+band n114, n111, n113
+const n115, 0
+steer s116, n114, n115
+add n117, n110, n111
+const n118, 0
+gthan n119, n117, n118
+ret headList, s116.w, z0

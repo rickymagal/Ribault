@@ -1,0 +1,23 @@
+const z0, 0
+const n0, 5
+add n1, z0, z0
+const n2, 1
+lthan n3, n1, n2
+equal n4, n1, n2
+add n5, n3, n4
+const n6, 0
+gthan n7, n5, n6
+const n8, 1
+const n9, 1
+sub n10, n1, n9
+callgroup("cg21","fact")
+callsnd fact[0], n10, cg21
+retsnd fact[0], z0, cg21
+mul n14, n1, fact[0]
+steer s15, n7, n8
+steer s16, n7, n14
+ret fact, s16.g, z0
+callgroup("cg28","fact")
+callsnd fact[0], n0, cg28
+retsnd fact[0], z0, cg28
+ret main, fact[0], z0

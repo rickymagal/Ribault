@@ -1,0 +1,27 @@
+digraph G {
+  rankdir=LR;
+  node [shape=box, style=rounded, fontsize=12];
+  n0 [label="const 10"];
+  n1 [label="const 4"];
+  n2 [label="+"];
+  n3 [label="ret add"];
+  n4 [label="callgroup add"];
+  n5 [label="callsnd add#0"];
+  n6 [label="callsnd add#1"];
+  n7 [label="retsnd add"];
+  n8 [label="ret main"];
+  n9 [label="+"];
+  n10 [label="ret add"];
+  n-1 -> n2 [label="(X,0)", fontsize=10];
+  n-1 -> n2 [label="(Y,1)", fontsize=10];
+  n2 -> n3 [label="(0,0)", fontsize=10];
+  n0 -> n5 [label="(0,0)", fontsize=10];
+  n4 -> n5 [label="(0,1)", fontsize=10];
+  n1 -> n6 [label="(0,0)", fontsize=10];
+  n4 -> n6 [label="(0,1)", fontsize=10];
+  n4 -> n7 [label="(0,1)", fontsize=10];
+  n7 -> n8 [label="(0,0)", fontsize=10];
+  n-1 -> n9 [label="(X,0)", fontsize=10];
+  n-1 -> n9 [label="(Y,1)", fontsize=10];
+  n9 -> n10 [label="(0,0)", fontsize=10];
+}

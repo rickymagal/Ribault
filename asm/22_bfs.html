@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>22_bfs — TALM Assembly</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="../assets/site.css"><link rel="stylesheet" href="../assets/hl-github.css"><link rel="stylesheet" href="../assets/fonts.css">
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">22_bfs — TALM Assembly</h1>
+</header>
+<h1 id="bfs-talm-assembly">22_bfs — TALM Assembly</h1>
+<h1 id="const-z0-0">const z0, 0</h1>
+<p>const n0, 1 add n1, z0, z0 const n2, -1 addi n3, n1, 2 addi n4, n2, 2
+const n5, 1000003 mul n6, n3, n5 add n7, n6, n4 const n8, -1 addi n9,
+n1, 2 addi n10, n8, 2 const n11, 1000003 mul n12, n9, n11 add n13, n12,
+n10 add n14, z0, z0 add n15, z0, z0 const n16, 0 const n17, -1 equal
+n18, n15, n17 const n19, 0 equal n20, n16, n19 band n21, n18, n20 steer
+s22, n21, n14 add n23, n16, n18 const n24, 0 gthan n25, n23, n24 const
+n26, 1 const n27, 0 equal n28, n25, n27 band n29, n26, n28 add n30, z0,
+z0 const n31, -1 const n32, 1 const n33, -1 const n34, 2 const n35, 3
+addi n36, n35, 2 addi n37, n33, 2 const n38, 1000003 mul n39, n36, n38
+add n40, n39, n37 addi n41, n34, 2 addi n42, n40, 2 const n43, 1000003
+mul n44, n41, n43 add n45, n44, n42 addi n46, n32, 2 addi n47, n45, 2
+const n48, 1000003 mul n49, n46, n48 add n50, n49, n47 const n51, 2
+const n52, -1 const n53, 4 addi n54, n53, 2 addi n55, n52, 2 const n56,
+1000003 mul n57, n54, n56 add n58, n57, n55 addi n59, n51, 2 addi n60,
+n58, 2 const n61, 1000003 mul n62, n59, n61 add n63, n62, n60 const n64,
+3 const n65, -1 const n66, 4 const n67, 5 addi n68, n67, 2 addi n69,
+n65, 2 const n70, 1000003 mul n71, n68, n70 add n72, n71, n69 addi n73,
+n66, 2 addi n74, n72, 2 const n75, 1000003 mul n76, n73, n75 add n77,
+n76, n74 addi n78, n64, 2 addi n79, n77, 2 const n80, 1000003 mul n81,
+n78, n80 add n82, n81, n79 const n83, 4 const n84, -1 addi n85, n83, 2
+addi n86, n84, 2 const n87, 1000003 mul n88, n85, n87 add n89, n88, n86
+const n90, 5 const n91, -1 addi n92, n90, 2 addi n93, n91, 2 const n94,
+1000003 mul n95, n92, n94 add n96, n95, n93 addi n97, n96, 2 addi n98,
+n31, 2 const n99, 1000003 mul n100, n97, n99 add n101, n100, n98 addi
+n102, n89, 2 addi n103, n101, 2 const n104, 1000003 mul n105, n102, n104
+add n106, n105, n103 addi n107, n82, 2 addi n108, n106, 2 const n109,
+1000003 mul n110, n107, n109 add n111, n110, n108 addi n112, n63, 2 addi
+n113, n111, 2 const n114, 1000003 mul n115, n112, n114 add n116, n115,
+n113 addi n117, n50, 2 addi n118, n116, 2 const n119, 1000003 mul n120,
+n117, n119 add n121, n120, n118 add n122, z0, z0 add n123, z0, z0 add
+n124, z0, z0 const n125, 0 const n126, -1 equal n127, n124, n126 const
+n128, 0 equal n129, n125, n128 band n130, n127, n129 const n131, -1
+steer s132, n130, n131 add n133, n125, n127 const n134, 0 gthan n135,
+n133, n134 const n136, 1 const n137, 0 equal n138, n135, n137 band n139,
+n136, n138 add n140, z0, z0 equal n141, n123, n140 add n142, z0, z0 add
+n143, z0, z0 callgroup(“cg64”,“lookupGraph”) callsnd lookupGraph[0],
+n143, cg64 callsnd lookupGraph[1], n123, cg64 retsnd lookupGraph[0], z0,
+cg64 steer s148, n141, n142 steer s149, n141, lookupGraph[0] steer s150,
+n139, s148.w add n151, n135, n136 const n152, 0 gthan n153, n151, n152
+ret lookupGraph, s150.w, z0 callgroup(“cg75”,“lookupGraph”) callsnd
+lookupGraph[0], n121, cg75 callsnd lookupGraph[1], n122, cg75 retsnd
+lookupGraph[0], z0, cg75 add n159, z0, z0 add n160, z0, z0 const n161, 0
+const n162, -1 equal n163, n160, n162 const n164, 0 equal n165, n161,
+n164 band n166, n163, n165 const n167, -1 steer s168, n166, n167 add
+n169, n161, n163 const n170, 0 gthan n171, n169, n170 const n172, 1
+const n173, 0 equal n174, n171, n173 band n175, n172, n174 add n176, z0,
+z0 add n177, z0, z0 add n178, z0, z0 const n179, 0 const n180, -1 equal
+n181, n177, n180 const n182, 0 equal n183, n179, n182 band n184, n181,
+n183 const n185, 0 steer s186, n184, n185 add n187, n179, n181 const
+n188, 0 gthan n189, n187, n188 const n190, 1 const n191, 0 equal n192,
+n189, n191 band n193, n190, n192 add n194, z0, z0 equal n195, n178, n194
+const n196, 1 add n197, z0, z0 callgroup(“cg28”,“elem”) callsnd elem[0],
+n178, cg28 callsnd elem[1], n197, cg28 retsnd elem[0], z0, cg28 steer
+s202, n195, n196 steer s203, n195, elem[0] steer s204, n193, s202.w add
+n205, n189, n190 const n206, 0 gthan n207, n205, n206 ret elem, s204.w,
+z0 callgroup(“cg39”,“elem”) callsnd elem[0], n176, cg39 callsnd elem[1],
+n159, cg39 retsnd elem[0], z0, cg39 add n213, z0, z0
+callgroup(“cg44”,“filterNotVisited”) callsnd filterNotVisited[0], n213,
+cg44 callsnd filterNotVisited[1], n159, cg44 retsnd filterNotVisited[0],
+z0, cg44 add n218, z0, z0 callgroup(“cg49”,“filterNotVisited”) callsnd
+filterNotVisited[0], n218, cg49 callsnd filterNotVisited[1], n159, cg49
+retsnd filterNotVisited[0], z0, cg49 addi n223, n176, 2 addi n224,
+filterNotVisited[0], 2 const n225, 1000003 mul n226, n223, n225 add
+n227, n226, n224 steer s228, elem[0], filterNotVisited[0] steer s229,
+elem[0], n227 steer s230, n175, s228.w add n231, n171, n172 const n232,
+0 gthan n233, n231, n232 ret filterNotVisited, s230.w, z0
+callgroup(“cg65”,“filterNotVisited”) callsnd filterNotVisited[0],
+lookupGraph[0], cg65 callsnd filterNotVisited[1], n14, cg65 retsnd
+filterNotVisited[0], z0, cg65 add n239, z0, z0 add n240, z0, z0 const
+n241, 0 const n242, -1 equal n243, n240, n242 const n244, 0 equal n245,
+n241, n244 band n246, n243, n245 steer s247, n246, n239 add n248, n241,
+n243 const n249, 0 gthan n250, n248, n249 const n251, 1 const n252, 0
+equal n253, n250, n252 band n254, n251, n253 add n255, z0, z0 add n256,
+z0, z0 callgroup(“cg87”,“append”) callsnd append[0], n256, cg87 callsnd
+append[1], n239, cg87 retsnd append[0], z0, cg87 addi n261, n255, 2 addi
+n262, append[0], 2 const n263, 1000003 mul n264, n261, n263 add n265,
+n264, n262 steer s266, n254, n265 add n267, n250, n251 const n268, 0
+gthan n269, n267, n268 ret append, s266.w, z0 callgroup(“cg11”,“append”)
+callsnd append[0], n30, cg11 callsnd append[1], filterNotVisited[0],
+cg11 retsnd append[0], z0, cg11 const n275, -1 const n276, 1 const n277,
+-1 const n278, 2 const n279, 3 addi n280, n279, 2 addi n281, n277, 2
+const n282, 1000003 mul n283, n280, n282 add n284, n283, n281 addi n285,
+n278, 2 addi n286, n284, 2 const n287, 1000003 mul n288, n285, n287 add
+n289, n288, n286 addi n290, n276, 2 addi n291, n289, 2 const n292,
+1000003 mul n293, n290, n292 add n294, n293, n291 const n295, 2 const
+n296, -1 const n297, 4 addi n298, n297, 2 addi n299, n296, 2 const n300,
+1000003 mul n301, n298, n300 add n302, n301, n299 addi n303, n295, 2
+addi n304, n302, 2 const n305, 1000003 mul n306, n303, n305 add n307,
+n306, n304 const n308, 3 const n309, -1 const n310, 4 const n311, 5 addi
+n312, n311, 2 addi n313, n309, 2 const n314, 1000003 mul n315, n312,
+n314 add n316, n315, n313 addi n317, n310, 2 addi n318, n316, 2 const
+n319, 1000003 mul n320, n317, n319 add n321, n320, n318 addi n322, n308,
+2 addi n323, n321, 2 const n324, 1000003 mul n325, n322, n324 add n326,
+n325, n323 const n327, 4 const n328, -1 addi n329, n327, 2 addi n330,
+n328, 2 const n331, 1000003 mul n332, n329, n331 add n333, n332, n330
+const n334, 5 const n335, -1 addi n336, n334, 2 addi n337, n335, 2 const
+n338, 1000003 mul n339, n336, n338 add n340, n339, n337 addi n341, n340,
+2 addi n342, n275, 2 const n343, 1000003 mul n344, n341, n343 add n345,
+n344, n342 addi n346, n333, 2 addi n347, n345, 2 const n348, 1000003 mul
+n349, n346, n348 add n350, n349, n347 addi n351, n326, 2 addi n352,
+n350, 2 const n353, 1000003 mul n354, n351, n353 add n355, n354, n352
+addi n356, n307, 2 addi n357, n355, 2 const n358, 1000003 mul n359,
+n356, n358 add n360, n359, n357 addi n361, n294, 2 addi n362, n360, 2
+const n363, 1000003 mul n364, n361, n363 add n365, n364, n362 add n366,
+z0, z0 callgroup(“cg17”,“lookupGraph”) callsnd lookupGraph[0], n365,
+cg17 callsnd lookupGraph[1], n366, cg17 retsnd lookupGraph[0], z0, cg17
+callgroup(“cg21”,“filterNotVisited”) callsnd filterNotVisited[0],
+lookupGraph[0], cg21 callsnd filterNotVisited[1], n14, cg21 retsnd
+filterNotVisited[0], z0, cg21 callgroup(“cg25”,“append”) callsnd
+append[0], n14, cg25 callsnd append[1], filterNotVisited[0], cg25 retsnd
+append[0], z0, cg25 callgroup(“cg29”,“bfsRec”) callsnd bfsRec[0],
+append[0], cg29 callsnd bfsRec[1], append[0], cg29 retsnd bfsRec[0], z0,
+cg29 steer s383, n29, bfsRec[0] add n384, n25, n26 const n385, 0 gthan
+n386, n384, n385 ret bfsRec, s383.w, z0 callgroup(“cg38”,“bfsRec”)
+callsnd bfsRec[0], n7, cg38 callsnd bfsRec[1], n13, cg38 retsnd
+bfsRec[0], z0, cg38 ret bfs, bfsRec[0], z0 callgroup(“cg43”,“bfs”)
+callsnd bfs[0], n0, cg43 retsnd bfs[0], z0, cg43 ret main, bfs[0], z0
+const n397, -1 const n398, 1 const n399, -1 const n400, 2 const n401, 3
+addi n402, n401, 2 addi n403, n399, 2 const n404, 1000003 mul n405,
+n402, n404 add n406, n405, n403 addi n407, n400, 2 addi n408, n406, 2
+const n409, 1000003 mul n410, n407, n409 add n411, n410, n408 addi n412,
+n398, 2 addi n413, n411, 2 const n414, 1000003 mul n415, n412, n414 add
+n416, n415, n413 const n417, 2 const n418, -1 const n419, 4 addi n420,
+n419, 2 addi n421, n418, 2 const n422, 1000003 mul n423, n420, n422 add
+n424, n423, n421 addi n425, n417, 2 addi n426, n424, 2 const n427,
+1000003 mul n428, n425, n427 add n429, n428, n426 const n430, 3 const
+n431, -1 const n432, 4 const n433, 5 addi n434, n433, 2 addi n435, n431,
+2 const n436, 1000003 mul n437, n434, n436 add n438, n437, n435 addi
+n439, n432, 2 addi n440, n438, 2 const n441, 1000003 mul n442, n439,
+n441 add n443, n442, n440 addi n444, n430, 2 addi n445, n443, 2 const
+n446, 1000003 mul n447, n444, n446 add n448, n447, n445 const n449, 4
+const n450, -1 addi n451, n449, 2 addi n452, n450, 2 const n453, 1000003
+mul n454, n451, n453 add n455, n454, n452 const n456, 5 const n457, -1
+addi n458, n456, 2 addi n459, n457, 2 const n460, 1000003 mul n461,
+n458, n460 add n462, n461, n459 addi n463, n462, 2 addi n464, n397, 2
+const n465, 1000003 mul n466, n463, n465 add n467, n466, n464 addi n468,
+n455, 2 addi n469, n467, 2 const n470, 1000003 mul n471, n468, n470 add
+n472, n471, n469 addi n473, n448, 2 addi n474, n472, 2 const n475,
+1000003 mul n476, n473, n475 add n477, n476, n474 addi n478, n429, 2
+addi n479, n477, 2 const n480, 1000003 mul n481, n478, n480 add n482,
+n481, n479 addi n483, n416, 2 addi n484, n482, 2 const n485, 1000003 mul
+n486, n483, n485 add n487, n486, n484 ret graph, n487, z0 — TALM
+Assembly</p>
+<script src="../assets/hl.min.js"></script><script>hljs.highlightAll();</script>
+</body>
+</html>
