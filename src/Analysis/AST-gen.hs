@@ -1,13 +1,43 @@
 {-# LANGUAGE LambdaCase #-}
 
--- Gera DOT para a AST.
--- Cobre TODOS os construtores usados:
+{-|
+Module      : ASTGen
+Description : DOT graph generator for the core AST, covering all language constructors (patterns and expressions), including TALM-style 'Super'.
+Copyright   :
+License     :
+Maintainer  : ricardo@example.com
+Stability   : experimental
+Portability : portable
+
+## Overview
+
+This module traverses the core 'Syntax' AST and emits a Graphviz DOT
+representation suitable for quick visualization and debugging. It covers
+**all** pattern and expression constructors currently used by the language,
+including the 'Super' extension node for coarse-grained super-instructions.
+
+## Notes
+
+- Node identifiers are allocated from a monotonically increasing counter kept
+  in the state monad.
+- Edges are emitted as the traversal discovers parent–child relationships.
+- Labels are escaped to keep the DOT output valid (quotes, backslashes, newlines).
+
+## Covered constructors
+
+- Patterns: 'PWildcard', 'PVar', 'PLit', 'PList', 'PTuple', 'PCons'
+- Expressions: 'Var', 'Lit', 'Lambda', 'If', 'Cons', 'Case', 'Let', 'App',
+  'BinOp', 'UnOp', 'List', 'Tuple', 'Super'
+
+-}
+-- Generates DOT for the AST.
+-- Covers ALL constructors in use:
 --  - Patterns: PWildcard, PVar, PLit, PList, PTuple, PCons
 --  - Expr: Var, Lit, Lambda, If, Cons, Case, Let, App, BinOp, UnOp, List, Tuple, Super
 
 module ASTGen
   ( astToDot       -- Program -> Text
-  , programToDot   -- sinônimo
+  , programToDot   -- synonym
   ) where
 
 import Syntax
@@ -17,31 +47,41 @@ import Control.Monad (when)
 import qualified Data.Text.Lazy as TL
 
 -- -----------------------------------------------------------------------------
--- Infra de geração de DOT
+-- DOT generation infrastructure
 -- -----------------------------------------------------------------------------
 
+-- | Opaque numeric node identifier for DOT nodes.
 type NodeId = Int
 
+-- | Accumulated DOT output state.
 data G = G { gid :: !Int, out :: [String] }
 
+-- | State monad used by the DOT generator.
 type M a = State G a
 
+-- | Append a single DOT line to the output buffer (no trailing newline needed).
 push :: String -> M ()
 push s = modify $ \g -> g{ out = s : out g }
 
+-- | Generate a fresh 'NodeId'.
 fresh :: M NodeId
 fresh = do
   i <- gets gid
   modify $ \g -> g{ gid = i + 1 }
   pure i
 
+-- | Emit a DOT node with a given textual label (properly escaped).
 emitNode :: NodeId -> String -> M ()
 emitNode n label =
   push $ show n ++ " [shape=box,label=\"" ++ esc label ++ "\"];"
 
+-- | Emit a DOT edge from the first node to the second.
 emitEdge :: NodeId -> NodeId -> M ()
 emitEdge a b = push $ show a ++ " -> " ++ show b ++ ";"
 
+-- | Escape a label string for inclusion in DOT source.
+--
+-- Escapes quotes, backslashes, and newlines.
 esc :: String -> String
 esc = concatMap f
   where
@@ -50,6 +90,10 @@ esc = concatMap f
     f '\n' = "\\n"
     f c    = [c]
 
+-- | Run a generator action producing the root node and collect the full DOT file.
+--
+-- The resulting text includes a header, node defaults, all emitted lines,
+-- and the closing brace.
 runM :: M NodeId -> TL.Text
 runM m =
   let g0  = G 0 []
@@ -65,16 +109,25 @@ runM m =
 -- API
 -- -----------------------------------------------------------------------------
 
+-- | Convert a 'Program' into DOT text (alias of 'programToDot').
+--
+-- === __Returns__
+-- A lazy 'TL.Text' containing the full DOT source.
 astToDot :: Program -> TL.Text
 astToDot = programToDot
 
+-- | Convert a 'Program' into DOT text.
+--
+-- === __Returns__
+-- A lazy 'TL.Text' containing the full DOT source.
 programToDot :: Program -> TL.Text
 programToDot p = runM (visitProgram p)
 
 -- -----------------------------------------------------------------------------
--- Visitantes
+-- Visitors
 -- -----------------------------------------------------------------------------
 
+-- | Visit the root 'Program' and emit a \"Program\" node with edges to each declaration.
 visitProgram :: Program -> M NodeId
 visitProgram (Program ds) = do
   me <- fresh
@@ -82,6 +135,11 @@ visitProgram (Program ds) = do
   mapM_ (\d -> visitDecl d >>= emitEdge me) ds
   pure me
 
+-- | Visit a function declaration node, emitting:
+--
+-- * A \"FunDecl <name>\" node
+-- * An optional \"Params ...\" child (if non-empty)
+-- * An edge to the function body expression
 visitDecl :: Decl -> M NodeId
 visitDecl (FunDecl f ps e) = do
   me <- fresh
@@ -96,6 +154,10 @@ visitDecl (FunDecl f ps e) = do
   emitEdge me be
   pure me
 
+-- | Visit an expression and emit the corresponding subgraph.
+--
+-- Covers: 'Var', 'Lit', 'Lambda', 'If', 'Cons', 'Case', 'Let', flattened
+-- multi-arg 'App', 'BinOp', 'UnOp', 'List', 'Tuple', and 'Super'.
 visitExpr :: Expr -> M NodeId
 visitExpr = \case
   Var x -> leaf ("Var " ++ x)
@@ -128,7 +190,7 @@ visitExpr = \case
     emitNode me "Case"
     s' <- visitExpr scr
     emitEdge me s'
-    -- alternativas
+    -- alternatives
     mapM_ (\(p,bd) -> do
               altN <- fresh
               emitNode altN "Alt"
@@ -151,7 +213,7 @@ visitExpr = \case
     emitEdge me e'
     pure me
 
-  -- aplicação n-ária achatada
+  -- n-ary application flattened to (function, args)
   e0@(App _ _) -> do
     let (f, xs) = flattenApp e0
     me <- fresh
@@ -187,7 +249,7 @@ visitExpr = \case
     mapM_ (\a -> visitExpr a >>= emitEdge me) xs
     pure me
 
-  -- <<< SUPORTE À SUPER INSTRUCTION >>>
+  -- <<< SUPER-INSTRUCTION SUPPORT >>>
   Super nm kind inp out _body -> do
     me <- fresh
     let k = case kind of { SuperSingle -> "single"; SuperParallel -> "parallel" }
@@ -197,14 +259,16 @@ visitExpr = \case
 
 
   where
+    -- | Emit a leaf node with a given label and return its 'NodeId'.
     leaf :: String -> M NodeId
     leaf s = do n <- fresh; emitNode n s; pure n
 
--- ajuda: achatar árvore de aplicação em (função, args)
+-- | Helper: flatten an application tree into @(function, [args])@, left to right.
 flattenApp :: Expr -> (Expr, [Expr])
 flattenApp (App f x) = let (fn, xs) = flattenApp f in (fn, xs ++ [x])
 flattenApp e         = (e, [])
 
+-- | Visit a pattern and emit the corresponding subgraph.
 visitPat :: Pattern -> M NodeId
 visitPat = \case
   PWildcard   -> leaf "PWildcard"
@@ -220,7 +284,7 @@ visitPat = \case
     emitNode me ("PTuple/" ++ show (length ps))
     mapM_ (\p -> visitPat p >>= emitEdge me) ps
     pure me
-  -- padrão cons (x:xs)
+  -- cons pattern (x:xs)
   PCons p ps  -> do
     me <- fresh
     emitNode me "PCons (:)"
@@ -230,12 +294,14 @@ visitPat = \case
     emitEdge me b
     pure me
   where
+    -- | Emit a leaf node with a given label and return its 'NodeId'.
     leaf s = do n <- fresh; emitNode n s; pure n
 
 -- -----------------------------------------------------------------------------
--- impressão de literais e operadores
+-- Pretty-printing of literals and operators (for labels)
 -- -----------------------------------------------------------------------------
 
+-- | Show a 'Literal' in a compact, label-friendly way.
 showLit :: Literal -> String
 showLit = \case
   LInt n    -> show n
@@ -244,13 +310,15 @@ showLit = \case
   LChar c   -> show c
   LString s -> show s
 
+-- | Show a 'BinOperator' as its surface symbol.
 showBin :: BinOperator -> String
 showBin = \case
   Add -> "+"; Sub -> "-"; Mul -> "*"; Div -> "/"; Mod -> "%"
   Eq  -> "=="; Neq -> "/="; Lt  -> "<"; Le -> "<="; Gt -> ">"; Ge -> ">="
   And -> "&&"; Or  -> "||"
 
+-- | Show a 'UnOperator' as its surface symbol or name.
 showUn :: UnOperator -> String
 showUn = \case
   Neg -> "negate"
-  Not -> "not"
+  Not -> "not" esse agora\
