@@ -1,0 +1,357 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE GeneralizedNewtypeDeriving #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE FlexibleInstances #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE UndecidableInstances #-}</span><span>
+</span><span id="line-4"></span><span>
+</span><span id="line-5"></span><span class="hs-comment">-- |</span><span>
+</span><span id="line-6"></span><span class="hs-comment">-- Module      : Unique</span><span>
+</span><span id="line-7"></span><span class="hs-comment">-- Description : Generation of fresh (unique) integers in pure and monadic code.</span><span>
+</span><span id="line-8"></span><span class="hs-comment">-- Copyright   : (c) 2025</span><span>
+</span><span id="line-9"></span><span class="hs-comment">-- License     :</span><span>
+</span><span id="line-10"></span><span class="hs-comment">-- Maintainer  : ricardofilhoschool@gmail.com</span><span>
+</span><span id="line-11"></span><span class="hs-comment">-- Stability   : experimental</span><span>
+</span><span id="line-12"></span><span class="hs-comment">-- Portability : portable</span><span>
+</span><span id="line-13"></span><span class="hs-comment">--</span><span>
+</span><span id="line-14"></span><span class="hs-comment">-- This module provides a small utility to generate fresh, monotonically</span><span>
+</span><span id="line-15"></span><span class="hs-comment">-- increasing integers:</span><span>
+</span><span id="line-16"></span><span class="hs-comment">--</span><span>
+</span><span id="line-17"></span><span class="hs-comment">--   * 'UniqueT' &#8212; a monad transformer that threads an @Int@ counter.</span><span>
+</span><span id="line-18"></span><span class="hs-comment">--   * 'MonadUnique' &#8212; a class for monads that can produce fresh IDs.</span><span>
+</span><span id="line-19"></span><span class="hs-comment">--   * 'Unique' &#8212; a pure ('State')-based variant.</span><span>
+</span><span id="line-20"></span><span class="hs-comment">--</span><span>
+</span><span id="line-21"></span><span class="hs-comment">-- The counter starts at 0 for all @run*@ functions in this module.</span><span>
+</span><span id="line-22"></span><span class="hs-comment">--</span><span>
+</span><span id="line-23"></span><span class="hs-comment">-- === Examples</span><span>
+</span><span id="line-24"></span><span class="hs-comment">--</span><span>
+</span><span id="line-25"></span><span class="hs-comment">-- Pure:</span><span>
+</span><span id="line-26"></span><span class="hs-comment">--</span><span>
+</span><span id="line-27"></span><span class="hs-comment">-- &gt;&gt;&gt; import Control.Monad.State (runState)</span><span>
+</span><span id="line-28"></span><span class="hs-comment">-- &gt;&gt;&gt; let x = do a &lt;- freshId; b &lt;- freshId; pure (a,b) :: Unique (Int,Int)</span><span>
+</span><span id="line-29"></span><span class="hs-comment">-- &gt;&gt;&gt; runUnique x</span><span>
+</span><span id="line-30"></span><span class="hs-comment">-- ((0,1),2)</span><span>
+</span><span id="line-31"></span><span class="hs-comment">--</span><span>
+</span><span id="line-32"></span><span class="hs-comment">-- With 'UniqueT' over 'IO':</span><span>
+</span><span id="line-33"></span><span class="hs-comment">--</span><span>
+</span><span id="line-34"></span><span class="hs-comment">-- &gt;&gt;&gt; :{</span><span>
+</span><span id="line-35"></span><span class="hs-comment">-- let prog :: UniqueT IO (Int,Int)</span><span>
+</span><span id="line-36"></span><span class="hs-comment">--     prog = do a &lt;- freshId; b &lt;- freshId; pure (a,b)</span><span>
+</span><span id="line-37"></span><span class="hs-comment">-- :}</span><span>
+</span><span id="line-38"></span><span class="hs-comment">-- &gt;&gt;&gt; evalUniqueT prog</span><span>
+</span><span id="line-39"></span><span class="hs-comment">-- (0,1)</span><span>
+</span><span id="line-40"></span><span class="hs-comment">--</span><span>
+</span><span id="line-41"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Unique</span><span>
+</span><span id="line-42"></span><span>  </span><span class="hs-special">(</span><span> </span><span class="annot"><span class="hs-comment">-- * Transformer</span></span><span>
+</span><span id="line-43"></span><span>    </span><span class="annot"><a href="Unique.html#UniqueT"><span class="hs-identifier">UniqueT</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Unique.html#runUniqueT"><span class="hs-identifier">runUniqueT</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Unique.html#evalUniqueT"><span class="hs-identifier">evalUniqueT</span></a></span><span>
+</span><span id="line-44"></span><span>    </span><span class="annot"><span class="hs-comment">-- * Utility class</span></span><span>
+</span><span id="line-45"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Unique.html#MonadUnique"><span class="hs-identifier">MonadUnique</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-46"></span><span>    </span><span class="annot"><span class="hs-comment">-- * Pure version</span></span><span>
+</span><span id="line-47"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Unique.html#Unique"><span class="hs-identifier">Unique</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Unique.html#runUnique"><span class="hs-identifier">runUnique</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Unique.html#evalUnique"><span class="hs-identifier">evalUnique</span></a></span><span>
+</span><span id="line-48"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-49"></span><span>
+</span><span id="line-50"></span><span class="hs-comment">----------------------------------------------------------------------</span><span>
+</span><span id="line-51"></span><span class="hs-comment">-- imports</span><span>
+</span><span id="line-52"></span><span class="hs-comment">----------------------------------------------------------------------</span><span>
+</span><span id="line-53"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.State</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">State</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">StateT</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">get</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">put</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">evalState</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">evalStateT</span></span><span class="hs-special">)</span><span>
+</span><span id="line-54"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.State</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">S</span></span><span>
+</span><span id="line-55"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Trans</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">MonadTrans</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier">lift</span></span><span class="hs-special">)</span><span>
+</span><span id="line-56"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Reader</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">ReaderT</span></span><span class="hs-special">)</span><span>
+</span><span id="line-57"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Writer</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">WriterT</span></span><span class="hs-special">)</span><span>
+</span><span id="line-58"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Control.Monad.Except</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">ExceptT</span></span><span class="hs-special">)</span><span>
+</span><span id="line-59"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Monoid</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Monoid</span></span><span class="hs-special">)</span><span>
+</span><span id="line-60"></span><span>
+</span><span id="line-61"></span><span class="hs-comment">----------------------------------------------------------------------</span><span>
+</span><span id="line-62"></span><span class="hs-comment">-- Transformer</span><span>
+</span><span id="line-63"></span><span class="hs-comment">----------------------------------------------------------------------</span><span>
+</span><span id="line-64"></span><span>
+</span><span id="line-65"></span><span class="hs-comment">-- | A monad transformer that carries a fresh-identifier counter.</span><span>
+</span><span id="line-66"></span><span class="hs-comment">--</span><span>
+</span><span id="line-67"></span><span class="hs-comment">-- The internal state is an 'Int' starting at 0 when run via 'runUniqueT'.</span><span>
+</span><span id="line-68"></span><span class="hs-keyword">newtype</span><span> </span><span id="UniqueT"><span class="annot"><a href="Unique.html#UniqueT"><span class="hs-identifier hs-var">UniqueT</span></a></span></span><span> </span><span id="local-6989586621679180655"><span class="annot"><a href="#local-6989586621679180655"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span id="local-6989586621679180656"><span class="annot"><a href="#local-6989586621679180656"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="UniqueT"><span class="annot"><a href="Unique.html#UniqueT"><span class="hs-identifier hs-var">UniqueT</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="unUniqueT"><span class="annot"><span class="annottext">forall (m :: * -&gt; *) a. UniqueT m a -&gt; StateT Int m a
+</span><a href="Unique.html#unUniqueT"><span class="hs-identifier hs-var hs-var">unUniqueT</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">StateT</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="annot"><a href="#local-6989586621679180655"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180656"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-69"></span><span>  </span><span class="hs-keyword">deriving</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679180808"><span id="local-6989586621679180813"><span class="annot"><span class="annottext">(forall a b. (a -&gt; b) -&gt; UniqueT m a -&gt; UniqueT m b)
+-&gt; (forall a b. a -&gt; UniqueT m b -&gt; UniqueT m a)
+-&gt; Functor (UniqueT m)
+forall a b. a -&gt; UniqueT m b -&gt; UniqueT m a
+forall a b. (a -&gt; b) -&gt; UniqueT m a -&gt; UniqueT m b
+forall (m :: * -&gt; *) a b.
+Functor m =&gt;
+a -&gt; UniqueT m b -&gt; UniqueT m a
+forall (m :: * -&gt; *) a b.
+Functor m =&gt;
+(a -&gt; b) -&gt; UniqueT m a -&gt; UniqueT m b
+forall (f :: * -&gt; *).
+(forall a b. (a -&gt; b) -&gt; f a -&gt; f b)
+-&gt; (forall a b. a -&gt; f b -&gt; f a) -&gt; Functor f
+$cfmap :: forall (m :: * -&gt; *) a b.
+Functor m =&gt;
+(a -&gt; b) -&gt; UniqueT m a -&gt; UniqueT m b
+fmap :: forall a b. (a -&gt; b) -&gt; UniqueT m a -&gt; UniqueT m b
+$c&lt;$ :: forall (m :: * -&gt; *) a b.
+Functor m =&gt;
+a -&gt; UniqueT m b -&gt; UniqueT m a
+&lt;$ :: forall a b. a -&gt; UniqueT m b -&gt; UniqueT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var">Functor</span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180823"><span id="local-6989586621679180828"><span id="local-6989586621679180832"><span id="local-6989586621679180836"><span id="local-6989586621679180840"><span class="annot"><span class="annottext">Functor (UniqueT m)
+Functor (UniqueT m) =&gt;
+(forall a. a -&gt; UniqueT m a)
+-&gt; (forall a b. UniqueT m (a -&gt; b) -&gt; UniqueT m a -&gt; UniqueT m b)
+-&gt; (forall a b c.
+    (a -&gt; b -&gt; c) -&gt; UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m c)
+-&gt; (forall a b. UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m b)
+-&gt; (forall a b. UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m a)
+-&gt; Applicative (UniqueT m)
+forall a. a -&gt; UniqueT m a
+forall a b. UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m a
+forall a b. UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m b
+forall a b. UniqueT m (a -&gt; b) -&gt; UniqueT m a -&gt; UniqueT m b
+forall a b c.
+(a -&gt; b -&gt; c) -&gt; UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m c
+forall (m :: * -&gt; *). Monad m =&gt; Functor (UniqueT m)
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; UniqueT m a
+forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m a
+forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m b
+forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+UniqueT m (a -&gt; b) -&gt; UniqueT m a -&gt; UniqueT m b
+forall (m :: * -&gt; *) a b c.
+Monad m =&gt;
+(a -&gt; b -&gt; c) -&gt; UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m c
+forall (f :: * -&gt; *).
+Functor f =&gt;
+(forall a. a -&gt; f a)
+-&gt; (forall a b. f (a -&gt; b) -&gt; f a -&gt; f b)
+-&gt; (forall a b c. (a -&gt; b -&gt; c) -&gt; f a -&gt; f b -&gt; f c)
+-&gt; (forall a b. f a -&gt; f b -&gt; f b)
+-&gt; (forall a b. f a -&gt; f b -&gt; f a)
+-&gt; Applicative f
+$cpure :: forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; UniqueT m a
+pure :: forall a. a -&gt; UniqueT m a
+$c&lt;*&gt; :: forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+UniqueT m (a -&gt; b) -&gt; UniqueT m a -&gt; UniqueT m b
+&lt;*&gt; :: forall a b. UniqueT m (a -&gt; b) -&gt; UniqueT m a -&gt; UniqueT m b
+$cliftA2 :: forall (m :: * -&gt; *) a b c.
+Monad m =&gt;
+(a -&gt; b -&gt; c) -&gt; UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m c
+liftA2 :: forall a b c.
+(a -&gt; b -&gt; c) -&gt; UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m c
+$c*&gt; :: forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m b
+*&gt; :: forall a b. UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m b
+$c&lt;* :: forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m a
+&lt;* :: forall a b. UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Applicative</span></span></span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180852"><span id="local-6989586621679180857"><span id="local-6989586621679180861"><span class="annot"><span class="annottext">Applicative (UniqueT m)
+Applicative (UniqueT m) =&gt;
+(forall a b. UniqueT m a -&gt; (a -&gt; UniqueT m b) -&gt; UniqueT m b)
+-&gt; (forall a b. UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m b)
+-&gt; (forall a. a -&gt; UniqueT m a)
+-&gt; Monad (UniqueT m)
+forall a. a -&gt; UniqueT m a
+forall a b. UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m b
+forall a b. UniqueT m a -&gt; (a -&gt; UniqueT m b) -&gt; UniqueT m b
+forall (m :: * -&gt; *). Monad m =&gt; Applicative (UniqueT m)
+forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; UniqueT m a
+forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m b
+forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+UniqueT m a -&gt; (a -&gt; UniqueT m b) -&gt; UniqueT m b
+forall (m :: * -&gt; *).
+Applicative m =&gt;
+(forall a b. m a -&gt; (a -&gt; m b) -&gt; m b)
+-&gt; (forall a b. m a -&gt; m b -&gt; m b)
+-&gt; (forall a. a -&gt; m a)
+-&gt; Monad m
+$c&gt;&gt;= :: forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+UniqueT m a -&gt; (a -&gt; UniqueT m b) -&gt; UniqueT m b
+&gt;&gt;= :: forall a b. UniqueT m a -&gt; (a -&gt; UniqueT m b) -&gt; UniqueT m b
+$c&gt;&gt; :: forall (m :: * -&gt; *) a b.
+Monad m =&gt;
+UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m b
+&gt;&gt; :: forall a b. UniqueT m a -&gt; UniqueT m b -&gt; UniqueT m b
+$creturn :: forall (m :: * -&gt; *) a. Monad m =&gt; a -&gt; UniqueT m a
+return :: forall a. a -&gt; UniqueT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var hs-var">Monad</span></span></span></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180871"><span class="annot"><span class="annottext">(forall (m :: * -&gt; *). Monad m =&gt; Monad (UniqueT m)) =&gt;
+(forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; UniqueT m a)
+-&gt; MonadTrans UniqueT
+forall (m :: * -&gt; *). Monad m =&gt; Monad (UniqueT m)
+forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; UniqueT m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *).
+(forall (m :: * -&gt; *). Monad m =&gt; Monad (t m)) =&gt;
+(forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; t m a) -&gt; MonadTrans t
+$clift :: forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; UniqueT m a
+lift :: forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; UniqueT m a
+</span><span class="hs-identifier hs-var hs-var hs-var hs-var hs-var">MonadTrans</span></span></span><span class="hs-special">)</span><span>
+</span><span id="line-70"></span><span>
+</span><span id="line-71"></span><span class="hs-comment">-- | Run a 'UniqueT' computation, returning the result and the final counter.</span><span>
+</span><span id="line-72"></span><span class="hs-comment">--</span><span>
+</span><span id="line-73"></span><span class="hs-comment">-- The initial counter is @0@.</span><span>
+</span><span id="line-74"></span><span id="local-6989586621679180726"><span id="local-6989586621679180727"><span class="annot"><a href="Unique.html#runUniqueT"><span class="hs-identifier hs-type">runUniqueT</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Unique.html#UniqueT"><span class="hs-identifier hs-type">UniqueT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180726"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180727"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679180726"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679180727"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span class="hs-special">)</span></span></span><span>
+</span><span id="line-75"></span><span id="runUniqueT"><span class="annot"><span class="annottext">runUniqueT :: forall (m :: * -&gt; *) a. UniqueT m a -&gt; m (a, Int)
+</span><a href="Unique.html#runUniqueT"><span class="hs-identifier hs-var hs-var">runUniqueT</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Unique.html#UniqueT"><span class="hs-identifier hs-type">UniqueT</span></a></span><span> </span><span id="local-6989586621679180881"><span class="annot"><span class="annottext">StateT Int m a
+</span><a href="#local-6989586621679180881"><span class="hs-identifier hs-var">m</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">StateT Int m a -&gt; Int -&gt; m (a, Int)
+forall s (m :: * -&gt; *) a. StateT s m a -&gt; s -&gt; m (a, s)
+</span><span class="hs-identifier hs-var">S.runStateT</span></span><span> </span><span class="annot"><span class="annottext">StateT Int m a
+</span><a href="#local-6989586621679180881"><span class="hs-identifier hs-var">m</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-76"></span><span>
+</span><span id="line-77"></span><span class="annot"><span class="hs-comment">-- | Run and discard the final counter, returning only the result.</span></span><span>
+</span><span id="line-78"></span><span id="local-6989586621679180733"><span id="local-6989586621679180734"><span class="annot"><a href="Unique.html#evalUniqueT"><span class="hs-identifier hs-type">evalUniqueT</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Monad</span></span><span> </span><span class="annot"><a href="#local-6989586621679180733"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Unique.html#UniqueT"><span class="hs-identifier hs-type">UniqueT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180733"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180734"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679180733"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180734"><span class="hs-identifier hs-type">a</span></a></span></span></span><span>
+</span><span id="line-79"></span><span id="evalUniqueT"><span class="annot"><span class="annottext">evalUniqueT :: forall (m :: * -&gt; *) a. Monad m =&gt; UniqueT m a -&gt; m a
+</span><a href="Unique.html#evalUniqueT"><span class="hs-identifier hs-var hs-var">evalUniqueT</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">((a, Int) -&gt; a) -&gt; m (a, Int) -&gt; m a
+forall a b. (a -&gt; b) -&gt; m a -&gt; m b
+forall (f :: * -&gt; *) a b. Functor f =&gt; (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-identifier hs-var">fmap</span></span><span> </span><span class="annot"><span class="annottext">(a, Int) -&gt; a
+forall a b. (a, b) -&gt; a
+</span><span class="hs-identifier hs-var">fst</span></span><span> </span><span class="annot"><span class="annottext">(m (a, Int) -&gt; m a)
+-&gt; (UniqueT m a -&gt; m (a, Int)) -&gt; UniqueT m a -&gt; m a
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">UniqueT m a -&gt; m (a, Int)
+forall (m :: * -&gt; *) a. UniqueT m a -&gt; m (a, Int)
+</span><a href="Unique.html#runUniqueT"><span class="hs-identifier hs-var">runUniqueT</span></a></span><span>
+</span><span id="line-80"></span><span>
+</span><span id="line-81"></span><span class="hs-comment">----------------------------------------------------------------------</span><span>
+</span><span id="line-82"></span><span class="hs-comment">-- Class</span><span>
+</span><span id="line-83"></span><span class="hs-comment">----------------------------------------------------------------------</span><span>
+</span><span id="line-84"></span><span>
+</span><span id="line-85"></span><span class="annot"><span class="hs-comment">-- | Monads that can produce fresh (unique) integers.</span></span><span>
+</span><span id="line-86"></span><span class="hs-keyword">class</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Monad</span></span><span> </span><span class="annot"><a href="#local-6989586621679180742"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span id="MonadUnique"><span class="annot"><a href="Unique.html#MonadUnique"><span class="hs-identifier hs-var">MonadUnique</span></a></span></span><span> </span><span id="local-6989586621679180742"><span class="annot"><a href="#local-6989586621679180742"><span class="hs-identifier hs-type">m</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-87"></span><span>  </span><span class="hs-comment">-- | Produce the next fresh integer.</span><span>
+</span><span id="line-88"></span><span>  </span><span id="freshId"><span class="annot"><a href="Unique.html#freshId"><span class="hs-identifier hs-type">freshId</span></a></span></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="#local-6989586621679180742"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-89"></span><span>  </span><span class="hs-comment">-- | Produce @n@ fresh integers (default implementation).</span><span>
+</span><span id="line-90"></span><span>  </span><span id="freshIds"><span class="annot"><a href="Unique.html#freshIds"><span class="hs-identifier hs-type">freshIds</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679180742"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span class="hs-special">]</span><span>
+</span><span id="line-91"></span><span>  </span><span id="local-6989586621679180893"><span class="annot"><a href="Unique.html#freshIds"><span class="hs-identifier hs-var hs-var">freshIds</span></a></span><span> </span><span id="local-6989586621679180899"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180899"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[m Int] -&gt; m [Int]
+forall (t :: * -&gt; *) (m :: * -&gt; *) a.
+(Traversable t, Monad m) =&gt;
+t (m a) -&gt; m (t a)
+forall (m :: * -&gt; *) a. Monad m =&gt; [m a] -&gt; m [a]
+</span><span class="hs-identifier hs-var">sequence</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int -&gt; m Int -&gt; [m Int]
+forall a. Int -&gt; a -&gt; [a]
+</span><span class="hs-identifier hs-var">replicate</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180899"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">m Int
+forall (m :: * -&gt; *). MonadUnique m =&gt; m Int
+</span><a href="Unique.html#freshId"><span class="hs-identifier hs-var">freshId</span></a></span><span class="hs-special">)</span></span><span>
+</span><span id="line-92"></span><span>
+</span><span id="line-93"></span><span class="annot"><span class="hs-comment">-- | 'MonadUnique' instance for 'UniqueT'.</span></span><span>
+</span><span id="line-94"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679180749"><span id="local-6989586621679180907"><span class="annot"><span class="hs-identifier hs-type">Monad</span></span><span> </span><span class="annot"><a href="#local-6989586621679180749"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Unique.html#MonadUnique"><span class="hs-identifier hs-type">MonadUnique</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Unique.html#UniqueT"><span class="hs-identifier hs-type">UniqueT</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180749"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-95"></span><span>  </span><span id="local-6989586621679180921"><span class="annot"><span class="annottext">freshId :: UniqueT m Int
+</span><a href="Unique.html#freshId"><span class="hs-identifier hs-var hs-var hs-var hs-var">freshId</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">StateT Int m Int -&gt; UniqueT m Int
+forall (m :: * -&gt; *) a. StateT Int m a -&gt; UniqueT m a
+</span><a href="Unique.html#UniqueT"><span class="hs-identifier hs-var">UniqueT</span></a></span><span> </span><span class="annot"><span class="annottext">(StateT Int m Int -&gt; UniqueT m Int)
+-&gt; StateT Int m Int -&gt; UniqueT m Int
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-96"></span><span>    </span><span id="local-6989586621679180922"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180922"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">StateT Int m Int
+forall s (m :: * -&gt; *). MonadState s m =&gt; m s
+</span><span class="hs-identifier hs-var">get</span></span><span>
+</span><span id="line-97"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; StateT Int m ()
+forall s (m :: * -&gt; *). MonadState s m =&gt; s -&gt; m ()
+</span><span class="hs-identifier hs-var">put</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180922"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">)</span><span>
+</span><span id="line-98"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; StateT Int m Int
+forall a. a -&gt; StateT Int m a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180922"><span class="hs-identifier hs-var">n</span></a></span><span>
+</span><span id="line-99"></span><span>
+</span><span id="line-100"></span><span class="annot"><span class="hs-comment">-- | Lift 'freshId' through common monad transformers.</span></span><span>
+</span><span id="line-101"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679180764"><span id="local-6989586621679180765"><span id="local-6989586621679180931"><span class="annot"><a href="Unique.html#MonadUnique"><span class="hs-identifier hs-type">MonadUnique</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180764"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Unique.html#MonadUnique"><span class="hs-identifier hs-type">MonadUnique</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">ReaderT</span></span><span> </span><span class="annot"><a href="#local-6989586621679180765"><span class="hs-identifier hs-type">r</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180764"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-102"></span><span>  </span><span id="local-6989586621679180938"><span class="annot"><span class="annottext">freshId :: ReaderT r m Int
+</span><a href="Unique.html#freshId"><span class="hs-identifier hs-var hs-var hs-var hs-var">freshId</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">m Int -&gt; ReaderT r m Int
+forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; ReaderT r m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *) (m :: * -&gt; *) a.
+(MonadTrans t, Monad m) =&gt;
+m a -&gt; t m a
+</span><span class="hs-identifier hs-var">lift</span></span><span> </span><span class="annot"><span class="annottext">m Int
+forall (m :: * -&gt; *). MonadUnique m =&gt; m Int
+</span><a href="Unique.html#freshId"><span class="hs-identifier hs-var">freshId</span></a></span><span>
+</span><span id="line-103"></span><span>
+</span><span id="line-104"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679180772"><span id="local-6989586621679180773"><span id="local-6989586621679180947"><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">Monoid</span></span><span> </span><span class="annot"><a href="#local-6989586621679180772"><span class="hs-identifier hs-type">w</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Unique.html#MonadUnique"><span class="hs-identifier hs-type">MonadUnique</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180773"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Unique.html#MonadUnique"><span class="hs-identifier hs-type">MonadUnique</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">WriterT</span></span><span> </span><span class="annot"><a href="#local-6989586621679180772"><span class="hs-identifier hs-type">w</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180773"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-105"></span><span>  </span><span id="local-6989586621679180954"><span class="annot"><span class="annottext">freshId :: WriterT w m Int
+</span><a href="Unique.html#freshId"><span class="hs-identifier hs-var hs-var hs-var hs-var">freshId</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">m Int -&gt; WriterT w m Int
+forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; WriterT w m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *) (m :: * -&gt; *) a.
+(MonadTrans t, Monad m) =&gt;
+m a -&gt; t m a
+</span><span class="hs-identifier hs-var">lift</span></span><span> </span><span class="annot"><span class="annottext">m Int
+forall (m :: * -&gt; *). MonadUnique m =&gt; m Int
+</span><a href="Unique.html#freshId"><span class="hs-identifier hs-var">freshId</span></a></span><span>
+</span><span id="line-106"></span><span>
+</span><span id="line-107"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679180780"><span id="local-6989586621679180781"><span id="local-6989586621679180962"><span class="annot"><a href="Unique.html#MonadUnique"><span class="hs-identifier hs-type">MonadUnique</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180780"><span class="hs-identifier hs-type">m</span></a></span><span> </span><span class="hs-glyph">=&gt;</span><span> </span><span class="annot"><a href="Unique.html#MonadUnique"><span class="hs-identifier hs-type">MonadUnique</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier hs-type">ExceptT</span></span><span> </span><span class="annot"><a href="#local-6989586621679180781"><span class="hs-identifier hs-type">e</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180780"><span class="hs-identifier hs-type">m</span></a></span><span class="hs-special">)</span></span></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-108"></span><span>  </span><span id="local-6989586621679180969"><span class="annot"><span class="annottext">freshId :: ExceptT e m Int
+</span><a href="Unique.html#freshId"><span class="hs-identifier hs-var hs-var hs-var hs-var">freshId</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">m Int -&gt; ExceptT e m Int
+forall (m :: * -&gt; *) a. Monad m =&gt; m a -&gt; ExceptT e m a
+forall (t :: (* -&gt; *) -&gt; * -&gt; *) (m :: * -&gt; *) a.
+(MonadTrans t, Monad m) =&gt;
+m a -&gt; t m a
+</span><span class="hs-identifier hs-var">lift</span></span><span> </span><span class="annot"><span class="annottext">m Int
+forall (m :: * -&gt; *). MonadUnique m =&gt; m Int
+</span><a href="Unique.html#freshId"><span class="hs-identifier hs-var">freshId</span></a></span><span>
+</span><span id="line-109"></span><span>
+</span><span id="line-110"></span><span class="hs-comment">----------------------------------------------------------------------</span><span>
+</span><span id="line-111"></span><span class="hs-comment">-- Pure version</span><span>
+</span><span id="line-112"></span><span class="hs-comment">----------------------------------------------------------------------</span><span>
+</span><span id="line-113"></span><span>
+</span><span id="line-114"></span><span class="annot"><span class="hs-comment">-- | A pure alias using 'State' to carry the counter.</span></span><span>
+</span><span id="line-115"></span><span class="hs-keyword">type</span><span> </span><span id="Unique"><span class="annot"><a href="Unique.html#Unique"><span class="hs-identifier hs-var">Unique</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">State</span></span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-116"></span><span>
+</span><span id="line-117"></span><span class="hs-comment">-- | Run a pure 'Unique' computation, returning the result and final counter.</span><span>
+</span><span id="line-118"></span><span class="hs-comment">--</span><span>
+</span><span id="line-119"></span><span class="hs-comment">-- The initial counter is @0@.</span><span>
+</span><span id="line-120"></span><span id="local-6989586621679180783"><span class="annot"><a href="Unique.html#runUnique"><span class="hs-identifier hs-type">runUnique</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Unique.html#Unique"><span class="hs-identifier hs-type">Unique</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180783"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="#local-6989586621679180783"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span class="hs-special">)</span></span><span>
+</span><span id="line-121"></span><span id="runUnique"><span class="annot"><span class="annottext">runUnique :: forall a. Unique a -&gt; (a, Int)
+</span><a href="Unique.html#runUnique"><span class="hs-identifier hs-var hs-var">runUnique</span></a></span></span><span> </span><span id="local-6989586621679180971"><span class="annot"><span class="annottext">Unique a
+</span><a href="#local-6989586621679180971"><span class="hs-identifier hs-var">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Unique a -&gt; Int -&gt; (a, Int)
+forall s a. State s a -&gt; s -&gt; (a, s)
+</span><span class="hs-identifier hs-var">S.runState</span></span><span> </span><span class="annot"><span class="annottext">Unique a
+</span><a href="#local-6989586621679180971"><span class="hs-identifier hs-var">m</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-122"></span><span>
+</span><span id="line-123"></span><span class="annot"><span class="hs-comment">-- | Evaluate a pure 'Unique' computation, discarding the final counter.</span></span><span>
+</span><span id="line-124"></span><span id="local-6989586621679180789"><span class="annot"><a href="Unique.html#evalUnique"><span class="hs-identifier hs-type">evalUnique</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Unique.html#Unique"><span class="hs-identifier hs-type">Unique</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679180789"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="#local-6989586621679180789"><span class="hs-identifier hs-type">a</span></a></span></span><span>
+</span><span id="line-125"></span><span id="evalUnique"><span class="annot"><span class="annottext">evalUnique :: forall a. Unique a -&gt; a
+</span><a href="Unique.html#evalUnique"><span class="hs-identifier hs-var hs-var">evalUnique</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Unique a -&gt; Int -&gt; a
+forall s a. State s a -&gt; s -&gt; a
+</span><span class="hs-identifier hs-var">evalState</span></span><span> </span><span class="annot"><span class="annottext">(Unique a -&gt; Int -&gt; a) -&gt; (Unique a -&gt; Int) -&gt; Unique a -&gt; a
+forall a b.
+(Unique a -&gt; a -&gt; b) -&gt; (Unique a -&gt; a) -&gt; Unique a -&gt; b
+forall (f :: * -&gt; *) a b. Applicative f =&gt; f (a -&gt; b) -&gt; f a -&gt; f b
+</span><span class="hs-operator hs-var">&lt;*&gt;</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Unique a -&gt; Int
+forall a. a -&gt; Unique a -&gt; a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-126"></span><span>
+</span><span id="line-127"></span><span class="annot"><span class="hs-comment">-- | 'MonadUnique' instance for the pure 'Unique' monad.</span></span><span>
+</span><span id="line-128"></span><span class="hs-keyword">instance</span><span> </span><span id="local-6989586621679180982"><span class="annot"><a href="Unique.html#MonadUnique"><span class="hs-identifier hs-type">MonadUnique</span></a></span><span> </span><span class="annot"><a href="Unique.html#Unique"><span class="hs-identifier hs-type">Unique</span></a></span></span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-129"></span><span>  </span><span id="local-6989586621679180996"><span class="annot"><span class="annottext">freshId :: Unique Int
+</span><a href="Unique.html#freshId"><span class="hs-identifier hs-var hs-var hs-var hs-var">freshId</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-130"></span><span>    </span><span id="local-6989586621679180997"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180997"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Unique Int
+forall s (m :: * -&gt; *). MonadState s m =&gt; m s
+</span><span class="hs-identifier hs-var">get</span></span><span>
+</span><span id="line-131"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; StateT Int Identity ()
+forall s (m :: * -&gt; *). MonadState s m =&gt; s -&gt; m ()
+</span><span class="hs-identifier hs-var">put</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180997"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; Int
+forall a. Num a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">+</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">1</span></span><span class="hs-special">)</span><span>
+</span><span id="line-132"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; Unique Int
+forall a. a -&gt; StateT Int Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679180997"><span class="hs-identifier hs-var">n</span></a></span><span>
+</span><span id="line-133"></span></pre></body></html>

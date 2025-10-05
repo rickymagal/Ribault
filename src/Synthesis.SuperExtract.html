@@ -1,0 +1,177 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE LambdaCase #-}</span><span>
+</span><span id="line-2"></span><span>
+</span><span id="line-3"></span><span class="hs-comment">-- |</span><span>
+</span><span id="line-4"></span><span class="hs-comment">-- Module      : Synthesis.SuperExtract</span><span>
+</span><span id="line-5"></span><span class="hs-comment">-- Description : Extracts super-instructions from the AST after 'assignSuperNames' (names s#).</span><span>
+</span><span id="line-6"></span><span class="hs-comment">-- Maintainer  : ricardofilhoschool@gmail.com</span><span>
+</span><span id="line-7"></span><span class="hs-comment">-- Stability   : experimental</span><span>
+</span><span id="line-8"></span><span class="hs-comment">-- Portability : portable</span><span>
+</span><span id="line-9"></span><span class="hs-comment">--</span><span>
+</span><span id="line-10"></span><span class="hs-comment">-- Walks the program AST, collecting unique 'SuperSpec's (by name).</span><span>
+</span><span id="line-11"></span><span>
+</span><span id="line-12"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Synthesis.SuperExtract</span><span>
+</span><span id="line-13"></span><span>  </span><span class="hs-special">(</span><span> </span><span class="annot"><a href="Synthesis.SuperExtract.html#SuperSpec"><span class="hs-identifier">SuperSpec</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span>
+</span><span id="line-14"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Synthesis.SuperExtract.html#collectSupers"><span class="hs-identifier">collectSupers</span></a></span><span>
+</span><span id="line-15"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-16"></span><span>
+</span><span id="line-17"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Syntax.html"><span class="hs-identifier">Syntax</span></a></span><span>
+</span><span id="line-18"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.List</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">nubBy</span></span><span class="hs-special">)</span><span>
+</span><span id="line-19"></span><span>
+</span><span id="line-20"></span><span class="annot"><span class="hs-comment">-- | Minimal metadata needed to emit the supers module.</span></span><span>
+</span><span id="line-21"></span><span class="hs-keyword">data</span><span> </span><span id="SuperSpec"><span class="annot"><a href="Synthesis.SuperExtract.html#SuperSpec"><span class="hs-identifier hs-var">SuperSpec</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="SuperSpec"><span class="annot"><a href="Synthesis.SuperExtract.html#SuperSpec"><span class="hs-identifier hs-var">SuperSpec</span></a></span></span><span>
+</span><span id="line-22"></span><span>  </span><span class="hs-special">{</span><span> </span><span id="ssName"><span class="annot"><span class="annottext">SuperSpec -&gt; Ident
+</span><a href="Synthesis.SuperExtract.html#ssName"><span class="hs-identifier hs-var hs-var">ssName</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Ident"><span class="hs-identifier hs-type">Ident</span></a></span><span>        </span><span class="annot"><span class="hs-comment">-- ^ \&quot;s1\&quot;, \&quot;s2\&quot;, &#8230;</span></span><span>
+</span><span id="line-23"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="ssKind"><span class="annot"><span class="annottext">SuperSpec -&gt; SuperKind
+</span><a href="Synthesis.SuperExtract.html#ssKind"><span class="hs-identifier hs-var hs-var">ssKind</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#SuperKind"><span class="hs-identifier hs-type">SuperKind</span></a></span><span>    </span><span class="annot"><span class="hs-comment">-- ^ metadata (not used by the ABI)</span></span><span>
+</span><span id="line-24"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="ssInp"><span class="annot"><span class="annottext">SuperSpec -&gt; Ident
+</span><a href="Synthesis.SuperExtract.html#ssInp"><span class="hs-identifier hs-var hs-var">ssInp</span></a></span></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Ident"><span class="hs-identifier hs-type">Ident</span></a></span><span>        </span><span class="annot"><span class="hs-comment">-- ^ logical input name</span></span><span>
+</span><span id="line-25"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="ssOut"><span class="annot"><span class="annottext">SuperSpec -&gt; Ident
+</span><a href="Synthesis.SuperExtract.html#ssOut"><span class="hs-identifier hs-var hs-var">ssOut</span></a></span></span><span>  </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Ident"><span class="hs-identifier hs-type">Ident</span></a></span><span>        </span><span class="annot"><span class="hs-comment">-- ^ logical output name</span></span><span>
+</span><span id="line-26"></span><span>  </span><span class="hs-special">,</span><span> </span><span id="ssBody"><span class="annot"><span class="annottext">SuperSpec -&gt; Ident
+</span><a href="Synthesis.SuperExtract.html#ssBody"><span class="hs-identifier hs-var hs-var">ssBody</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>       </span><span class="annot"><span class="hs-comment">-- ^ textual body stored in the AST (declarations/expression)</span></span><span>
+</span><span id="line-27"></span><span>  </span><span class="hs-special">}</span><span>
+</span><span id="line-28"></span><span>
+</span><span id="line-29"></span><span class="annot"><span class="hs-comment">-- | Remove duplicates by name (if a Super appears multiple times in the AST).</span></span><span>
+</span><span id="line-30"></span><span class="annot"><a href="Synthesis.SuperExtract.html#dedupByName"><span class="hs-identifier hs-type">dedupByName</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Synthesis.SuperExtract.html#SuperSpec"><span class="hs-identifier hs-type">SuperSpec</span></a></span><span class="hs-special">]</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Synthesis.SuperExtract.html#SuperSpec"><span class="hs-identifier hs-type">SuperSpec</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-31"></span><span id="dedupByName"><span class="annot"><span class="annottext">dedupByName :: [SuperSpec] -&gt; [SuperSpec]
+</span><a href="Synthesis.SuperExtract.html#dedupByName"><span class="hs-identifier hs-var hs-var">dedupByName</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(SuperSpec -&gt; SuperSpec -&gt; Bool) -&gt; [SuperSpec] -&gt; [SuperSpec]
+forall a. (a -&gt; a -&gt; Bool) -&gt; [a] -&gt; [a]
+</span><span class="hs-identifier hs-var">nubBy</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679179211"><span class="annot"><span class="annottext">SuperSpec
+</span><a href="#local-6989586621679179211"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span id="local-6989586621679179212"><span class="annot"><span class="annottext">SuperSpec
+</span><a href="#local-6989586621679179212"><span class="hs-identifier hs-var">b</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">SuperSpec -&gt; Ident
+</span><a href="Synthesis.SuperExtract.html#ssName"><span class="hs-identifier hs-var">ssName</span></a></span><span> </span><span class="annot"><span class="annottext">SuperSpec
+</span><a href="#local-6989586621679179211"><span class="hs-identifier hs-var">a</span></a></span><span> </span><span class="annot"><span class="annottext">Ident -&gt; Ident -&gt; Bool
+forall a. Eq a =&gt; a -&gt; a -&gt; Bool
+</span><span class="hs-operator hs-var">==</span></span><span> </span><span class="annot"><span class="annottext">SuperSpec -&gt; Ident
+</span><a href="Synthesis.SuperExtract.html#ssName"><span class="hs-identifier hs-var">ssName</span></a></span><span> </span><span class="annot"><span class="annottext">SuperSpec
+</span><a href="#local-6989586621679179212"><span class="hs-identifier hs-var">b</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-32"></span><span>
+</span><span id="line-33"></span><span class="annot"><span class="hs-comment">-- | Collect all 'SuperSpec's from a 'Program', deduplicated by name.</span></span><span>
+</span><span id="line-34"></span><span class="annot"><a href="Synthesis.SuperExtract.html#collectSupers"><span class="hs-identifier hs-type">collectSupers</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Program"><span class="hs-identifier hs-type">Program</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Synthesis.SuperExtract.html#SuperSpec"><span class="hs-identifier hs-type">SuperSpec</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-35"></span><span id="collectSupers"><span class="annot"><span class="annottext">collectSupers :: Program -&gt; [SuperSpec]
+</span><a href="Synthesis.SuperExtract.html#collectSupers"><span class="hs-identifier hs-var hs-var">collectSupers</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Syntax.html#Program"><span class="hs-identifier hs-type">Program</span></a></span><span> </span><span id="local-6989586621679179214"><span class="annot"><span class="annottext">[Decl]
+</span><a href="#local-6989586621679179214"><span class="hs-identifier hs-var">decls</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[SuperSpec] -&gt; [SuperSpec]
+</span><a href="Synthesis.SuperExtract.html#dedupByName"><span class="hs-identifier hs-var">dedupByName</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(Decl -&gt; [SuperSpec]) -&gt; [Decl] -&gt; [SuperSpec]
+forall (t :: * -&gt; *) a b. Foldable t =&gt; (a -&gt; [b]) -&gt; t a -&gt; [b]
+</span><span class="hs-identifier hs-var">concatMap</span></span><span> </span><span class="annot"><span class="annottext">Decl -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179216"><span class="hs-identifier hs-var">declSupers</span></a></span><span> </span><span class="annot"><span class="annottext">[Decl]
+</span><a href="#local-6989586621679179214"><span class="hs-identifier hs-var">decls</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-36"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-37"></span><span>    </span><span class="annot"><a href="#local-6989586621679179216"><span class="hs-identifier hs-type">declSupers</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Decl"><span class="hs-identifier hs-type">Decl</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Synthesis.SuperExtract.html#SuperSpec"><span class="hs-identifier hs-type">SuperSpec</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-38"></span><span>    </span><span id="local-6989586621679179216"><span class="annot"><span class="annottext">declSupers :: Decl -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179216"><span class="hs-identifier hs-var hs-var">declSupers</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Syntax.html#FunDecl"><span class="hs-identifier hs-type">FunDecl</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><span class="hs-identifier">_</span></span><span> </span><span class="annot"><span class="annottext">[Ident]
+</span><span class="hs-identifier">_</span></span><span> </span><span id="local-6989586621679179218"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179218"><span class="hs-identifier hs-var">e</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179218"><span class="hs-identifier hs-var">e</span></a></span><span>
+</span><span id="line-39"></span><span>
+</span><span id="line-40"></span><span>    </span><span class="annot"><a href="#local-6989586621679179219"><span class="hs-identifier hs-type">exprSupers</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Synthesis.SuperExtract.html#SuperSpec"><span class="hs-identifier hs-type">SuperSpec</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-41"></span><span>    </span><span id="local-6989586621679179219"><span class="annot"><span class="annottext">exprSupers :: Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var hs-var">exprSupers</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-42"></span><span>      </span><span class="annot"><a href="Syntax.html#Var"><span class="hs-identifier hs-type">Var</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><span class="hs-identifier">_</span></span><span>            </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-43"></span><span>      </span><span class="annot"><a href="Syntax.html#Lit"><span class="hs-identifier hs-type">Lit</span></a></span><span> </span><span class="annot"><span class="annottext">Literal
+</span><span class="hs-identifier">_</span></span><span>            </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-44"></span><span>      </span><span class="annot"><a href="Syntax.html#Lambda"><span class="hs-identifier hs-type">Lambda</span></a></span><span> </span><span class="annot"><span class="annottext">[Ident]
+</span><span class="hs-identifier">_</span></span><span> </span><span id="local-6989586621679179223"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179223"><span class="hs-identifier hs-var">b</span></a></span></span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179223"><span class="hs-identifier hs-var">b</span></a></span><span>
+</span><span id="line-45"></span><span>      </span><span class="annot"><a href="Syntax.html#If"><span class="hs-identifier hs-type">If</span></a></span><span> </span><span id="local-6989586621679179225"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179225"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span id="local-6989586621679179226"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179226"><span class="hs-identifier hs-var">b</span></a></span></span><span> </span><span id="local-6989586621679179227"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179227"><span class="hs-identifier hs-var">c</span></a></span></span><span>         </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179225"><span class="hs-identifier hs-var">a</span></a></span><span> </span><span class="annot"><span class="annottext">[SuperSpec] -&gt; [SuperSpec] -&gt; [SuperSpec]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179226"><span class="hs-identifier hs-var">b</span></a></span><span> </span><span class="annot"><span class="annottext">[SuperSpec] -&gt; [SuperSpec] -&gt; [SuperSpec]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179227"><span class="hs-identifier hs-var">c</span></a></span><span>
+</span><span id="line-46"></span><span>      </span><span class="annot"><a href="Syntax.html#Case"><span class="hs-identifier hs-type">Case</span></a></span><span> </span><span id="local-6989586621679179229"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179229"><span class="hs-identifier hs-var">scr</span></a></span></span><span> </span><span id="local-6989586621679179230"><span class="annot"><span class="annottext">[(Pattern, Expr)]
+</span><a href="#local-6989586621679179230"><span class="hs-identifier hs-var">alts</span></a></span></span><span>    </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179229"><span class="hs-identifier hs-var">scr</span></a></span><span> </span><span class="annot"><span class="annottext">[SuperSpec] -&gt; [SuperSpec] -&gt; [SuperSpec]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">[[SuperSpec]] -&gt; [SuperSpec]
+forall (t :: * -&gt; *) a. Foldable t =&gt; t [a] -&gt; [a]
+</span><span class="hs-identifier hs-var">concat</span></span><span> </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179232"><span class="hs-identifier hs-var">rhs</span></a></span><span> </span><span class="hs-glyph">|</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679179233"><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179233"><span class="hs-identifier hs-var">_pat</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679179232"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179232"><span class="hs-identifier hs-var">rhs</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">[(Pattern, Expr)]
+</span><a href="#local-6989586621679179230"><span class="hs-identifier hs-var">alts</span></a></span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-47"></span><span>      </span><span class="annot"><a href="Syntax.html#Let"><span class="hs-identifier hs-type">Let</span></a></span><span> </span><span id="local-6989586621679179235"><span class="annot"><span class="annottext">[Decl]
+</span><a href="#local-6989586621679179235"><span class="hs-identifier hs-var">ds</span></a></span></span><span> </span><span id="local-6989586621679179236"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179236"><span class="hs-identifier hs-var">body</span></a></span></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">(Decl -&gt; [SuperSpec]) -&gt; [Decl] -&gt; [SuperSpec]
+forall (t :: * -&gt; *) a b. Foldable t =&gt; (a -&gt; [b]) -&gt; t a -&gt; [b]
+</span><span class="hs-identifier hs-var">concatMap</span></span><span> </span><span class="annot"><span class="annottext">Decl -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179216"><span class="hs-identifier hs-var">declSupers</span></a></span><span> </span><span class="annot"><span class="annottext">[Decl]
+</span><a href="#local-6989586621679179235"><span class="hs-identifier hs-var">ds</span></a></span><span> </span><span class="annot"><span class="annottext">[SuperSpec] -&gt; [SuperSpec] -&gt; [SuperSpec]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179236"><span class="hs-identifier hs-var">body</span></a></span><span>
+</span><span id="line-48"></span><span>      </span><span class="annot"><a href="Syntax.html#App"><span class="hs-identifier hs-type">App</span></a></span><span> </span><span id="local-6989586621679179238"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179238"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span id="local-6989586621679179239"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179239"><span class="hs-identifier hs-var">x</span></a></span></span><span>          </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179238"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="annot"><span class="annottext">[SuperSpec] -&gt; [SuperSpec] -&gt; [SuperSpec]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179239"><span class="hs-identifier hs-var">x</span></a></span><span>
+</span><span id="line-49"></span><span>      </span><span class="annot"><a href="Syntax.html#BinOp"><span class="hs-identifier hs-type">BinOp</span></a></span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><span class="hs-identifier">_</span></span><span> </span><span id="local-6989586621679179241"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179241"><span class="hs-identifier hs-var">l</span></a></span></span><span> </span><span id="local-6989586621679179242"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179242"><span class="hs-identifier hs-var">r</span></a></span></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179241"><span class="hs-identifier hs-var">l</span></a></span><span> </span><span class="annot"><span class="annottext">[SuperSpec] -&gt; [SuperSpec] -&gt; [SuperSpec]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179242"><span class="hs-identifier hs-var">r</span></a></span><span>
+</span><span id="line-50"></span><span>      </span><span class="annot"><a href="Syntax.html#UnOp"><span class="hs-identifier hs-type">UnOp</span></a></span><span>  </span><span class="annot"><span class="annottext">UnOperator
+</span><span class="hs-identifier">_</span></span><span> </span><span id="local-6989586621679179244"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179244"><span class="hs-identifier hs-var">e</span></a></span></span><span>        </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179244"><span class="hs-identifier hs-var">e</span></a></span><span>
+</span><span id="line-51"></span><span>      </span><span class="annot"><a href="Syntax.html#List"><span class="hs-identifier hs-type">List</span></a></span><span> </span><span id="local-6989586621679179246"><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179246"><span class="hs-identifier hs-var">xs</span></a></span></span><span>          </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">(Expr -&gt; [SuperSpec]) -&gt; [Expr] -&gt; [SuperSpec]
+forall (t :: * -&gt; *) a b. Foldable t =&gt; (a -&gt; [b]) -&gt; t a -&gt; [b]
+</span><span class="hs-identifier hs-var">concatMap</span></span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179246"><span class="hs-identifier hs-var">xs</span></a></span><span>
+</span><span id="line-52"></span><span>      </span><span class="annot"><a href="Syntax.html#Tuple"><span class="hs-identifier hs-type">Tuple</span></a></span><span> </span><span id="local-6989586621679179248"><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179248"><span class="hs-identifier hs-var">xs</span></a></span></span><span>         </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">(Expr -&gt; [SuperSpec]) -&gt; [Expr] -&gt; [SuperSpec]
+forall (t :: * -&gt; *) a b. Foldable t =&gt; (a -&gt; [b]) -&gt; t a -&gt; [b]
+</span><span class="hs-identifier hs-var">concatMap</span></span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179248"><span class="hs-identifier hs-var">xs</span></a></span><span>
+</span><span id="line-53"></span><span>      </span><span class="annot"><a href="Syntax.html#Cons"><span class="hs-identifier hs-type">Cons</span></a></span><span> </span><span id="local-6989586621679179250"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179250"><span class="hs-identifier hs-var">h</span></a></span></span><span> </span><span id="local-6989586621679179251"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179251"><span class="hs-identifier hs-var">t</span></a></span></span><span>         </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179250"><span class="hs-identifier hs-var">h</span></a></span><span> </span><span class="annot"><span class="annottext">[SuperSpec] -&gt; [SuperSpec] -&gt; [SuperSpec]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Expr -&gt; [SuperSpec]
+</span><a href="#local-6989586621679179219"><span class="hs-identifier hs-var">exprSupers</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179251"><span class="hs-identifier hs-var">t</span></a></span><span>
+</span><span id="line-54"></span><span>      </span><span class="annot"><a href="Syntax.html#Super"><span class="hs-identifier hs-type">Super</span></a></span><span> </span><span id="local-6989586621679179253"><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679179253"><span class="hs-identifier hs-var">nm</span></a></span></span><span> </span><span id="local-6989586621679179254"><span class="annot"><span class="annottext">SuperKind
+</span><a href="#local-6989586621679179254"><span class="hs-identifier hs-var">k</span></a></span></span><span> </span><span id="local-6989586621679179255"><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679179255"><span class="hs-identifier hs-var">i</span></a></span></span><span> </span><span id="local-6989586621679179256"><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679179256"><span class="hs-identifier hs-var">o</span></a></span></span><span> </span><span id="local-6989586621679179257"><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679179257"><span class="hs-identifier hs-var">s</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">Ident -&gt; SuperKind -&gt; Ident -&gt; Ident -&gt; Ident -&gt; SuperSpec
+</span><a href="Synthesis.SuperExtract.html#SuperSpec"><span class="hs-identifier hs-var">SuperSpec</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679179253"><span class="hs-identifier hs-var">nm</span></a></span><span> </span><span class="annot"><span class="annottext">SuperKind
+</span><a href="#local-6989586621679179254"><span class="hs-identifier hs-var">k</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679179255"><span class="hs-identifier hs-var">i</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679179256"><span class="hs-identifier hs-var">o</span></a></span><span> </span><span class="annot"><span class="annottext">Ident
+</span><a href="#local-6989586621679179257"><span class="hs-identifier hs-var">s</span></a></span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-55"></span></pre></body></html>
