@@ -2,6 +2,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 
+-- |
+-- Module      : Synthesis.Codegen
+-- Description : Assemble a 'DGraph' of 'DNode's into TALM/FL textual instructions.
+-- Maintainer  : ricardofilhoschool@gmail.com
+-- Stability   : experimental
+-- Portability : portable
+--
+-- Translates a dataflow graph into a linear sequence of FL instructions
+-- (TALM runtime). The pass builds an input map per node (collecting sources
+-- per destination port), then emits node-by-node instructions in a stable
+-- order (sorted by 'NodeId'). Helpers produce canonical names for node
+-- outputs and tags, and format operand lists.
+
 module Synthesis.Codegen (assemble) where
 
 import qualified Data.Map.Strict as M
@@ -14,7 +27,7 @@ import           Node            (DNode(..))
 import           Port            (Port(..))
 
 ----------------------------------------------------------------
--- Utilitários
+-- Utilities
 ----------------------------------------------------------------
 showT :: Show a => a -> T.Text
 showT = T.pack . show
@@ -24,7 +37,7 @@ dstN nid = "n" <> showT nid
 dstS nid = "s" <> showT nid
 
 -- tag   ----------------------------------------------------------------
--- Força sempre cg NN, com NN ∈ [10..99]; evita “08”
+-- Always force cgNN with NN ∈ [10..99]; avoids leading-zero like “08”
 tagName :: NodeId -> T.Text
 tagName nid = "cg" <> showT ((nid `mod` 90) + 10)
 
@@ -35,11 +48,11 @@ argAsFunSlot nm =
     (f,'#':ix) | all isDigit ix -> T.pack f <> "[" <> T.pack ix <> "]"
     _                           -> T.pack nm
 
--- nome do output para usar como fonte
+-- Output name to use as a source
 outName :: DGraph DNode -> NodeId -> String -> T.Text
 outName g s sp =
   case M.lookup s (dgNodes g) of
-    -- steer t -> .w / f -> .g
+    -- steer: t -> .w / f -> .g
     Just NSteer{} ->
       dstS s <> "." <> case sp of
                          "t" -> "w"
@@ -61,7 +74,7 @@ fmtOp [x] = x
 fmtOp xs  = "[" <> T.intercalate ", " xs <> "]"
 
 ----------------------------------------------------------------
--- Construção do mapa de entradas
+-- Build input map
 ----------------------------------------------------------------
 buildInputs :: DGraph DNode -> M.Map (NodeId,String) [T.Text]
 buildInputs g =
@@ -87,7 +100,7 @@ orderedPins :: M.Map (NodeId,String) [T.Text] -> NodeId -> [String]
 orderedPins im k = [ p | (n,p) <- M.keys im, n==k ]
 
 ----------------------------------------------------------------
--- Emissão nó-a-nó
+-- Per-node emission
 ----------------------------------------------------------------
 emitNode
   :: DGraph DNode
@@ -96,12 +109,12 @@ emitNode
   -> [T.Text]
 emitNode g im (nid, dn) =
   case dn of
-    -------------------------------------------------- Consts
+    -------------------------------------------------- Constants
     NConstI{..} -> ["const "  <> dstN nid <> ", " <> showT cInt]
     NConstF{..} -> ["fconst " <> dstN nid <> ", " <> showT cFloat]
     NConstD{..} -> ["dconst " <> dstN nid <> ", " <> showT cDouble]
 
-    -------------------------------------------------- Binárias
+    -------------------------------------------------- Binary ALU
     NAdd{}  -> bin2 "add"
     NSub{}  -> bin2 "sub"
     NMul{}  -> bin2 "mul"
@@ -113,7 +126,7 @@ emitNode g im (nid, dn) =
     NDAdd{} -> bin2 "dadd"
     NBand{} -> bin2 "band"
 
-    -------------------------------------------------- Imediatas
+    -------------------------------------------------- Immediate ALU
     NAddI{..}  -> bin1imm "addi"  (showT iImm)
     NSubI{..}  -> bin1imm "subi"  (showT iImm)
     NMulI{..}  -> bin1imm "muli"  (showT iImm)
@@ -121,7 +134,7 @@ emitNode g im (nid, dn) =
     NDivI{..}  -> ["divi " <> dstN nid <> ", "
                           <> fmtOp (gi "0") <> ", " <> showT iImm]
 
-    -------------------------------------------------- Comparações / steer
+    -------------------------------------------------- Comparisons / steer
     NLThan{}    -> bin2 "lthan"
     NGThan{}    -> bin2 "gthan"
     NEqual{}    -> bin2 "equal"
@@ -165,7 +178,7 @@ emitNode g im (nid, dn) =
     -------------------------------------------------- Formal arg
     NArg{} -> ["add " <> dstN nid <> ", " <> fmtOp (gi "0") <> ", z0"]
 
-    -------------------------------------------------- Super-inst
+    -------------------------------------------------- Super-instruction
     NSuper{..} ->
       let pins = orderedPins im nid
           srcs = map (\p -> fmtOp (gi p)) pins
@@ -195,7 +208,7 @@ emitNode g im (nid, dn) =
       in  [ T.pack base <> " " <> T.intercalate ", " (dstN nid : srcs) ]
 
 ----------------------------------------------------------------
--- assemble : entrada = grafo; saída = .fl text
+-- assemble : input = graph; output = .fl text
 ----------------------------------------------------------------
 assemble :: DGraph DNode -> T.Text
 assemble g =

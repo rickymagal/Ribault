@@ -1,16 +1,26 @@
--- Source/Types.hs
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
 
--- | Tipos centrais da fase de geração de Data-flow.
---   Mantemos tudo genérico em @n@ para que outros módulos (Node, Builder…)
---   escolham o payload de cada nó.
+-- |
+-- Module      : Types
+-- Description : Core types for the Dataflow graph generation phase.
+-- Maintainer  : ricardofilhoschool@gmail.com
+-- Stability   : experimental
+-- Portability : portable
+--
+-- Core, minimal types used during dataflow graph construction.
+-- Everything is kept generic in @n@ so that other modules (Node, Builder, …)
+-- can choose the payload stored at each node.
+
 module Types
-  ( NodeId
+  ( -- * Basic identifiers
+    NodeId
   , PortId
+    -- * Edges and graphs
   , Edge
   , DGraph(..)
+    -- * Construction helpers
   , emptyGraph
   , addNode
   , addEdge
@@ -20,41 +30,41 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 
 --------------------------------------------------------------------------------
--- Identificadores básicos
+-- Basic identifiers
 --------------------------------------------------------------------------------
 
--- | Identificador único de um nó/instrução no grafo.
+-- | Unique identifier for a node/instruction in the graph.
 type NodeId = Int
 
--- | Nome da porta dentro de um nó (\"out\", \"lhs\", \"rhs\", \"t\", \"f\"…).
+-- | Port name within a node (e.g. \"out\", \"lhs\", \"rhs\", \"t\", \"f\", …).
 type PortId = String
 
 --------------------------------------------------------------------------------
--- Arestas e grafos
+-- Edges and graphs
 --------------------------------------------------------------------------------
 
--- | Aresta direcionada: (nó de origem, porta de origem, nó destino, porta destino).
+-- | Directed edge: (source node, source port, target node, target port).
 type Edge = (NodeId, PortId, NodeId, PortId)
 
--- | Grafo paramétrico: permite qualquer tipo de nó como payload.
+-- | Parametric graph: allows any node payload type.
 data DGraph n = DGraph
-  { dgNodes :: Map NodeId n   -- ^ Todos os nós, indexados pelo seu 'NodeId'.
-  , dgEdges :: [Edge]         -- ^ Lista de arestas direcionadas.
+  { dgNodes :: Map NodeId n   -- ^ All nodes, indexed by their 'NodeId'.
+  , dgEdges :: [Edge]         -- ^ List of directed edges.
   }
   deriving (Show, Eq, Functor, Foldable, Traversable)
 
 --------------------------------------------------------------------------------
--- Utilidades de construção
+-- Construction utilities
 --------------------------------------------------------------------------------
 
--- | Grafo vazio — ponto de partida para o 'Builder'.
+-- | Empty graph — a suitable starting point for the 'Builder'.
 emptyGraph :: DGraph n
 emptyGraph = DGraph Map.empty []
 
--- | Insere (ou substitui) um nó.
+-- | Insert (or replace) a node.
 addNode :: NodeId -> n -> DGraph n -> DGraph n
 addNode nid n g = g { dgNodes = Map.insert nid n (dgNodes g) }
 
--- | Adiciona uma aresta (é mais barato ‘consar’; inverta depois se a ordem importar).
+-- | Add an edge (uses cons; reverse later if order matters).
 addEdge :: Edge -> DGraph n -> DGraph n
 addEdge e g = g { dgEdges = e : dgEdges g }

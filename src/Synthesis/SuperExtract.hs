@@ -1,6 +1,14 @@
 {-# LANGUAGE LambdaCase #-}
 
--- Extrai as Supers da AST já com nomes s# (depois de assignSuperNames).
+-- |
+-- Module      : Synthesis.SuperExtract
+-- Description : Extracts super-instructions from the AST after 'assignSuperNames' (names s#).
+-- Maintainer  : ricardofilhoschool@gmail.com
+-- Stability   : experimental
+-- Portability : portable
+--
+-- Walks the program AST, collecting unique 'SuperSpec's (by name).
+
 module Synthesis.SuperExtract
   ( SuperSpec(..)
   , collectSupers
@@ -9,19 +17,20 @@ module Synthesis.SuperExtract
 import Syntax
 import Data.List (nubBy)
 
--- Metadados necessários para emitir o módulo de supers
+-- | Minimal metadata needed to emit the supers module.
 data SuperSpec = SuperSpec
-  { ssName :: Ident        -- "s1", "s2", ...
-  , ssKind :: SuperKind    -- metadado (não usamos na ABI)
-  , ssInp  :: Ident        -- nome lógico da entrada
-  , ssOut  :: Ident        -- nome lógico da saída
-  , ssBody :: String       -- corpo textual salvo na AST (declarações/expressão)
+  { ssName :: Ident        -- ^ \"s1\", \"s2\", …
+  , ssKind :: SuperKind    -- ^ metadata (not used by the ABI)
+  , ssInp  :: Ident        -- ^ logical input name
+  , ssOut  :: Ident        -- ^ logical output name
+  , ssBody :: String       -- ^ textual body stored in the AST (declarations/expression)
   }
 
--- Remove duplicatas por nome (se a Super aparecer múltiplas vezes na AST)
+-- | Remove duplicates by name (if a Super appears multiple times in the AST).
 dedupByName :: [SuperSpec] -> [SuperSpec]
 dedupByName = nubBy (\a b -> ssName a == ssName b)
 
+-- | Collect all 'SuperSpec's from a 'Program', deduplicated by name.
 collectSupers :: Program -> [SuperSpec]
 collectSupers (Program decls) = dedupByName (concatMap declSupers decls)
   where

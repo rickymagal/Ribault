@@ -1,5 +1,16 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE LambdaCase #-}
+
+-- |
+-- Module      : Node
+-- Description : Dataflow nodes (mirroring TALM-like mnemonics) and port helpers.
+-- Maintainer  : ricardofilhoschool@gmail.com
+-- Stability   : experimental
+-- Portability : portable
+--
+-- Defines the set of dataflow node constructors used by the builder/codegen
+-- stages and utilities to query node names, arity, and standard output ports.
+
 module Node
   ( DNode(..)
   , nodeName
@@ -10,61 +21,60 @@ module Node
 import           Types (NodeId)
 import           Port  (Port(..))
 
--- Nó de dataflow (espelha mnemônicos do asm)
+-- | Dataflow node (mirrors assembler mnemonics).
 data DNode
-  -- Constantes
-  = NConstI  { nName :: !String, cInt   :: !Int }
-  | NConstF  { nName :: !String, cFloat :: !Float }
-  | NConstD  { nName :: !String, cDouble:: !Double }
+  -- Constants
+  = NConstI  { nName :: !String, cInt    :: !Int    }
+  | NConstF  { nName :: !String, cFloat  :: !Float  }
+  | NConstD  { nName :: !String, cDouble :: !Double }
 
-  -- ALU binárias
+  -- Binary ALU
   | NAdd     { nName :: !String }
   | NSub     { nName :: !String }
   | NMul     { nName :: !String }
-  | NDiv     { nName :: !String }      -- 2 saídas
+  | NDiv     { nName :: !String }      -- ^ 2 outputs
   | NFAdd    { nName :: !String }
   | NDAdd    { nName :: !String }
   | NBand    { nName :: !String }
-  | NFSub    { nName :: !String }   -- << novo
-  | NFMul    { nName :: !String }   -- << novo
-  | NFDiv    { nName :: !String }   -- << novo
+  | NFSub    { nName :: !String }      -- ^ new
+  | NFMul    { nName :: !String }      -- ^ new
+  | NFDiv    { nName :: !String }      -- ^ new
 
-
-  -- ALU imediatas
+  -- Immediate ALU
   | NAddI    { nName :: !String, iImm :: !Int }
   | NSubI    { nName :: !String, iImm :: !Int }
   | NMulI    { nName :: !String, iImm :: !Int }
   | NFMulI   { nName :: !String, fImm :: !Float }
-  | NDivI    { nName :: !String, iImm :: !Int }  -- 2 saídas
+  | NDivI    { nName :: !String, iImm :: !Int }  -- ^ 2 outputs
 
-  -- Comparações / steer
+  -- Comparisons / steer
   | NLThan   { nName :: !String }
   | NGThan   { nName :: !String }
   | NEqual   { nName :: !String }
   | NLThanI  { nName :: !String, iImm :: !Int }
   | NGThanI  { nName :: !String, iImm :: !Int }
-  | NSteer   { nName :: !String }                -- portas "t"/"f"
+  | NSteer   { nName :: !String }                -- ^ ports \"t\" / \"f\"
 
-  -- Chamadas (TALM)
-  | NCallGroup { nName :: !String }              -- gera tag
+  -- Calls (TALM)
+  | NCallGroup { nName :: !String }              -- ^ emits a tag
   | NCallSnd   { nName :: !String, taskId :: !Int }
   | NRetSnd    { nName :: !String, taskId :: !Int }
   | NRet       { nName :: !String }
 
-  -- Conversores tag <-> val
+  -- Converters tag <-> value
   | NTagVal  { nName :: !String }
   | NValTag  { nName :: !String }
 
-  -- DMA / spec
+  -- DMA / speculation
   | NCpHToDev  { nName :: !String }
   | NCpDevToH  { nName :: !String }
-  | NCommit    { nName :: !String }             -- 2 saídas
-  | NStopSpec  { nName :: !String }             -- 2 saídas
+  | NCommit    { nName :: !String }             -- ^ 2 outputs
+  | NStopSpec  { nName :: !String }             -- ^ 2 outputs
 
-  -- Argumento formal (visual / bind)
+  -- Formal argument (visual / binding)
   | NArg       { nName :: !String }
 
-  -- Super inst (opaca neste estágio)
+  -- Super-instruction (opaque at this stage)
   | NSuper
       { nName      :: !String
       , superNum   :: !Int
@@ -74,9 +84,11 @@ data DNode
       }
   deriving (Eq, Show)
 
+-- | Get the node's display/name label.
 nodeName :: DNode -> String
 nodeName = nName
 
+-- | Number of outputs (arity) for a given node.
 nOutputs :: DNode -> Int
 nOutputs = \case
   NDiv{}      -> 2
@@ -87,11 +99,18 @@ nOutputs = \case
   NSuper{..}  -> superOuts
   _           -> 1
 
+-- | Default primary output port \"0\".
 outPort  :: NodeId -> Port
 outPort  nid = InstPort nid "0"
+
+-- | Secondary output port \"1\" (for multi-output nodes).
 out1Port :: NodeId -> Port
 out1Port nid = InstPort nid "1"
+
+-- | True branch port of a 'NSteer' node.
 truePort :: NodeId -> Port
 truePort nid = SteerPort nid "t"
+
+-- | False branch port of a 'NSteer' node.
 falsePort :: NodeId -> Port
 falsePort nid = SteerPort nid "f"
