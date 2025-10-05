@@ -1,0 +1,1050 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE LambdaCase #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE OverloadedStrings #-}</span><span>
+</span><span id="line-3"></span><span>
+</span><span id="line-4"></span><span class="annot"><span class="hs-comment">{-|
+Module      : Analysis.ASTGen
+Description : DOT graph generator for the core AST, covering all language constructors (patterns and expressions), including TALM-style 'Super'.
+Maintainer  : ricardofilhoschool@gmail.com
+Stability   : experimental
+Portability : portable
+
+## Overview
+
+This module traverses the core 'Syntax' AST and emits a Graphviz DOT
+representation suitable for quick visualization and debugging. It covers
+**all** pattern and expression constructors currently used by the language,
+including the 'Super' extension node for coarse-grained super-instructions.
+
+## Notes
+
+- Node identifiers are allocated from a monotonically increasing counter kept
+  in the state monad.
+- Edges are emitted as the traversal discovers parent&#8211;child relationships.
+- Labels are escaped to keep the DOT output valid (quotes, backslashes, newlines).
+
+## Covered constructors
+
+- Patterns: 'PWildcard', 'PVar', 'PLit', 'PList', 'PTuple', 'PCons'
+- Expressions: 'Var', 'Lit', 'Lambda', 'If', 'Cons', 'Case', 'Let', 'App',
+  'BinOp', 'UnOp', 'List', 'Tuple', 'Super'
+-}</span></span><span>
+</span><span id="line-31"></span><span>
+</span><span id="line-32"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Analysis.ASTGen</span><span>
+</span><span id="line-33"></span><span>  </span><span class="hs-special">(</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#astToDot"><span class="hs-identifier">astToDot</span></a></span><span>       </span><span class="hs-comment">-- Program -&gt; Text</span><span>
+</span><span id="line-34"></span><span>  </span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#programToDot"><span class="hs-identifier">programToDot</span></a></span><span>   </span><span class="hs-comment">-- synonym</span><span>
+</span><span id="line-35"></span><span>  </span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-36"></span><span>
+</span><span id="line-37"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><a href="Syntax.html"><span class="hs-identifier">Syntax</span></a></span><span>
+</span><span id="line-38"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Data.List</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">intercalate</span></span><span class="hs-special">)</span><span>
+</span><span id="line-39"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad.State</span></span><span>
+</span><span id="line-40"></span><span class="hs-keyword">import</span><span> </span><span class="annot"><span class="hs-identifier">Control.Monad</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">when</span></span><span class="hs-special">)</span><span>
+</span><span id="line-41"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.Lazy</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">TL</span></span><span>
+</span><span id="line-42"></span><span>
+</span><span id="line-43"></span><span class="hs-comment">-- -----------------------------------------------------------------------------</span><span>
+</span><span id="line-44"></span><span class="hs-comment">-- DOT generation infrastructure</span><span>
+</span><span id="line-45"></span><span class="hs-comment">-- -----------------------------------------------------------------------------</span><span>
+</span><span id="line-46"></span><span>
+</span><span id="line-47"></span><span class="annot"><span class="hs-comment">-- | Opaque numeric node identifier for DOT nodes.</span></span><span>
+</span><span id="line-48"></span><span class="hs-keyword">type</span><span> </span><span id="NodeId"><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-var">NodeId</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-49"></span><span>
+</span><span id="line-50"></span><span class="annot"><span class="hs-comment">-- | Accumulated DOT output state.</span></span><span>
+</span><span id="line-51"></span><span class="hs-keyword">data</span><span> </span><span id="G"><span class="annot"><a href="Analysis.ASTGen.html#G"><span class="hs-identifier hs-var">G</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span id="G"><span class="annot"><a href="Analysis.ASTGen.html#G"><span class="hs-identifier hs-var">G</span></a></span></span><span> </span><span class="hs-special">{</span><span> </span><span id="gid"><span class="annot"><span class="annottext">G -&gt; Int
+</span><a href="Analysis.ASTGen.html#gid"><span class="hs-identifier hs-var hs-var">gid</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-glyph">!</span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span class="hs-special">,</span><span> </span><span id="out"><span class="annot"><span class="annottext">G -&gt; [String]
+</span><a href="Analysis.ASTGen.html#out"><span class="hs-identifier hs-var hs-var">out</span></a></span></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span class="hs-special">]</span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-52"></span><span>
+</span><span id="line-53"></span><span class="annot"><span class="hs-comment">-- | State monad used by the DOT generator.</span></span><span>
+</span><span id="line-54"></span><span class="hs-keyword">type</span><span> </span><span id="M"><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-var">M</span></a></span></span><span> </span><span id="local-6989586621679178987"><span class="annot"><a href="#local-6989586621679178987"><span class="hs-identifier hs-type">a</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="hs-identifier hs-type">State</span></span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#G"><span class="hs-identifier hs-type">G</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679178987"><span class="hs-identifier hs-type">a</span></a></span><span>
+</span><span id="line-55"></span><span>
+</span><span id="line-56"></span><span class="annot"><span class="hs-comment">-- | Append a single DOT line to the output buffer (no trailing newline needed).</span></span><span>
+</span><span id="line-57"></span><span class="annot"><a href="Analysis.ASTGen.html#push"><span class="hs-identifier hs-type">push</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-type">M</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-58"></span><span id="push"><span class="annot"><span class="annottext">push :: String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#push"><span class="hs-identifier hs-var hs-var">push</span></a></span></span><span> </span><span id="local-6989586621679178989"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679178989"><span class="hs-identifier hs-var">s</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(G -&gt; G) -&gt; M ()
+forall s (m :: * -&gt; *). MonadState s m =&gt; (s -&gt; s) -&gt; m ()
+</span><span class="hs-identifier hs-var">modify</span></span><span> </span><span class="annot"><span class="annottext">((G -&gt; G) -&gt; M ()) -&gt; (G -&gt; G) -&gt; M ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679178991"><span class="annot"><span class="annottext">G
+</span><a href="#local-6989586621679178991"><span class="hs-identifier hs-var">g</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">G
+</span><a href="#local-6989586621679178991"><span class="hs-identifier hs-var">g</span></a></span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#out"><span class="hs-identifier hs-var">out</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679178989"><span class="hs-identifier hs-type">s</span></a></span><span> </span><span class="annot"><span class="hs-glyph hs-type">:</span></span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#out"><span class="hs-identifier hs-var">out</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679178991"><span class="hs-identifier hs-type">g</span></a></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-59"></span><span>
+</span><span id="line-60"></span><span class="annot"><span class="hs-comment">-- | Generate a fresh 'NodeId'.</span></span><span>
+</span><span id="line-61"></span><span class="annot"><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-type">fresh</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-type">M</span></a></span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span>
+</span><span id="line-62"></span><span id="fresh"><span class="annot"><span class="annottext">fresh :: M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var hs-var">fresh</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-63"></span><span>  </span><span id="local-6989586621679178993"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679178993"><span class="hs-identifier hs-var">i</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">(G -&gt; Int) -&gt; M Int
+forall s (m :: * -&gt; *) a. MonadState s m =&gt; (s -&gt; a) -&gt; m a
+</span><span class="hs-identifier hs-var">gets</span></span><span> </span><span class="annot"><span class="annottext">G -&gt; Int
+</span><a href="Analysis.ASTGen.html#gid"><span class="hs-identifier hs-var">gid</span></a></span><span>
+</span><span id="line-64"></span><span>  </span><span class="annot"><span class="annottext">(G -&gt; G) -&gt; M ()
+forall s (m :: * -&gt; *). MonadState s m =&gt; (s -&gt; s) -&gt; m ()
+</span><span class="hs-identifier hs-var">modify</span></span><span> </span><span class="annot"><span class="annottext">((G -&gt; G) -&gt; M ()) -&gt; (G -&gt; G) -&gt; M ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-glyph">\</span><span id="local-6989586621679178995"><span class="annot"><span class="annottext">G
+</span><a href="#local-6989586621679178995"><span class="hs-identifier hs-var">g</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">G
+</span><a href="#local-6989586621679178995"><span class="hs-identifier hs-var">g</span></a></span><span class="hs-special">{</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#gid"><span class="hs-identifier hs-var">gid</span></a></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><a href="#local-6989586621679178993"><span class="hs-identifier hs-type">i</span></a></span><span> </span><span class="annot"><span class="hs-operator hs-type">+</span></span><span> </span><span class="annot"><span class="hs-number">1</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-65"></span><span>  </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679178993"><span class="hs-identifier hs-var">i</span></a></span><span>
+</span><span id="line-66"></span><span>
+</span><span id="line-67"></span><span class="annot"><span class="hs-comment">-- | Emit a DOT node with a given textual label (properly escaped).</span></span><span>
+</span><span id="line-68"></span><span class="annot"><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-type">emitNode</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-type">M</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-69"></span><span id="emitNode"><span class="annot"><span class="annottext">emitNode :: Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var hs-var">emitNode</span></a></span></span><span> </span><span id="local-6989586621679178998"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679178998"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span id="local-6989586621679178999"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679178999"><span class="hs-keyword hs-var">label</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-70"></span><span>  </span><span class="annot"><span class="annottext">String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#push"><span class="hs-identifier hs-var">push</span></a></span><span> </span><span class="annot"><span class="annottext">(String -&gt; M ()) -&gt; String -&gt; M ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679178998"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot; [shape=box,label=\&quot;&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String
+</span><a href="Analysis.ASTGen.html#esc"><span class="hs-identifier hs-var">esc</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679178999"><span class="hs-keyword hs-var">label</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;\&quot;];&quot;</span></span><span>
+</span><span id="line-71"></span><span>
+</span><span id="line-72"></span><span class="annot"><span class="hs-comment">-- | Emit a DOT edge from the first node to the second.</span></span><span>
+</span><span id="line-73"></span><span class="annot"><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-type">emitEdge</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-type">M</span></a></span><span> </span><span class="hs-special">(</span><span class="hs-special">)</span><span>
+</span><span id="line-74"></span><span id="emitEdge"><span class="annot"><span class="annottext">emitEdge :: Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var hs-var">emitEdge</span></a></span></span><span> </span><span id="local-6989586621679179003"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179003"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span id="local-6989586621679179004"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179004"><span class="hs-identifier hs-var">b</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#push"><span class="hs-identifier hs-var">push</span></a></span><span> </span><span class="annot"><span class="annottext">(String -&gt; M ()) -&gt; String -&gt; M ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179003"><span class="hs-identifier hs-var">a</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot; -&gt; &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179004"><span class="hs-identifier hs-var">b</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;;&quot;</span></span><span>
+</span><span id="line-75"></span><span>
+</span><span id="line-76"></span><span class="hs-comment">-- | Escape a label string for inclusion in DOT source.</span><span>
+</span><span id="line-77"></span><span class="hs-comment">--</span><span>
+</span><span id="line-78"></span><span class="hs-comment">-- Escapes quotes, backslashes, and newlines.</span><span>
+</span><span id="line-79"></span><span class="annot"><a href="Analysis.ASTGen.html#esc"><span class="hs-identifier hs-type">esc</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>
+</span><span id="line-80"></span><span id="esc"><span class="annot"><span class="annottext">esc :: String -&gt; String
+</span><a href="Analysis.ASTGen.html#esc"><span class="hs-identifier hs-var hs-var">esc</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">(Char -&gt; String) -&gt; String -&gt; String
+forall (t :: * -&gt; *) a b. Foldable t =&gt; (a -&gt; [b]) -&gt; t a -&gt; [b]
+</span><span class="hs-identifier hs-var">concatMap</span></span><span> </span><span class="annot"><span class="annottext">Char -&gt; String
+</span><a href="#local-6989586621679179006"><span class="hs-identifier hs-var">f</span></a></span><span>
+</span><span id="line-81"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-82"></span><span>    </span><span id="local-6989586621679179006"><span class="annot"><span class="annottext">f :: Char -&gt; String
+</span><a href="#local-6989586621679179006"><span class="hs-identifier hs-var hs-var">f</span></a></span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-char">'&quot;'</span></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;\\\&quot;&quot;</span></span><span>
+</span><span id="line-83"></span><span>    </span><span class="annot"><a href="#local-6989586621679179006"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-char">'\\'</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;\\\\&quot;</span></span><span>
+</span><span id="line-84"></span><span>    </span><span class="annot"><a href="#local-6989586621679179006"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="annot"><span class="annottext">Char
+</span><span class="hs-char">'\n'</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;\\n&quot;</span></span><span>
+</span><span id="line-85"></span><span>    </span><span class="annot"><a href="#local-6989586621679179006"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span id="local-6989586621679179011"><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679179011"><span class="hs-identifier hs-var">c</span></a></span></span><span>    </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679179011"><span class="hs-identifier hs-var">c</span></a></span><span class="hs-special">]</span><span>
+</span><span id="line-86"></span><span>
+</span><span id="line-87"></span><span class="hs-comment">-- | Run a generator action producing the root node and collect the full DOT file.</span><span>
+</span><span id="line-88"></span><span class="hs-comment">--</span><span>
+</span><span id="line-89"></span><span class="hs-comment">-- The resulting text includes a header, node defaults, all emitted lines,</span><span>
+</span><span id="line-90"></span><span class="hs-comment">-- and the closing brace.</span><span>
+</span><span id="line-91"></span><span class="annot"><a href="Analysis.ASTGen.html#runM"><span class="hs-identifier hs-type">runM</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-type">M</span></a></span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">TL.Text</span></span><span>
+</span><span id="line-92"></span><span id="runM"><span class="annot"><span class="annottext">runM :: M Int -&gt; Text
+</span><a href="Analysis.ASTGen.html#runM"><span class="hs-identifier hs-var hs-var">runM</span></a></span></span><span> </span><span id="local-6989586621679179013"><span class="annot"><span class="annottext">M Int
+</span><a href="#local-6989586621679179013"><span class="hs-identifier hs-var">m</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-93"></span><span>  </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679179014"><span class="annot"><span class="annottext">g0 :: G
+</span><a href="#local-6989586621679179014"><span class="hs-identifier hs-var hs-var">g0</span></a></span></span><span>  </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Int -&gt; [String] -&gt; G
+</span><a href="Analysis.ASTGen.html#G"><span class="hs-identifier hs-var">G</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><span class="hs-number">0</span></span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span>
+</span><span id="line-94"></span><span>      </span><span class="hs-special">(</span><span id="local-6989586621679179015"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179015"><span class="hs-identifier hs-var">_root</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679179016"><span class="annot"><span class="annottext">G
+</span><a href="#local-6989586621679179016"><span class="hs-identifier hs-var">g1</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">M Int -&gt; G -&gt; (Int, G)
+forall s a. State s a -&gt; s -&gt; (a, s)
+</span><span class="hs-identifier hs-var">runState</span></span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="#local-6989586621679179013"><span class="hs-identifier hs-var">m</span></a></span><span> </span><span class="annot"><span class="annottext">G
+</span><a href="#local-6989586621679179014"><span class="hs-identifier hs-var">g0</span></a></span><span>
+</span><span id="line-95"></span><span>      </span><span id="local-6989586621679179024"><span class="annot"><span class="annottext">ls :: [String]
+</span><a href="#local-6989586621679179024"><span class="hs-identifier hs-var hs-var">ls</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;digraph AST {&quot;</span></span><span>
+</span><span id="line-96"></span><span>           </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;  rankdir=TB;&quot;</span></span><span>
+</span><span id="line-97"></span><span>           </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;  node [shape=box,fontname=\&quot;monospace\&quot;];&quot;</span></span><span>
+</span><span id="line-98"></span><span>           </span><span class="hs-special">]</span><span> </span><span class="annot"><span class="annottext">[String] -&gt; [String] -&gt; [String]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">(String -&gt; String) -&gt; [String] -&gt; [String]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;  &quot;</span></span><span class="hs-operator">++</span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[String] -&gt; [String]
+forall a. [a] -&gt; [a]
+</span><span class="hs-identifier hs-var">reverse</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">G -&gt; [String]
+</span><a href="Analysis.ASTGen.html#out"><span class="hs-identifier hs-var">out</span></a></span><span> </span><span class="annot"><span class="annottext">G
+</span><a href="#local-6989586621679179016"><span class="hs-identifier hs-var">g1</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-99"></span><span>             </span><span class="annot"><span class="annottext">[String] -&gt; [String] -&gt; [String]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;}&quot;</span></span><span class="hs-special">]</span><span>
+</span><span id="line-100"></span><span>  </span><span class="hs-keyword">in</span><span> </span><span class="annot"><span class="annottext">[Text] -&gt; Text
+</span><span class="hs-identifier hs-var">TL.unlines</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">(String -&gt; Text) -&gt; [String] -&gt; [Text]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; Text
+</span><span class="hs-identifier hs-var">TL.pack</span></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679179024"><span class="hs-identifier hs-var">ls</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-101"></span><span>
+</span><span id="line-102"></span><span class="hs-comment">-- -----------------------------------------------------------------------------</span><span>
+</span><span id="line-103"></span><span class="hs-comment">-- API</span><span>
+</span><span id="line-104"></span><span class="hs-comment">-- -----------------------------------------------------------------------------</span><span>
+</span><span id="line-105"></span><span>
+</span><span id="line-106"></span><span class="hs-comment">-- | Convert a 'Program' into DOT text (alias of 'programToDot').</span><span>
+</span><span id="line-107"></span><span class="hs-comment">--</span><span>
+</span><span id="line-108"></span><span class="hs-comment">-- === __Returns__</span><span>
+</span><span id="line-109"></span><span class="hs-comment">-- A lazy 'TL.Text' containing the full DOT source.</span><span>
+</span><span id="line-110"></span><span class="annot"><a href="Analysis.ASTGen.html#astToDot"><span class="hs-identifier hs-type">astToDot</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Program"><span class="hs-identifier hs-type">Program</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">TL.Text</span></span><span>
+</span><span id="line-111"></span><span id="astToDot"><span class="annot"><span class="annottext">astToDot :: Program -&gt; Text
+</span><a href="Analysis.ASTGen.html#astToDot"><span class="hs-identifier hs-var hs-var">astToDot</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Program -&gt; Text
+</span><a href="Analysis.ASTGen.html#programToDot"><span class="hs-identifier hs-var">programToDot</span></a></span><span>
+</span><span id="line-112"></span><span>
+</span><span id="line-113"></span><span class="hs-comment">-- | Convert a 'Program' into DOT text.</span><span>
+</span><span id="line-114"></span><span class="hs-comment">--</span><span>
+</span><span id="line-115"></span><span class="hs-comment">-- === __Returns__</span><span>
+</span><span id="line-116"></span><span class="hs-comment">-- A lazy 'TL.Text' containing the full DOT source.</span><span>
+</span><span id="line-117"></span><span class="annot"><a href="Analysis.ASTGen.html#programToDot"><span class="hs-identifier hs-type">programToDot</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Program"><span class="hs-identifier hs-type">Program</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">TL.Text</span></span><span>
+</span><span id="line-118"></span><span id="programToDot"><span class="annot"><span class="annottext">programToDot :: Program -&gt; Text
+</span><a href="Analysis.ASTGen.html#programToDot"><span class="hs-identifier hs-var hs-var">programToDot</span></a></span></span><span> </span><span id="local-6989586621679179029"><span class="annot"><span class="annottext">Program
+</span><a href="#local-6989586621679179029"><span class="hs-identifier hs-var">p</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">M Int -&gt; Text
+</span><a href="Analysis.ASTGen.html#runM"><span class="hs-identifier hs-var">runM</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Program -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitProgram"><span class="hs-identifier hs-var">visitProgram</span></a></span><span> </span><span class="annot"><span class="annottext">Program
+</span><a href="#local-6989586621679179029"><span class="hs-identifier hs-var">p</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-119"></span><span>
+</span><span id="line-120"></span><span class="hs-comment">-- -----------------------------------------------------------------------------</span><span>
+</span><span id="line-121"></span><span class="hs-comment">-- Visitors</span><span>
+</span><span id="line-122"></span><span class="hs-comment">-- -----------------------------------------------------------------------------</span><span>
+</span><span id="line-123"></span><span>
+</span><span id="line-124"></span><span class="annot"><span class="hs-comment">-- | Visit the root 'Program' and emit a \&quot;Program\&quot; node with edges to each declaration.</span></span><span>
+</span><span id="line-125"></span><span class="annot"><a href="Analysis.ASTGen.html#visitProgram"><span class="hs-identifier hs-type">visitProgram</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Program"><span class="hs-identifier hs-type">Program</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-type">M</span></a></span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span>
+</span><span id="line-126"></span><span id="visitProgram"><span class="annot"><span class="annottext">visitProgram :: Program -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitProgram"><span class="hs-identifier hs-var hs-var">visitProgram</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Syntax.html#Program"><span class="hs-identifier hs-type">Program</span></a></span><span> </span><span id="local-6989586621679179031"><span class="annot"><span class="annottext">[Decl]
+</span><a href="#local-6989586621679179031"><span class="hs-identifier hs-var">ds</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-127"></span><span>  </span><span id="local-6989586621679179032"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179032"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-128"></span><span>  </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179032"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Program&quot;</span></span><span>
+</span><span id="line-129"></span><span>  </span><span class="annot"><span class="annottext">(Decl -&gt; M ()) -&gt; [Decl] -&gt; M ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679179034"><span class="annot"><span class="annottext">Decl
+</span><a href="#local-6989586621679179034"><span class="hs-identifier hs-var">d</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Decl -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitDecl"><span class="hs-identifier hs-var">visitDecl</span></a></span><span> </span><span class="annot"><span class="annottext">Decl
+</span><a href="#local-6989586621679179034"><span class="hs-identifier hs-var">d</span></a></span><span> </span><span class="annot"><span class="annottext">M Int -&gt; (Int -&gt; M ()) -&gt; M ()
+forall a b.
+StateT G Identity a
+-&gt; (a -&gt; StateT G Identity b) -&gt; StateT G Identity b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; (a -&gt; m b) -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;=</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179032"><span class="hs-identifier hs-var">me</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[Decl]
+</span><a href="#local-6989586621679179031"><span class="hs-identifier hs-var">ds</span></a></span><span>
+</span><span id="line-130"></span><span>  </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179032"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-131"></span><span>
+</span><span id="line-132"></span><span class="hs-comment">-- | Visit a function declaration node, emitting:</span><span>
+</span><span id="line-133"></span><span class="hs-comment">--</span><span>
+</span><span id="line-134"></span><span class="hs-comment">-- * A \&quot;FunDecl &lt;name&gt;\&quot; node</span><span>
+</span><span id="line-135"></span><span class="hs-comment">-- * An optional \&quot;Params ...\&quot; child (if non-empty)</span><span>
+</span><span id="line-136"></span><span class="hs-comment">-- * An edge to the function body expression</span><span>
+</span><span id="line-137"></span><span class="annot"><a href="Analysis.ASTGen.html#visitDecl"><span class="hs-identifier hs-type">visitDecl</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Decl"><span class="hs-identifier hs-type">Decl</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-type">M</span></a></span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span>
+</span><span id="line-138"></span><span id="visitDecl"><span class="annot"><span class="annottext">visitDecl :: Decl -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitDecl"><span class="hs-identifier hs-var hs-var">visitDecl</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Syntax.html#FunDecl"><span class="hs-identifier hs-type">FunDecl</span></a></span><span> </span><span id="local-6989586621679179037"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179037"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span id="local-6989586621679179038"><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679179038"><span class="hs-identifier hs-var">ps</span></a></span></span><span> </span><span id="local-6989586621679179039"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179039"><span class="hs-identifier hs-var">e</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-139"></span><span>  </span><span id="local-6989586621679179040"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179040"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-140"></span><span>  </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179040"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;FunDecl &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179037"><span class="hs-identifier hs-var">f</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-141"></span><span>  </span><span class="hs-comment">-- params</span><span>
+</span><span id="line-142"></span><span>  </span><span class="annot"><span class="annottext">Bool -&gt; M () -&gt; M ()
+forall (f :: * -&gt; *). Applicative f =&gt; Bool -&gt; f () -&gt; f ()
+</span><span class="hs-identifier hs-var">when</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Bool -&gt; Bool
+</span><span class="hs-identifier hs-var">not</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[String] -&gt; Bool
+forall a. [a] -&gt; Bool
+forall (t :: * -&gt; *) a. Foldable t =&gt; t a -&gt; Bool
+</span><span class="hs-identifier hs-var">null</span></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679179038"><span class="hs-identifier hs-var">ps</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">(M () -&gt; M ()) -&gt; M () -&gt; M ()
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-143"></span><span>    </span><span id="local-6989586621679179043"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179043"><span class="hs-identifier hs-var">pnode</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-144"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179043"><span class="hs-identifier hs-var">pnode</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Params &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; [String] -&gt; String
+forall a. [a] -&gt; [[a]] -&gt; [a]
+</span><span class="hs-identifier hs-var">intercalate</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot; &quot;</span></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679179038"><span class="hs-identifier hs-var">ps</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-145"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179040"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179043"><span class="hs-identifier hs-var">pnode</span></a></span><span>
+</span><span id="line-146"></span><span>  </span><span class="hs-comment">-- body</span><span>
+</span><span id="line-147"></span><span>  </span><span id="local-6989586621679179044"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179044"><span class="hs-identifier hs-var">be</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179039"><span class="hs-identifier hs-var">e</span></a></span><span>
+</span><span id="line-148"></span><span>  </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179040"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179044"><span class="hs-identifier hs-var">be</span></a></span><span>
+</span><span id="line-149"></span><span>  </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179040"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-150"></span><span>
+</span><span id="line-151"></span><span class="hs-comment">-- | Visit an expression and emit the corresponding subgraph.</span><span>
+</span><span id="line-152"></span><span class="hs-comment">--</span><span>
+</span><span id="line-153"></span><span class="hs-comment">-- Covers: 'Var', 'Lit', 'Lambda', 'If', 'Cons', 'Case', 'Let', flattened</span><span>
+</span><span id="line-154"></span><span class="hs-comment">-- multi-arg 'App', 'BinOp', 'UnOp', 'List', 'Tuple', and 'Super'.</span><span>
+</span><span id="line-155"></span><span class="annot"><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-type">visitExpr</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-type">M</span></a></span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span>
+</span><span id="line-156"></span><span id="visitExpr"><span class="annot"><span class="annottext">visitExpr :: Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var hs-var">visitExpr</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-157"></span><span>  </span><span class="annot"><a href="Syntax.html#Var"><span class="hs-identifier hs-type">Var</span></a></span><span> </span><span id="local-6989586621679179046"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179046"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String -&gt; M Int
+</span><a href="#local-6989586621679179047"><span class="hs-identifier hs-var">leaf</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Var &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179046"><span class="hs-identifier hs-var">x</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-158"></span><span>  </span><span class="annot"><a href="Syntax.html#Lit"><span class="hs-identifier hs-type">Lit</span></a></span><span> </span><span id="local-6989586621679179048"><span class="annot"><span class="annottext">Literal
+</span><a href="#local-6989586621679179048"><span class="hs-identifier hs-var">l</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String -&gt; M Int
+</span><a href="#local-6989586621679179047"><span class="hs-identifier hs-var">leaf</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Lit &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Literal -&gt; String
+</span><a href="Analysis.ASTGen.html#showLit"><span class="hs-identifier hs-var">showLit</span></a></span><span> </span><span class="annot"><span class="annottext">Literal
+</span><a href="#local-6989586621679179048"><span class="hs-identifier hs-var">l</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-159"></span><span>
+</span><span id="line-160"></span><span>  </span><span class="annot"><a href="Syntax.html#Lambda"><span class="hs-identifier hs-type">Lambda</span></a></span><span> </span><span id="local-6989586621679179050"><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679179050"><span class="hs-identifier hs-var">ps</span></a></span></span><span> </span><span id="local-6989586621679179051"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179051"><span class="hs-identifier hs-var">b</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-161"></span><span>    </span><span id="local-6989586621679179052"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179052"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-162"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179052"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Lambda &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; [String] -&gt; String
+forall a. [a] -&gt; [[a]] -&gt; [a]
+</span><span class="hs-identifier hs-var">intercalate</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot; &quot;</span></span><span> </span><span class="annot"><span class="annottext">[String]
+</span><a href="#local-6989586621679179050"><span class="hs-identifier hs-var">ps</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-163"></span><span>    </span><span id="local-6989586621679179053"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179053"><span class="hs-identifier hs-var">b'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179051"><span class="hs-identifier hs-var">b</span></a></span><span>
+</span><span id="line-164"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179052"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179053"><span class="hs-identifier hs-var">b'</span></a></span><span>
+</span><span id="line-165"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179052"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-166"></span><span>
+</span><span id="line-167"></span><span>  </span><span class="annot"><a href="Syntax.html#If"><span class="hs-identifier hs-type">If</span></a></span><span> </span><span id="local-6989586621679179054"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179054"><span class="hs-identifier hs-var">c</span></a></span></span><span> </span><span id="local-6989586621679179055"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179055"><span class="hs-identifier hs-var">t</span></a></span></span><span> </span><span id="local-6989586621679179056"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179056"><span class="hs-identifier hs-var">e</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-168"></span><span>    </span><span id="local-6989586621679179057"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179057"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-169"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179057"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;If&quot;</span></span><span>
+</span><span id="line-170"></span><span>    </span><span id="local-6989586621679179058"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179058"><span class="hs-identifier hs-var">c'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179054"><span class="hs-identifier hs-var">c</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179057"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179058"><span class="hs-identifier hs-var">c'</span></a></span><span>
+</span><span id="line-171"></span><span>    </span><span id="local-6989586621679179059"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179059"><span class="hs-identifier hs-var">t'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179055"><span class="hs-identifier hs-var">t</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179057"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179059"><span class="hs-identifier hs-var">t'</span></a></span><span>
+</span><span id="line-172"></span><span>    </span><span id="local-6989586621679179060"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179060"><span class="hs-identifier hs-var">e'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179056"><span class="hs-identifier hs-var">e</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179057"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179060"><span class="hs-identifier hs-var">e'</span></a></span><span>
+</span><span id="line-173"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179057"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-174"></span><span>
+</span><span id="line-175"></span><span>  </span><span class="annot"><a href="Syntax.html#Cons"><span class="hs-identifier hs-type">Cons</span></a></span><span> </span><span id="local-6989586621679179061"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179061"><span class="hs-identifier hs-var">h</span></a></span></span><span> </span><span id="local-6989586621679179062"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179062"><span class="hs-identifier hs-var">t</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-176"></span><span>    </span><span id="local-6989586621679179063"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179063"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-177"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179063"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Cons (:)&quot;</span></span><span>
+</span><span id="line-178"></span><span>    </span><span id="local-6989586621679179064"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179064"><span class="hs-identifier hs-var">h'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179061"><span class="hs-identifier hs-var">h</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179063"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179064"><span class="hs-identifier hs-var">h'</span></a></span><span>
+</span><span id="line-179"></span><span>    </span><span id="local-6989586621679179065"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179065"><span class="hs-identifier hs-var">t'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179062"><span class="hs-identifier hs-var">t</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179063"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179065"><span class="hs-identifier hs-var">t'</span></a></span><span>
+</span><span id="line-180"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179063"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-181"></span><span>
+</span><span id="line-182"></span><span>  </span><span class="annot"><a href="Syntax.html#Case"><span class="hs-identifier hs-type">Case</span></a></span><span> </span><span id="local-6989586621679179066"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179066"><span class="hs-identifier hs-var">scr</span></a></span></span><span> </span><span id="local-6989586621679179067"><span class="annot"><span class="annottext">[(Pattern, Expr)]
+</span><a href="#local-6989586621679179067"><span class="hs-identifier hs-var">alts</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-183"></span><span>    </span><span id="local-6989586621679179068"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179068"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-184"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179068"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Case&quot;</span></span><span>
+</span><span id="line-185"></span><span>    </span><span id="local-6989586621679179069"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179069"><span class="hs-identifier hs-var">s'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179066"><span class="hs-identifier hs-var">scr</span></a></span><span>
+</span><span id="line-186"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179068"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179069"><span class="hs-identifier hs-var">s'</span></a></span><span>
+</span><span id="line-187"></span><span>    </span><span class="hs-comment">-- alternatives</span><span>
+</span><span id="line-188"></span><span>    </span><span class="annot"><span class="annottext">((Pattern, Expr) -&gt; M ()) -&gt; [(Pattern, Expr)] -&gt; M ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span class="hs-special">(</span><span id="local-6989586621679179070"><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179070"><span class="hs-identifier hs-var">p</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679179071"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179071"><span class="hs-identifier hs-var">bd</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-189"></span><span>              </span><span id="local-6989586621679179072"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179072"><span class="hs-identifier hs-var">altN</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-190"></span><span>              </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179072"><span class="hs-identifier hs-var">altN</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Alt&quot;</span></span><span>
+</span><span id="line-191"></span><span>              </span><span id="local-6989586621679179073"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179073"><span class="hs-identifier hs-var">pn</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Pattern -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitPat"><span class="hs-identifier hs-var">visitPat</span></a></span><span> </span><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179070"><span class="hs-identifier hs-var">p</span></a></span><span>
+</span><span id="line-192"></span><span>              </span><span id="local-6989586621679179075"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179075"><span class="hs-identifier hs-var">bn</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179071"><span class="hs-identifier hs-var">bd</span></a></span><span>
+</span><span id="line-193"></span><span>              </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179072"><span class="hs-identifier hs-var">altN</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179073"><span class="hs-identifier hs-var">pn</span></a></span><span>
+</span><span id="line-194"></span><span>              </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179072"><span class="hs-identifier hs-var">altN</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179075"><span class="hs-identifier hs-var">bn</span></a></span><span>
+</span><span id="line-195"></span><span>              </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179068"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179072"><span class="hs-identifier hs-var">altN</span></a></span><span>
+</span><span id="line-196"></span><span>          </span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[(Pattern, Expr)]
+</span><a href="#local-6989586621679179067"><span class="hs-identifier hs-var">alts</span></a></span><span>
+</span><span id="line-197"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179068"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-198"></span><span>
+</span><span id="line-199"></span><span>  </span><span class="annot"><a href="Syntax.html#Let"><span class="hs-identifier hs-type">Let</span></a></span><span> </span><span id="local-6989586621679179076"><span class="annot"><span class="annottext">[Decl]
+</span><a href="#local-6989586621679179076"><span class="hs-identifier hs-var">ds</span></a></span></span><span> </span><span id="local-6989586621679179077"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179077"><span class="hs-identifier hs-var">e</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-200"></span><span>    </span><span id="local-6989586621679179078"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179078"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-201"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179078"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Let&quot;</span></span><span>
+</span><span id="line-202"></span><span>    </span><span id="local-6989586621679179079"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179079"><span class="hs-identifier hs-var">dsN</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-203"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179079"><span class="hs-identifier hs-var">dsN</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Decls&quot;</span></span><span>
+</span><span id="line-204"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179078"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179079"><span class="hs-identifier hs-var">dsN</span></a></span><span>
+</span><span id="line-205"></span><span>    </span><span class="annot"><span class="annottext">(Decl -&gt; M ()) -&gt; [Decl] -&gt; M ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679179080"><span class="annot"><span class="annottext">Decl
+</span><a href="#local-6989586621679179080"><span class="hs-identifier hs-var">d</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Decl -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitDecl"><span class="hs-identifier hs-var">visitDecl</span></a></span><span> </span><span class="annot"><span class="annottext">Decl
+</span><a href="#local-6989586621679179080"><span class="hs-identifier hs-var">d</span></a></span><span> </span><span class="annot"><span class="annottext">M Int -&gt; (Int -&gt; M ()) -&gt; M ()
+forall a b.
+StateT G Identity a
+-&gt; (a -&gt; StateT G Identity b) -&gt; StateT G Identity b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; (a -&gt; m b) -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;=</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179079"><span class="hs-identifier hs-var">dsN</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[Decl]
+</span><a href="#local-6989586621679179076"><span class="hs-identifier hs-var">ds</span></a></span><span>
+</span><span id="line-206"></span><span>    </span><span id="local-6989586621679179081"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179081"><span class="hs-identifier hs-var">e'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179077"><span class="hs-identifier hs-var">e</span></a></span><span>
+</span><span id="line-207"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179078"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179081"><span class="hs-identifier hs-var">e'</span></a></span><span>
+</span><span id="line-208"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179078"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-209"></span><span>
+</span><span id="line-210"></span><span>  </span><span class="hs-comment">-- n-ary application flattened to (function, args)</span><span>
+</span><span id="line-211"></span><span>  </span><span id="local-6989586621679179082"><span class="annot"><span class="annottext">e0 :: Expr
+</span><a href="#local-6989586621679179082"><span class="hs-identifier hs-var">e0</span></a></span></span><span class="hs-glyph">@</span><span class="hs-special">(</span><span class="annot"><a href="Syntax.html#App"><span class="hs-identifier hs-type">App</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><span class="hs-identifier">_</span></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><span class="hs-identifier">_</span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-212"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679179083"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179083"><span class="hs-identifier hs-var">f</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679179084"><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179084"><span class="hs-identifier hs-var">xs</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; (Expr, [Expr])
+</span><a href="Analysis.ASTGen.html#flattenApp"><span class="hs-identifier hs-var">flattenApp</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179082"><span class="hs-identifier hs-var">e0</span></a></span><span>
+</span><span id="line-213"></span><span>    </span><span id="local-6989586621679179086"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179086"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-214"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179086"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;App&quot;</span></span><span>
+</span><span id="line-215"></span><span>    </span><span id="local-6989586621679179087"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179087"><span class="hs-identifier hs-var">fn</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179083"><span class="hs-identifier hs-var">f</span></a></span><span>
+</span><span id="line-216"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179086"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179087"><span class="hs-identifier hs-var">fn</span></a></span><span>
+</span><span id="line-217"></span><span>    </span><span class="annot"><span class="annottext">(Expr -&gt; M ()) -&gt; [Expr] -&gt; M ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679179088"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179088"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179088"><span class="hs-identifier hs-var">a</span></a></span><span> </span><span class="annot"><span class="annottext">M Int -&gt; (Int -&gt; M ()) -&gt; M ()
+forall a b.
+StateT G Identity a
+-&gt; (a -&gt; StateT G Identity b) -&gt; StateT G Identity b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; (a -&gt; m b) -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;=</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179086"><span class="hs-identifier hs-var">me</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179084"><span class="hs-identifier hs-var">xs</span></a></span><span>
+</span><span id="line-218"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179086"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-219"></span><span>
+</span><span id="line-220"></span><span>  </span><span class="annot"><a href="Syntax.html#BinOp"><span class="hs-identifier hs-type">BinOp</span></a></span><span> </span><span id="local-6989586621679179089"><span class="annot"><span class="annottext">BinOperator
+</span><a href="#local-6989586621679179089"><span class="hs-identifier hs-var">op</span></a></span></span><span> </span><span id="local-6989586621679179090"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179090"><span class="hs-identifier hs-var">l</span></a></span></span><span> </span><span id="local-6989586621679179091"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179091"><span class="hs-identifier hs-var">r</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-221"></span><span>    </span><span id="local-6989586621679179092"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179092"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-222"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179092"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;BinOp &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">BinOperator -&gt; String
+</span><a href="Analysis.ASTGen.html#showBin"><span class="hs-identifier hs-var">showBin</span></a></span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="#local-6989586621679179089"><span class="hs-identifier hs-var">op</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-223"></span><span>    </span><span id="local-6989586621679179094"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179094"><span class="hs-identifier hs-var">l'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179090"><span class="hs-identifier hs-var">l</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179092"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179094"><span class="hs-identifier hs-var">l'</span></a></span><span>
+</span><span id="line-224"></span><span>    </span><span id="local-6989586621679179095"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179095"><span class="hs-identifier hs-var">r'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179091"><span class="hs-identifier hs-var">r</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179092"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179095"><span class="hs-identifier hs-var">r'</span></a></span><span>
+</span><span id="line-225"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179092"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-226"></span><span>
+</span><span id="line-227"></span><span>  </span><span class="annot"><a href="Syntax.html#UnOp"><span class="hs-identifier hs-type">UnOp</span></a></span><span> </span><span id="local-6989586621679179096"><span class="annot"><span class="annottext">UnOperator
+</span><a href="#local-6989586621679179096"><span class="hs-identifier hs-var">op</span></a></span></span><span> </span><span id="local-6989586621679179097"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179097"><span class="hs-identifier hs-var">x</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-228"></span><span>    </span><span id="local-6989586621679179098"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179098"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-229"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179098"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;UnOp &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">UnOperator -&gt; String
+</span><a href="Analysis.ASTGen.html#showUn"><span class="hs-identifier hs-var">showUn</span></a></span><span> </span><span class="annot"><span class="annottext">UnOperator
+</span><a href="#local-6989586621679179096"><span class="hs-identifier hs-var">op</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-230"></span><span>    </span><span id="local-6989586621679179100"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179100"><span class="hs-identifier hs-var">x'</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179097"><span class="hs-identifier hs-var">x</span></a></span><span>
+</span><span id="line-231"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179098"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179100"><span class="hs-identifier hs-var">x'</span></a></span><span>
+</span><span id="line-232"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179098"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-233"></span><span>
+</span><span id="line-234"></span><span>  </span><span class="annot"><a href="Syntax.html#List"><span class="hs-identifier hs-type">List</span></a></span><span> </span><span id="local-6989586621679179101"><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179101"><span class="hs-identifier hs-var">xs</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-235"></span><span>    </span><span id="local-6989586621679179102"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179102"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-236"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179102"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;List&quot;</span></span><span>
+</span><span id="line-237"></span><span>    </span><span class="annot"><span class="annottext">(Expr -&gt; M ()) -&gt; [Expr] -&gt; M ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679179103"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179103"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179103"><span class="hs-identifier hs-var">a</span></a></span><span> </span><span class="annot"><span class="annottext">M Int -&gt; (Int -&gt; M ()) -&gt; M ()
+forall a b.
+StateT G Identity a
+-&gt; (a -&gt; StateT G Identity b) -&gt; StateT G Identity b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; (a -&gt; m b) -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;=</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179102"><span class="hs-identifier hs-var">me</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179101"><span class="hs-identifier hs-var">xs</span></a></span><span>
+</span><span id="line-238"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179102"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-239"></span><span>
+</span><span id="line-240"></span><span>  </span><span class="annot"><a href="Syntax.html#Tuple"><span class="hs-identifier hs-type">Tuple</span></a></span><span> </span><span id="local-6989586621679179104"><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179104"><span class="hs-identifier hs-var">xs</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-241"></span><span>    </span><span id="local-6989586621679179105"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179105"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-242"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179105"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Tuple/&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Expr] -&gt; Int
+forall a. [a] -&gt; Int
+forall (t :: * -&gt; *) a. Foldable t =&gt; t a -&gt; Int
+</span><span class="hs-identifier hs-var">length</span></span><span> </span><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179104"><span class="hs-identifier hs-var">xs</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-243"></span><span>    </span><span class="annot"><span class="annottext">(Expr -&gt; M ()) -&gt; [Expr] -&gt; M ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679179107"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179107"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitExpr"><span class="hs-identifier hs-var">visitExpr</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179107"><span class="hs-identifier hs-var">a</span></a></span><span> </span><span class="annot"><span class="annottext">M Int -&gt; (Int -&gt; M ()) -&gt; M ()
+forall a b.
+StateT G Identity a
+-&gt; (a -&gt; StateT G Identity b) -&gt; StateT G Identity b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; (a -&gt; m b) -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;=</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179105"><span class="hs-identifier hs-var">me</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179104"><span class="hs-identifier hs-var">xs</span></a></span><span>
+</span><span id="line-244"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179105"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-245"></span><span>
+</span><span id="line-246"></span><span>  </span><span class="hs-comment">-- &lt;&lt;&lt; SUPER-INSTRUCTION SUPPORT &gt;&gt;&gt;</span><span>
+</span><span id="line-247"></span><span>  </span><span class="annot"><a href="Syntax.html#Super"><span class="hs-identifier hs-type">Super</span></a></span><span> </span><span id="local-6989586621679179108"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179108"><span class="hs-identifier hs-var">nm</span></a></span></span><span> </span><span id="local-6989586621679179109"><span class="annot"><span class="annottext">SuperKind
+</span><a href="#local-6989586621679179109"><span class="hs-identifier hs-var">kind</span></a></span></span><span> </span><span id="local-6989586621679179110"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179110"><span class="hs-identifier hs-var">inp</span></a></span></span><span> </span><span id="local-6989586621679179111"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179111"><span class="hs-identifier hs-var">out</span></a></span></span><span> </span><span id="local-6989586621679179112"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179112"><span class="hs-identifier hs-var">_body</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-248"></span><span>    </span><span id="local-6989586621679179113"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179113"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-249"></span><span>    </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679179116"><span class="annot"><span class="annottext">k :: String
+</span><a href="#local-6989586621679179116"><span class="hs-identifier hs-var hs-var">k</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">case</span><span> </span><span class="annot"><span class="annottext">SuperKind
+</span><a href="#local-6989586621679179109"><span class="hs-identifier hs-var">kind</span></a></span><span> </span><span class="hs-keyword">of</span><span> </span><span class="hs-special">{</span><span> </span><span class="annot"><span class="annottext">SuperKind
+</span><a href="Syntax.html#SuperSingle"><span class="hs-identifier hs-var">SuperSingle</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;single&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">SuperKind
+</span><a href="Syntax.html#SuperParallel"><span class="hs-identifier hs-var">SuperParallel</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;parallel&quot;</span></span><span> </span><span class="hs-special">}</span><span>
+</span><span id="line-250"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179113"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;Super[&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179116"><span class="hs-identifier hs-var">k</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;]\\nname=&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179108"><span class="hs-identifier hs-var">nm</span></a></span><span>
+</span><span id="line-251"></span><span>                 </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;\\ninput=&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179110"><span class="hs-identifier hs-var">inp</span></a></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;\\noutput=&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179111"><span class="hs-identifier hs-var">out</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-252"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179113"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-253"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-254"></span><span>    </span><span class="hs-comment">-- | Emit a leaf node with a given label and return its 'NodeId'.</span><span>
+</span><span id="line-255"></span><span>    </span><span class="annot"><a href="#local-6989586621679179047"><span class="hs-identifier hs-type">leaf</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-type">M</span></a></span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span>
+</span><span id="line-256"></span><span>    </span><span id="local-6989586621679179047"><span class="annot"><span class="annottext">leaf :: String -&gt; M Int
+</span><a href="#local-6989586621679179047"><span class="hs-identifier hs-var hs-var">leaf</span></a></span></span><span> </span><span id="local-6989586621679179119"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179119"><span class="hs-identifier hs-var">s</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span> </span><span id="local-6989586621679179120"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179120"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179120"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179119"><span class="hs-identifier hs-var">s</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179120"><span class="hs-identifier hs-var">n</span></a></span><span>
+</span><span id="line-257"></span><span>
+</span><span id="line-258"></span><span class="annot"><span class="hs-comment">-- | Helper: flatten an application tree into @(function, [args])@, left to right.</span></span><span>
+</span><span id="line-259"></span><span class="annot"><a href="Analysis.ASTGen.html#flattenApp"><span class="hs-identifier hs-type">flattenApp</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">[</span><span class="annot"><a href="Syntax.html#Expr"><span class="hs-identifier hs-type">Expr</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-260"></span><span id="flattenApp"><span class="annot"><span class="annottext">flattenApp :: Expr -&gt; (Expr, [Expr])
+</span><a href="Analysis.ASTGen.html#flattenApp"><span class="hs-identifier hs-var hs-var">flattenApp</span></a></span></span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Syntax.html#App"><span class="hs-identifier hs-type">App</span></a></span><span> </span><span id="local-6989586621679179121"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179121"><span class="hs-identifier hs-var">f</span></a></span></span><span> </span><span id="local-6989586621679179122"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179122"><span class="hs-identifier hs-var">x</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">let</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679179123"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179123"><span class="hs-identifier hs-var">fn</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679179124"><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179124"><span class="hs-identifier hs-var">xs</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">Expr -&gt; (Expr, [Expr])
+</span><a href="Analysis.ASTGen.html#flattenApp"><span class="hs-identifier hs-var">flattenApp</span></a></span><span> </span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179121"><span class="hs-identifier hs-var">f</span></a></span><span> </span><span class="hs-keyword">in</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179123"><span class="hs-identifier hs-var">fn</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[Expr]
+</span><a href="#local-6989586621679179124"><span class="hs-identifier hs-var">xs</span></a></span><span> </span><span class="annot"><span class="annottext">[Expr] -&gt; [Expr] -&gt; [Expr]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179122"><span class="hs-identifier hs-var">x</span></a></span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-261"></span><span class="annot"><a href="Analysis.ASTGen.html#flattenApp"><span class="hs-identifier hs-var">flattenApp</span></a></span><span> </span><span id="local-6989586621679179125"><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179125"><span class="hs-identifier hs-var">e</span></a></span></span><span>         </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Expr
+</span><a href="#local-6989586621679179125"><span class="hs-identifier hs-var">e</span></a></span><span class="hs-special">,</span><span> </span><span class="hs-special">[</span><span class="hs-special">]</span><span class="hs-special">)</span><span>
+</span><span id="line-262"></span><span>
+</span><span id="line-263"></span><span class="annot"><span class="hs-comment">-- | Visit a pattern and emit the corresponding subgraph.</span></span><span>
+</span><span id="line-264"></span><span class="annot"><a href="Analysis.ASTGen.html#visitPat"><span class="hs-identifier hs-type">visitPat</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Pattern"><span class="hs-identifier hs-type">Pattern</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#M"><span class="hs-identifier hs-type">M</span></a></span><span> </span><span class="annot"><a href="Analysis.ASTGen.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span>
+</span><span id="line-265"></span><span id="visitPat"><span class="annot"><span class="annottext">visitPat :: Pattern -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitPat"><span class="hs-identifier hs-var hs-var">visitPat</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-266"></span><span>  </span><span class="annot"><span class="annottext">Pattern
+</span><a href="Syntax.html#PWildcard"><span class="hs-identifier hs-var">PWildcard</span></a></span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String -&gt; M Int
+</span><a href="#local-6989586621679179126"><span class="hs-identifier hs-var">leaf</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;PWildcard&quot;</span></span><span>
+</span><span id="line-267"></span><span>  </span><span class="annot"><a href="Syntax.html#PVar"><span class="hs-identifier hs-type">PVar</span></a></span><span> </span><span id="local-6989586621679179127"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179127"><span class="hs-identifier hs-var">x</span></a></span></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String -&gt; M Int
+</span><a href="#local-6989586621679179126"><span class="hs-identifier hs-var">leaf</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;PVar &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179127"><span class="hs-identifier hs-var">x</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-268"></span><span>  </span><span class="annot"><a href="Syntax.html#PLit"><span class="hs-identifier hs-type">PLit</span></a></span><span> </span><span id="local-6989586621679179128"><span class="annot"><span class="annottext">Literal
+</span><a href="#local-6989586621679179128"><span class="hs-identifier hs-var">l</span></a></span></span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String -&gt; M Int
+</span><a href="#local-6989586621679179126"><span class="hs-identifier hs-var">leaf</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;PLit &quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Literal -&gt; String
+</span><a href="Analysis.ASTGen.html#showLit"><span class="hs-identifier hs-var">showLit</span></a></span><span> </span><span class="annot"><span class="annottext">Literal
+</span><a href="#local-6989586621679179128"><span class="hs-identifier hs-var">l</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-269"></span><span>  </span><span class="annot"><a href="Syntax.html#PList"><span class="hs-identifier hs-type">PList</span></a></span><span> </span><span id="local-6989586621679179129"><span class="annot"><span class="annottext">[Pattern]
+</span><a href="#local-6989586621679179129"><span class="hs-identifier hs-var">ps</span></a></span></span><span>    </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-270"></span><span>    </span><span id="local-6989586621679179130"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179130"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-271"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179130"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;PList&quot;</span></span><span>
+</span><span id="line-272"></span><span>    </span><span class="annot"><span class="annottext">(Pattern -&gt; M ()) -&gt; [Pattern] -&gt; M ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679179131"><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179131"><span class="hs-identifier hs-var">p</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Pattern -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitPat"><span class="hs-identifier hs-var">visitPat</span></a></span><span> </span><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179131"><span class="hs-identifier hs-var">p</span></a></span><span> </span><span class="annot"><span class="annottext">M Int -&gt; (Int -&gt; M ()) -&gt; M ()
+forall a b.
+StateT G Identity a
+-&gt; (a -&gt; StateT G Identity b) -&gt; StateT G Identity b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; (a -&gt; m b) -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;=</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179130"><span class="hs-identifier hs-var">me</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[Pattern]
+</span><a href="#local-6989586621679179129"><span class="hs-identifier hs-var">ps</span></a></span><span>
+</span><span id="line-273"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179130"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-274"></span><span>  </span><span class="annot"><a href="Syntax.html#PTuple"><span class="hs-identifier hs-type">PTuple</span></a></span><span> </span><span id="local-6989586621679179132"><span class="annot"><span class="annottext">[Pattern]
+</span><a href="#local-6989586621679179132"><span class="hs-identifier hs-var">ps</span></a></span></span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-275"></span><span>    </span><span id="local-6989586621679179133"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179133"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-276"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179133"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;PTuple/&quot;</span></span><span> </span><span class="annot"><span class="annottext">String -&gt; String -&gt; String
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Pattern] -&gt; Int
+forall a. [a] -&gt; Int
+forall (t :: * -&gt; *) a. Foldable t =&gt; t a -&gt; Int
+</span><span class="hs-identifier hs-var">length</span></span><span> </span><span class="annot"><span class="annottext">[Pattern]
+</span><a href="#local-6989586621679179132"><span class="hs-identifier hs-var">ps</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-277"></span><span>    </span><span class="annot"><span class="annottext">(Pattern -&gt; M ()) -&gt; [Pattern] -&gt; M ()
+forall (t :: * -&gt; *) (m :: * -&gt; *) a b.
+(Foldable t, Monad m) =&gt;
+(a -&gt; m b) -&gt; t a -&gt; m ()
+</span><span class="hs-identifier hs-var">mapM_</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span id="local-6989586621679179134"><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179134"><span class="hs-identifier hs-var">p</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Pattern -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitPat"><span class="hs-identifier hs-var">visitPat</span></a></span><span> </span><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179134"><span class="hs-identifier hs-var">p</span></a></span><span> </span><span class="annot"><span class="annottext">M Int -&gt; (Int -&gt; M ()) -&gt; M ()
+forall a b.
+StateT G Identity a
+-&gt; (a -&gt; StateT G Identity b) -&gt; StateT G Identity b
+forall (m :: * -&gt; *) a b. Monad m =&gt; m a -&gt; (a -&gt; m b) -&gt; m b
+</span><span class="hs-operator hs-var">&gt;&gt;=</span></span><span> </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179133"><span class="hs-identifier hs-var">me</span></a></span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[Pattern]
+</span><a href="#local-6989586621679179132"><span class="hs-identifier hs-var">ps</span></a></span><span>
+</span><span id="line-278"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179133"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-279"></span><span>  </span><span class="hs-comment">-- cons pattern (x:xs)</span><span>
+</span><span id="line-280"></span><span>  </span><span class="annot"><a href="Syntax.html#PCons"><span class="hs-identifier hs-type">PCons</span></a></span><span> </span><span id="local-6989586621679179135"><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179135"><span class="hs-identifier hs-var">p</span></a></span></span><span> </span><span id="local-6989586621679179136"><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179136"><span class="hs-identifier hs-var">ps</span></a></span></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-keyword">do</span><span>
+</span><span id="line-281"></span><span>    </span><span id="local-6989586621679179137"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179137"><span class="hs-identifier hs-var">me</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span>
+</span><span id="line-282"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179137"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;PCons (:)&quot;</span></span><span>
+</span><span id="line-283"></span><span>    </span><span id="local-6989586621679179138"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179138"><span class="hs-identifier hs-var">a</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Pattern -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitPat"><span class="hs-identifier hs-var">visitPat</span></a></span><span> </span><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179135"><span class="hs-identifier hs-var">p</span></a></span><span>
+</span><span id="line-284"></span><span>    </span><span id="local-6989586621679179139"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179139"><span class="hs-identifier hs-var">b</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">Pattern -&gt; M Int
+</span><a href="Analysis.ASTGen.html#visitPat"><span class="hs-identifier hs-var">visitPat</span></a></span><span> </span><span class="annot"><span class="annottext">Pattern
+</span><a href="#local-6989586621679179136"><span class="hs-identifier hs-var">ps</span></a></span><span>
+</span><span id="line-285"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179137"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179138"><span class="hs-identifier hs-var">a</span></a></span><span>
+</span><span id="line-286"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; Int -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitEdge"><span class="hs-identifier hs-var">emitEdge</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179137"><span class="hs-identifier hs-var">me</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179139"><span class="hs-identifier hs-var">b</span></a></span><span>
+</span><span id="line-287"></span><span>    </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179137"><span class="hs-identifier hs-var">me</span></a></span><span>
+</span><span id="line-288"></span><span>  </span><span class="hs-keyword">where</span><span>
+</span><span id="line-289"></span><span>    </span><span class="hs-comment">-- | Emit a leaf node with a given label and return its 'NodeId'.</span><span>
+</span><span id="line-290"></span><span>    </span><span id="local-6989586621679179126"><span class="annot"><span class="annottext">leaf :: String -&gt; M Int
+</span><a href="#local-6989586621679179126"><span class="hs-identifier hs-var hs-var">leaf</span></a></span></span><span> </span><span id="local-6989586621679179145"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179145"><span class="hs-identifier hs-var">s</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-keyword">do</span><span> </span><span id="local-6989586621679179146"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179146"><span class="hs-identifier hs-var">n</span></a></span></span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">M Int
+</span><a href="Analysis.ASTGen.html#fresh"><span class="hs-identifier hs-var">fresh</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; String -&gt; M ()
+</span><a href="Analysis.ASTGen.html#emitNode"><span class="hs-identifier hs-var">emitNode</span></a></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179146"><span class="hs-identifier hs-var">n</span></a></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179145"><span class="hs-identifier hs-var">s</span></a></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; M Int
+forall a. a -&gt; StateT G Identity a
+forall (f :: * -&gt; *) a. Applicative f =&gt; a -&gt; f a
+</span><span class="hs-identifier hs-var">pure</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179146"><span class="hs-identifier hs-var">n</span></a></span><span>
+</span><span id="line-291"></span><span>
+</span><span id="line-292"></span><span class="hs-comment">-- -----------------------------------------------------------------------------</span><span>
+</span><span id="line-293"></span><span class="hs-comment">-- Pretty-printing of literals and operators (for labels)</span><span>
+</span><span id="line-294"></span><span class="hs-comment">-- -----------------------------------------------------------------------------</span><span>
+</span><span id="line-295"></span><span>
+</span><span id="line-296"></span><span class="annot"><span class="hs-comment">-- | Show a 'Literal' in a compact, label-friendly way.</span></span><span>
+</span><span id="line-297"></span><span class="annot"><a href="Analysis.ASTGen.html#showLit"><span class="hs-identifier hs-type">showLit</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#Literal"><span class="hs-identifier hs-type">Literal</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>
+</span><span id="line-298"></span><span id="showLit"><span class="annot"><span class="annottext">showLit :: Literal -&gt; String
+</span><a href="Analysis.ASTGen.html#showLit"><span class="hs-identifier hs-var hs-var">showLit</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-299"></span><span>  </span><span class="annot"><a href="Syntax.html#LInt"><span class="hs-identifier hs-type">LInt</span></a></span><span> </span><span id="local-6989586621679179148"><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179148"><span class="hs-identifier hs-var">n</span></a></span></span><span>    </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Int -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Int
+</span><a href="#local-6989586621679179148"><span class="hs-identifier hs-var">n</span></a></span><span>
+</span><span id="line-300"></span><span>  </span><span class="annot"><a href="Syntax.html#LFloat"><span class="hs-identifier hs-type">LFloat</span></a></span><span> </span><span id="local-6989586621679179150"><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679179150"><span class="hs-identifier hs-var">f</span></a></span></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Double -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679179150"><span class="hs-identifier hs-var">f</span></a></span><span>
+</span><span id="line-301"></span><span>  </span><span class="annot"><a href="Syntax.html#LBool"><span class="hs-identifier hs-type">LBool</span></a></span><span> </span><span id="local-6989586621679179152"><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679179152"><span class="hs-identifier hs-var">b</span></a></span></span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Bool -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Bool
+</span><a href="#local-6989586621679179152"><span class="hs-identifier hs-var">b</span></a></span><span>
+</span><span id="line-302"></span><span>  </span><span class="annot"><a href="Syntax.html#LChar"><span class="hs-identifier hs-type">LChar</span></a></span><span> </span><span id="local-6989586621679179154"><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679179154"><span class="hs-identifier hs-var">c</span></a></span></span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Char -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Char
+</span><a href="#local-6989586621679179154"><span class="hs-identifier hs-var">c</span></a></span><span>
+</span><span id="line-303"></span><span>  </span><span class="annot"><a href="Syntax.html#LString"><span class="hs-identifier hs-type">LString</span></a></span><span> </span><span id="local-6989586621679179156"><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179156"><span class="hs-identifier hs-var">s</span></a></span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String -&gt; String
+forall a. Show a =&gt; a -&gt; String
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">String
+</span><a href="#local-6989586621679179156"><span class="hs-identifier hs-var">s</span></a></span><span>
+</span><span id="line-304"></span><span>
+</span><span id="line-305"></span><span class="annot"><span class="hs-comment">-- | Show a 'BinOperator' as its surface symbol.</span></span><span>
+</span><span id="line-306"></span><span class="annot"><a href="Analysis.ASTGen.html#showBin"><span class="hs-identifier hs-type">showBin</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#BinOperator"><span class="hs-identifier hs-type">BinOperator</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>
+</span><span id="line-307"></span><span id="showBin"><span class="annot"><span class="annottext">showBin :: BinOperator -&gt; String
+</span><a href="Analysis.ASTGen.html#showBin"><span class="hs-identifier hs-var hs-var">showBin</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-308"></span><span>  </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Add"><span class="hs-identifier hs-var">Add</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;+&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Sub"><span class="hs-identifier hs-var">Sub</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;-&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Mul"><span class="hs-identifier hs-var">Mul</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;*&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Div"><span class="hs-identifier hs-var">Div</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;/&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Mod"><span class="hs-identifier hs-var">Mod</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;%&quot;</span></span><span>
+</span><span id="line-309"></span><span>  </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Eq"><span class="hs-identifier hs-var">Eq</span></a></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;==&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Neq"><span class="hs-identifier hs-var">Neq</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;/=&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Lt"><span class="hs-identifier hs-var">Lt</span></a></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;&lt;&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Le"><span class="hs-identifier hs-var">Le</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;&lt;=&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Gt"><span class="hs-identifier hs-var">Gt</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;&gt;&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Ge"><span class="hs-identifier hs-var">Ge</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;&gt;=&quot;</span></span><span>
+</span><span id="line-310"></span><span>  </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#And"><span class="hs-identifier hs-var">And</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;&amp;&amp;&quot;</span></span><span class="hs-special">;</span><span> </span><span class="annot"><span class="annottext">BinOperator
+</span><a href="Syntax.html#Or"><span class="hs-identifier hs-var">Or</span></a></span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;||&quot;</span></span><span>
+</span><span id="line-311"></span><span>
+</span><span id="line-312"></span><span class="annot"><span class="hs-comment">-- | Show a 'UnOperator' as its surface symbol or name.</span></span><span>
+</span><span id="line-313"></span><span class="annot"><a href="Analysis.ASTGen.html#showUn"><span class="hs-identifier hs-type">showUn</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Syntax.html#UnOperator"><span class="hs-identifier hs-type">UnOperator</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">String</span></span><span>
+</span><span id="line-314"></span><span id="showUn"><span class="annot"><span class="annottext">showUn :: UnOperator -&gt; String
+</span><a href="Analysis.ASTGen.html#showUn"><span class="hs-identifier hs-var hs-var">showUn</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-315"></span><span>  </span><span class="annot"><span class="annottext">UnOperator
+</span><a href="Syntax.html#Neg"><span class="hs-identifier hs-var">Neg</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;negate&quot;</span></span><span>
+</span><span id="line-316"></span><span>  </span><span class="annot"><span class="annottext">UnOperator
+</span><a href="Syntax.html#Not"><span class="hs-identifier hs-var">Not</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">String
+</span><span class="hs-string">&quot;not&quot;</span></span><span>
+</span><span id="line-317"></span></pre></body></html>

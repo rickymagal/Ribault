@@ -1,0 +1,446 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" type="text/css" href="style.css" /><script type="text/javascript" src="highlight.js"></script></head><body><pre><span class="hs-pragma">{-# LANGUAGE OverloadedStrings #-}</span><span>
+</span><span id="line-2"></span><span class="hs-pragma">{-# LANGUAGE LambdaCase #-}</span><span>
+</span><span id="line-3"></span><span class="hs-pragma">{-# LANGUAGE RecordWildCards #-}</span><span>
+</span><span id="line-4"></span><span>
+</span><span id="line-5"></span><span class="hs-comment">-- |</span><span>
+</span><span id="line-6"></span><span class="hs-comment">-- Module      : Synthesis.GraphViz</span><span>
+</span><span id="line-7"></span><span class="hs-comment">-- Description : Render a 'DGraph' of 'DNode's to GraphViz DOT.</span><span>
+</span><span id="line-8"></span><span class="hs-comment">-- Maintainer  : ricardofilhoschool@gmail.com</span><span>
+</span><span id="line-9"></span><span class="hs-comment">-- Stability   : experimental</span><span>
+</span><span id="line-10"></span><span class="hs-comment">-- Portability : portable</span><span>
+</span><span id="line-11"></span><span class="hs-comment">--</span><span>
+</span><span id="line-12"></span><span class="hs-comment">-- Pretty-prints a dataflow graph to DOT (GraphViz). Nodes are rendered as</span><span>
+</span><span id="line-13"></span><span class="hs-comment">-- rounded boxes with short mnemonics, and edges are labeled with</span><span>
+</span><span id="line-14"></span><span class="hs-comment">-- @(sourcePort,targetPort)@. Edges are sorted primarily by destination id,</span><span>
+</span><span id="line-15"></span><span class="hs-comment">-- then by destination port number, which tends to produce stable layouts.</span><span>
+</span><span id="line-16"></span><span>
+</span><span id="line-17"></span><span class="hs-keyword">module</span><span> </span><span class="hs-identifier">Synthesis.GraphViz</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Synthesis.GraphViz.html#toDot"><span class="hs-identifier">toDot</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-keyword">where</span><span>
+</span><span id="line-18"></span><span>
+</span><span id="line-19"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Map</span></span><span>       </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">M</span></span><span>
+</span><span id="line-20"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Char</span></span><span>      </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">isDigit</span></span><span class="hs-special">)</span><span>
+</span><span id="line-21"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.List</span></span><span>      </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">sortOn</span></span><span class="hs-special">)</span><span>
+</span><span id="line-22"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span>      </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">T</span></span><span>
+</span><span id="line-23"></span><span class="hs-keyword">import</span><span> </span><span class="hs-keyword">qualified</span><span> </span><span class="annot"><span class="hs-identifier">Data.Text.Lazy</span></span><span> </span><span class="hs-keyword">as</span><span> </span><span class="annot"><span class="hs-identifier">TL</span></span><span>
+</span><span id="line-24"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><span class="hs-identifier">Data.Text</span></span><span>      </span><span class="hs-special">(</span><span class="annot"><span class="hs-identifier">Text</span></span><span class="hs-special">)</span><span>
+</span><span id="line-25"></span><span>
+</span><span id="line-26"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Types.html"><span class="hs-identifier">Types</span></a></span><span>          </span><span class="hs-special">(</span><span class="annot"><a href="Types.html#DGraph"><span class="hs-identifier">DGraph</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Types.html#NodeId"><span class="hs-identifier">NodeId</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-27"></span><span class="hs-keyword">import</span><span>           </span><span class="annot"><a href="Node.html"><span class="hs-identifier">Node</span></a></span><span>           </span><span class="hs-special">(</span><span class="annot"><a href="Node.html#DNode"><span class="hs-identifier">DNode</span></a></span><span class="hs-special">(</span><span class="hs-glyph">..</span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-28"></span><span>
+</span><span id="line-29"></span><span class="annot"><span class="hs-comment">-- | Convert a graph of 'DNode's to a DOT 'TL.Text'.</span></span><span>
+</span><span id="line-30"></span><span class="annot"><a href="Synthesis.GraphViz.html#toDot"><span class="hs-identifier hs-type">toDot</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Types.html#DGraph"><span class="hs-identifier hs-type">DGraph</span></a></span><span> </span><span class="annot"><a href="Node.html#DNode"><span class="hs-identifier hs-type">DNode</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">TL.Text</span></span><span>
+</span><span id="line-31"></span><span id="toDot"><span class="annot"><span class="annottext">toDot :: DGraph DNode -&gt; Text
+</span><a href="Synthesis.GraphViz.html#toDot"><span class="hs-identifier hs-var hs-var">toDot</span></a></span></span><span> </span><span id="local-6989586621679180057"><span class="annot"><span class="annottext">DGraph DNode
+</span><a href="#local-6989586621679180057"><span class="hs-identifier hs-var">g</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-32"></span><span>  </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">TL.fromStrict</span></span><span> </span><span class="annot"><span class="annottext">(Text -&gt; Text) -&gt; ([Text] -&gt; Text) -&gt; [Text] -&gt; Text
+forall b c a. (b -&gt; c) -&gt; (a -&gt; b) -&gt; a -&gt; c
+</span><span class="hs-operator hs-var">.</span></span><span> </span><span class="annot"><span class="annottext">[Text] -&gt; Text
+</span><span class="hs-identifier hs-var">T.unlines</span></span><span> </span><span class="annot"><span class="annottext">([Text] -&gt; Text) -&gt; [Text] -&gt; Text
+forall a b. (a -&gt; b) -&gt; a -&gt; b
+</span><span class="hs-operator hs-var">$</span></span><span>
+</span><span id="line-33"></span><span>    </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;digraph G {&quot;</span></span><span>
+</span><span id="line-34"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;  rankdir=LR;&quot;</span></span><span>
+</span><span id="line-35"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;  node [shape=box, style=rounded, fontsize=12];&quot;</span></span><span>
+</span><span id="line-36"></span><span>    </span><span class="hs-special">]</span><span>
+</span><span id="line-37"></span><span>    </span><span class="annot"><span class="annottext">[Text] -&gt; [Text] -&gt; [Text]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">((NodeId, DNode) -&gt; Text) -&gt; [(NodeId, DNode)] -&gt; [Text]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">DGraph DNode -&gt; (NodeId, DNode) -&gt; Text
+</span><a href="Synthesis.GraphViz.html#ppNode"><span class="hs-identifier hs-var">ppNode</span></a></span><span> </span><span class="annot"><span class="annottext">DGraph DNode
+</span><a href="#local-6989586621679180057"><span class="hs-identifier hs-var">g</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">DGraph DNode -&gt; [(NodeId, DNode)]
+forall a. DGraph a -&gt; [(NodeId, a)]
+</span><a href="Synthesis.GraphViz.html#sortedNodes"><span class="hs-identifier hs-var">sortedNodes</span></a></span><span> </span><span class="annot"><span class="annottext">DGraph DNode
+</span><a href="#local-6989586621679180057"><span class="hs-identifier hs-var">g</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-38"></span><span>    </span><span class="annot"><span class="annottext">[Text] -&gt; [Text] -&gt; [Text]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">((NodeId, Text, NodeId, Text) -&gt; Text)
+-&gt; [(NodeId, Text, NodeId, Text)] -&gt; [Text]
+forall a b. (a -&gt; b) -&gt; [a] -&gt; [b]
+</span><span class="hs-identifier hs-var">map</span></span><span> </span><span class="annot"><span class="annottext">(NodeId, Text, NodeId, Text) -&gt; Text
+</span><a href="Synthesis.GraphViz.html#ppEdge"><span class="hs-identifier hs-var">ppEdge</span></a></span><span>        </span><span class="hs-special">(</span><span class="annot"><span class="annottext">DGraph DNode -&gt; [(NodeId, Text, NodeId, Text)]
+forall n. DGraph n -&gt; [(NodeId, Text, NodeId, Text)]
+</span><a href="Synthesis.GraphViz.html#sortedEdges"><span class="hs-identifier hs-var">sortedEdges</span></a></span><span> </span><span class="annot"><span class="annottext">DGraph DNode
+</span><a href="#local-6989586621679180057"><span class="hs-identifier hs-var">g</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-39"></span><span>    </span><span class="annot"><span class="annottext">[Text] -&gt; [Text] -&gt; [Text]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;}&quot;</span></span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-40"></span><span>
+</span><span id="line-41"></span><span class="annot"><span class="hs-comment">-- | Nodes sorted by their 'NodeId' for reproducible output.</span></span><span>
+</span><span id="line-42"></span><span id="local-6989586621679179958"><span class="annot"><a href="Synthesis.GraphViz.html#sortedNodes"><span class="hs-identifier hs-type">sortedNodes</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Types.html#DGraph"><span class="hs-identifier hs-type">DGraph</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679179958"><span class="hs-identifier hs-type">a</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="hs-special">(</span><span class="annot"><a href="Types.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="#local-6989586621679179958"><span class="hs-identifier hs-type">a</span></a></span><span class="hs-special">)</span><span class="hs-special">]</span></span><span>
+</span><span id="line-43"></span><span id="sortedNodes"><span class="annot"><span class="annottext">sortedNodes :: forall a. DGraph a -&gt; [(NodeId, a)]
+</span><a href="Synthesis.GraphViz.html#sortedNodes"><span class="hs-identifier hs-var hs-var">sortedNodes</span></a></span></span><span> </span><span id="local-6989586621679180067"><span class="annot"><span class="annottext">DGraph a
+</span><a href="#local-6989586621679180067"><span class="hs-identifier hs-var">g</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">((NodeId, a) -&gt; NodeId) -&gt; [(NodeId, a)] -&gt; [(NodeId, a)]
+forall b a. Ord b =&gt; (a -&gt; b) -&gt; [a] -&gt; [a]
+</span><span class="hs-identifier hs-var">sortOn</span></span><span> </span><span class="annot"><span class="annottext">(NodeId, a) -&gt; NodeId
+forall a b. (a, b) -&gt; a
+</span><span class="hs-identifier hs-var">fst</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Map NodeId a -&gt; [(NodeId, a)]
+forall k a. Map k a -&gt; [(k, a)]
+</span><span class="hs-identifier hs-var">M.toList</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">DGraph a -&gt; Map NodeId a
+forall n. DGraph n -&gt; Map NodeId n
+</span><a href="Types.html#dgNodes"><span class="hs-identifier hs-var">dgNodes</span></a></span><span> </span><span class="annot"><span class="annottext">DGraph a
+</span><a href="#local-6989586621679180067"><span class="hs-identifier hs-var">g</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span>
+</span><span id="line-44"></span><span>
+</span><span id="line-45"></span><span class="annot"><span class="hs-comment">-- | Edges sorted by (destId, destPortNumeric, srcId) to stabilize the layout.</span></span><span>
+</span><span id="line-46"></span><span id="local-6989586621679179959"><span class="annot"><a href="Synthesis.GraphViz.html#sortedEdges"><span class="hs-identifier hs-type">sortedEdges</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Types.html#DGraph"><span class="hs-identifier hs-type">DGraph</span></a></span><span> </span><span class="annot"><a href="#local-6989586621679179959"><span class="hs-identifier hs-type">n</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">[</span><span class="hs-special">(</span><span class="annot"><a href="Types.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Types.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">)</span><span class="hs-special">]</span></span><span>
+</span><span id="line-47"></span><span id="sortedEdges"><span class="annot"><span class="annottext">sortedEdges :: forall n. DGraph n -&gt; [(NodeId, Text, NodeId, Text)]
+</span><a href="Synthesis.GraphViz.html#sortedEdges"><span class="hs-identifier hs-var hs-var">sortedEdges</span></a></span></span><span> </span><span id="local-6989586621679180076"><span class="annot"><span class="annottext">DGraph n
+</span><a href="#local-6989586621679180076"><span class="hs-identifier hs-var">g</span></a></span></span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-48"></span><span>  </span><span class="hs-keyword">let</span><span> </span><span id="local-6989586621679180077"><span class="annot"><span class="annottext">es :: [(NodeId, Text, NodeId, Text)]
+</span><a href="#local-6989586621679180077"><span class="hs-identifier hs-var hs-var">es</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-special">[</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180078"><span class="hs-identifier hs-var">s</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><a href="#local-6989586621679180080"><span class="hs-identifier hs-var">sp</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180081"><span class="hs-identifier hs-var">d</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><a href="#local-6989586621679180082"><span class="hs-identifier hs-var">dp</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">|</span><span> </span><span class="hs-special">(</span><span id="local-6989586621679180078"><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180078"><span class="hs-identifier hs-var">s</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679180080"><span class="annot"><span class="annottext">[Char]
+</span><a href="#local-6989586621679180080"><span class="hs-identifier hs-var">sp</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679180081"><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180081"><span class="hs-identifier hs-var">d</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679180082"><span class="annot"><span class="annottext">[Char]
+</span><a href="#local-6989586621679180082"><span class="hs-identifier hs-var">dp</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">&lt;-</span><span> </span><span class="annot"><span class="annottext">DGraph n -&gt; [(NodeId, [Char], NodeId, [Char])]
+forall n. DGraph n -&gt; [(NodeId, [Char], NodeId, [Char])]
+</span><a href="Types.html#dgEdges"><span class="hs-identifier hs-var">dgEdges</span></a></span><span> </span><span class="annot"><span class="annottext">DGraph n
+</span><a href="#local-6989586621679180076"><span class="hs-identifier hs-var">g</span></a></span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-49"></span><span>  </span><span class="hs-keyword">in</span><span> </span><span class="annot"><span class="annottext">((NodeId, Text, NodeId, Text) -&gt; (NodeId, NodeId, NodeId))
+-&gt; [(NodeId, Text, NodeId, Text)] -&gt; [(NodeId, Text, NodeId, Text)]
+forall b a. Ord b =&gt; (a -&gt; b) -&gt; [a] -&gt; [a]
+</span><span class="hs-identifier hs-var">sortOn</span></span><span> </span><span class="hs-special">(</span><span class="hs-glyph">\</span><span class="hs-special">(</span><span id="local-6989586621679180084"><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180084"><span class="hs-identifier hs-var">s</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679180085"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180085"><span class="hs-identifier hs-var">_sp</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679180086"><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180086"><span class="hs-identifier hs-var">d</span></a></span></span><span class="hs-special">,</span><span id="local-6989586621679180087"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180087"><span class="hs-identifier hs-var">dp</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180086"><span class="hs-identifier hs-var">d</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text -&gt; NodeId
+</span><a href="Synthesis.GraphViz.html#toInt"><span class="hs-identifier hs-var">toInt</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180087"><span class="hs-identifier hs-var">dp</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180084"><span class="hs-identifier hs-var">s</span></a></span><span class="hs-special">)</span><span class="hs-special">)</span><span> </span><span class="annot"><span class="annottext">[(NodeId, Text, NodeId, Text)]
+</span><a href="#local-6989586621679180077"><span class="hs-identifier hs-var">es</span></a></span><span>
+</span><span id="line-50"></span><span>
+</span><span id="line-51"></span><span class="annot"><span class="hs-comment">-- | Parse a positive integer 'Text' (fallback 0).</span></span><span>
+</span><span id="line-52"></span><span class="annot"><a href="Synthesis.GraphViz.html#toInt"><span class="hs-identifier hs-type">toInt</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Int</span></span><span>
+</span><span id="line-53"></span><span id="toInt"><span class="annot"><span class="annottext">toInt :: Text -&gt; NodeId
+</span><a href="Synthesis.GraphViz.html#toInt"><span class="hs-identifier hs-var hs-var">toInt</span></a></span></span><span> </span><span id="local-6989586621679180089"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180089"><span class="hs-identifier hs-var">t</span></a></span></span><span> </span><span class="hs-glyph">|</span><span> </span><span class="annot"><span class="annottext">(Char -&gt; Bool) -&gt; Text -&gt; Bool
+</span><span class="hs-identifier hs-var">T.all</span></span><span> </span><span class="annot"><span class="annottext">Char -&gt; Bool
+</span><span class="hs-identifier hs-var">isDigit</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180089"><span class="hs-identifier hs-var">t</span></a></span><span> </span><span class="annot"><span class="annottext">Bool -&gt; Bool -&gt; Bool
+</span><span class="hs-operator hs-var">&amp;&amp;</span></span><span> </span><span class="annot"><span class="annottext">Bool -&gt; Bool
+</span><span class="hs-identifier hs-var">not</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Text -&gt; Bool
+</span><span class="hs-identifier hs-var">T.null</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180089"><span class="hs-identifier hs-var">t</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; NodeId
+forall a. Read a =&gt; [Char] -&gt; a
+</span><span class="hs-identifier hs-var">read</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">Text -&gt; [Char]
+</span><span class="hs-identifier hs-var">T.unpack</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180089"><span class="hs-identifier hs-var">t</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-54"></span><span class="annot"><a href="Synthesis.GraphViz.html#toInt"><span class="hs-identifier hs-var">toInt</span></a></span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><span class="hs-number">0</span></span><span>
+</span><span id="line-55"></span><span>
+</span><span id="line-56"></span><span class="annot"><span class="hs-comment">-- | Render a single node with its mnemonic label.</span></span><span>
+</span><span id="line-57"></span><span class="annot"><a href="Synthesis.GraphViz.html#ppNode"><span class="hs-identifier hs-type">ppNode</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Types.html#DGraph"><span class="hs-identifier hs-type">DGraph</span></a></span><span> </span><span class="annot"><a href="Node.html#DNode"><span class="hs-identifier hs-type">DNode</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Types.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Node.html#DNode"><span class="hs-identifier hs-type">DNode</span></a></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-58"></span><span id="ppNode"><span class="annot"><span class="annottext">ppNode :: DGraph DNode -&gt; (NodeId, DNode) -&gt; Text
+</span><a href="Synthesis.GraphViz.html#ppNode"><span class="hs-identifier hs-var hs-var">ppNode</span></a></span></span><span> </span><span class="annot"><span class="annottext">DGraph DNode
+</span><span class="hs-identifier">_</span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679180096"><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180096"><span class="hs-identifier hs-var">nid</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180097"><span class="annot"><span class="annottext">DNode
+</span><a href="#local-6989586621679180097"><span class="hs-identifier hs-var">dn</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-59"></span><span>  </span><span class="annot"><span class="annottext">[Text] -&gt; Text
+</span><span class="hs-identifier hs-var">T.concat</span></span><span> </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;  n&quot;</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">NodeId -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180096"><span class="hs-identifier hs-var">nid</span></a></span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot; [label=\&quot;&quot;</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">DNode -&gt; Text
+</span><a href="Synthesis.GraphViz.html#opSymbol"><span class="hs-identifier hs-var">opSymbol</span></a></span><span> </span><span class="annot"><span class="annottext">DNode
+</span><a href="#local-6989586621679180097"><span class="hs-identifier hs-var">dn</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;\&quot;];&quot;</span></span><span> </span><span class="hs-special">]</span><span>
+</span><span id="line-60"></span><span>
+</span><span id="line-61"></span><span class="annot"><span class="hs-comment">-- | Mnemonic for each 'DNode' variant.</span></span><span>
+</span><span id="line-62"></span><span class="annot"><a href="Synthesis.GraphViz.html#opSymbol"><span class="hs-identifier hs-type">opSymbol</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="annot"><a href="Node.html#DNode"><span class="hs-identifier hs-type">DNode</span></a></span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-63"></span><span id="opSymbol"><span class="annot"><span class="annottext">opSymbol :: DNode -&gt; Text
+</span><a href="Synthesis.GraphViz.html#opSymbol"><span class="hs-identifier hs-var hs-var">opSymbol</span></a></span></span><span> </span><span class="hs-glyph">=</span><span> </span><span class="hs-glyph">\</span><span class="hs-glyph">case</span><span>
+</span><span id="line-64"></span><span>  </span><span class="hs-comment">-- Constants</span><span>
+</span><span id="line-65"></span><span>  </span><span class="annot"><a href="Node.html#NConstI"><span class="hs-identifier hs-type">NConstI</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180102"><span id="local-6989586621679180103"><span class="annot"><span class="annottext">NodeId
+[Char]
+nName :: [Char]
+cInt :: NodeId
+nName :: DNode -&gt; [Char]
+cInt :: DNode -&gt; NodeId
+</span><a href="#local-6989586621679180102"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;const &quot;</span></span><span>  </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">NodeId -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180103"><span class="hs-identifier hs-var">cInt</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-66"></span><span>  </span><span class="annot"><a href="Node.html#NConstF"><span class="hs-identifier hs-type">NConstF</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180107"><span id="local-6989586621679180108"><span class="annot"><span class="annottext">Float
+[Char]
+nName :: DNode -&gt; [Char]
+nName :: [Char]
+cFloat :: Float
+cFloat :: DNode -&gt; Float
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;fconst &quot;</span></span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Float -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Float
+</span><a href="#local-6989586621679180108"><span class="hs-identifier hs-var">cFloat</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-67"></span><span>  </span><span class="annot"><a href="Node.html#NConstD"><span class="hs-identifier hs-type">NConstD</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180111"><span id="local-6989586621679180112"><span class="annot"><span class="annottext">Double
+[Char]
+nName :: DNode -&gt; [Char]
+nName :: [Char]
+cDouble :: Double
+cDouble :: DNode -&gt; Double
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;dconst &quot;</span></span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Double -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Double
+</span><a href="#local-6989586621679180112"><span class="hs-identifier hs-var">cDouble</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-68"></span><span>
+</span><span id="line-69"></span><span>  </span><span class="hs-comment">-- Integer</span><span>
+</span><span id="line-70"></span><span>  </span><span class="annot"><a href="Node.html#NAdd"><span class="hs-identifier hs-type">NAdd</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>        </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;+&quot;</span></span><span>
+</span><span id="line-71"></span><span>  </span><span class="annot"><a href="Node.html#NSub"><span class="hs-identifier hs-type">NSub</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>        </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;-&quot;</span></span><span>
+</span><span id="line-72"></span><span>  </span><span class="annot"><a href="Node.html#NMul"><span class="hs-identifier hs-type">NMul</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>        </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;*&quot;</span></span><span>
+</span><span id="line-73"></span><span>  </span><span class="annot"><a href="Node.html#NDiv"><span class="hs-identifier hs-type">NDiv</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>        </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;/&quot;</span></span><span>
+</span><span id="line-74"></span><span>
+</span><span id="line-75"></span><span>  </span><span class="hs-comment">-- Float</span><span>
+</span><span id="line-76"></span><span>  </span><span class="annot"><a href="Node.html#NFAdd"><span class="hs-identifier hs-type">NFAdd</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;f+&quot;</span></span><span>
+</span><span id="line-77"></span><span>  </span><span class="annot"><a href="Node.html#NFSub"><span class="hs-identifier hs-type">NFSub</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;f-&quot;</span></span><span>
+</span><span id="line-78"></span><span>  </span><span class="annot"><a href="Node.html#NFMul"><span class="hs-identifier hs-type">NFMul</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;f*&quot;</span></span><span>
+</span><span id="line-79"></span><span>  </span><span class="annot"><a href="Node.html#NFDiv"><span class="hs-identifier hs-type">NFDiv</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;f/&quot;</span></span><span>
+</span><span id="line-80"></span><span>
+</span><span id="line-81"></span><span>  </span><span class="hs-comment">-- Double (add only for now)</span><span>
+</span><span id="line-82"></span><span>  </span><span class="annot"><a href="Node.html#NDAdd"><span class="hs-identifier hs-type">NDAdd</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;d+&quot;</span></span><span>
+</span><span id="line-83"></span><span>
+</span><span id="line-84"></span><span>  </span><span class="hs-comment">-- Bool/bitwise and control</span><span>
+</span><span id="line-85"></span><span>  </span><span class="annot"><a href="Node.html#NBand"><span class="hs-identifier hs-type">NBand</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>       </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;band&quot;</span></span><span>
+</span><span id="line-86"></span><span>  </span><span class="annot"><a href="Node.html#NSteer"><span class="hs-identifier hs-type">NSteer</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;steer&quot;</span></span><span>
+</span><span id="line-87"></span><span>  </span><span class="annot"><a href="Node.html#NLThan"><span class="hs-identifier hs-type">NLThan</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;&lt;&quot;</span></span><span>
+</span><span id="line-88"></span><span>  </span><span class="annot"><a href="Node.html#NGThan"><span class="hs-identifier hs-type">NGThan</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;&gt;&quot;</span></span><span>
+</span><span id="line-89"></span><span>  </span><span class="annot"><a href="Node.html#NEqual"><span class="hs-identifier hs-type">NEqual</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;==&quot;</span></span><span>
+</span><span id="line-90"></span><span>
+</span><span id="line-91"></span><span>  </span><span class="hs-comment">-- Immediates</span><span>
+</span><span id="line-92"></span><span>  </span><span class="annot"><a href="Node.html#NLThanI"><span class="hs-identifier hs-type">NLThanI</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180129"><span id="local-6989586621679180130"><span class="annot"><span class="annottext">NodeId
+[Char]
+nName :: DNode -&gt; [Char]
+nName :: [Char]
+iImm :: NodeId
+iImm :: DNode -&gt; NodeId
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;&lt;i &quot;</span></span><span>  </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">NodeId -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180130"><span class="hs-identifier hs-var">iImm</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-93"></span><span>  </span><span class="annot"><a href="Node.html#NGThanI"><span class="hs-identifier hs-type">NGThanI</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180133"><span id="local-6989586621679180134"><span class="annot"><span class="annottext">NodeId
+[Char]
+nName :: DNode -&gt; [Char]
+iImm :: DNode -&gt; NodeId
+nName :: [Char]
+iImm :: NodeId
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;&gt;i &quot;</span></span><span>  </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">NodeId -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180134"><span class="hs-identifier hs-var">iImm</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-94"></span><span>  </span><span class="annot"><a href="Node.html#NAddI"><span class="hs-identifier hs-type">NAddI</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180136"><span id="local-6989586621679180137"><span class="annot"><span class="annottext">NodeId
+[Char]
+nName :: DNode -&gt; [Char]
+iImm :: DNode -&gt; NodeId
+nName :: [Char]
+iImm :: NodeId
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>     </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;+i &quot;</span></span><span>  </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">NodeId -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180137"><span class="hs-identifier hs-var">iImm</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-95"></span><span>  </span><span class="annot"><a href="Node.html#NSubI"><span class="hs-identifier hs-type">NSubI</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180139"><span id="local-6989586621679180140"><span class="annot"><span class="annottext">NodeId
+[Char]
+nName :: DNode -&gt; [Char]
+iImm :: DNode -&gt; NodeId
+nName :: [Char]
+iImm :: NodeId
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>     </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;-i &quot;</span></span><span>  </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">NodeId -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180140"><span class="hs-identifier hs-var">iImm</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-96"></span><span>  </span><span class="annot"><a href="Node.html#NMulI"><span class="hs-identifier hs-type">NMulI</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180142"><span id="local-6989586621679180143"><span class="annot"><span class="annottext">NodeId
+[Char]
+nName :: DNode -&gt; [Char]
+iImm :: DNode -&gt; NodeId
+nName :: [Char]
+iImm :: NodeId
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>     </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;*i &quot;</span></span><span>  </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">NodeId -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180143"><span class="hs-identifier hs-var">iImm</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-97"></span><span>  </span><span class="annot"><a href="Node.html#NFMulI"><span class="hs-identifier hs-type">NFMulI</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180145"><span id="local-6989586621679180146"><span class="annot"><span class="annottext">Float
+[Char]
+nName :: DNode -&gt; [Char]
+nName :: [Char]
+fImm :: Float
+fImm :: DNode -&gt; Float
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>    </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;*fi &quot;</span></span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">Float -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">Float
+</span><a href="#local-6989586621679180146"><span class="hs-identifier hs-var">fImm</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-98"></span><span>  </span><span class="annot"><a href="Node.html#NDivI"><span class="hs-identifier hs-type">NDivI</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180149"><span id="local-6989586621679180150"><span class="annot"><span class="annottext">NodeId
+[Char]
+nName :: DNode -&gt; [Char]
+iImm :: DNode -&gt; NodeId
+nName :: [Char]
+iImm :: NodeId
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>     </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;/i &quot;</span></span><span>  </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. [a] -&gt; [a] -&gt; [a]
+</span><span class="hs-operator hs-var">++</span></span><span> </span><span class="annot"><span class="annottext">NodeId -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180150"><span class="hs-identifier hs-var">iImm</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-99"></span><span>
+</span><span id="line-100"></span><span>  </span><span class="hs-comment">-- Calls</span><span>
+</span><span id="line-101"></span><span>  </span><span class="annot"><a href="Node.html#NCallGroup"><span class="hs-identifier hs-type">NCallGroup</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180152"><span class="annot"><span class="annottext">[Char]
+nName :: DNode -&gt; [Char]
+nName :: [Char]
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var">..</span></a></span></span><span class="hs-special">}</span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;callgroup &quot;</span></span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><a href="#local-6989586621679180152"><span class="hs-identifier hs-var">nName</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-102"></span><span>  </span><span class="annot"><a href="Node.html#NCallSnd"><span class="hs-identifier hs-type">NCallSnd</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180154"><span id="local-6989586621679180155"><span class="annot"><span class="annottext">NodeId
+[Char]
+nName :: DNode -&gt; [Char]
+nName :: [Char]
+taskId :: NodeId
+taskId :: DNode -&gt; NodeId
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>  </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;callsnd &quot;</span></span><span>   </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><a href="#local-6989586621679180154"><span class="hs-identifier hs-var">nName</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-103"></span><span>  </span><span class="annot"><a href="Node.html#NRetSnd"><span class="hs-identifier hs-type">NRetSnd</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180158"><span id="local-6989586621679180159"><span class="annot"><span class="annottext">NodeId
+[Char]
+nName :: DNode -&gt; [Char]
+taskId :: DNode -&gt; NodeId
+nName :: [Char]
+taskId :: NodeId
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var hs-var hs-var">..</span></a></span></span></span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;retsnd &quot;</span></span><span>    </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><a href="#local-6989586621679180158"><span class="hs-identifier hs-var">nName</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-104"></span><span>  </span><span class="annot"><a href="Node.html#NRet"><span class="hs-identifier hs-type">NRet</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180161"><span class="annot"><span class="annottext">[Char]
+nName :: DNode -&gt; [Char]
+nName :: [Char]
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var">..</span></a></span></span><span class="hs-special">}</span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;ret &quot;</span></span><span>       </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><a href="#local-6989586621679180161"><span class="hs-identifier hs-var">nName</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-105"></span><span>
+</span><span id="line-106"></span><span>  </span><span class="hs-comment">-- Other</span><span>
+</span><span id="line-107"></span><span>  </span><span class="annot"><a href="Node.html#NTagVal"><span class="hs-identifier hs-type">NTagVal</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>     </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;tagval&quot;</span></span><span>
+</span><span id="line-108"></span><span>  </span><span class="annot"><a href="Node.html#NValTag"><span class="hs-identifier hs-type">NValTag</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>     </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;valtag&quot;</span></span><span>
+</span><span id="line-109"></span><span>  </span><span class="annot"><a href="Node.html#NCpHToDev"><span class="hs-identifier hs-type">NCpHToDev</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;cphtodev&quot;</span></span><span>
+</span><span id="line-110"></span><span>  </span><span class="annot"><a href="Node.html#NCpDevToH"><span class="hs-identifier hs-type">NCpDevToH</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;cpdevtoh&quot;</span></span><span>
+</span><span id="line-111"></span><span>  </span><span class="annot"><a href="Node.html#NCommit"><span class="hs-identifier hs-type">NCommit</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>     </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;commit&quot;</span></span><span>
+</span><span id="line-112"></span><span>  </span><span class="annot"><a href="Node.html#NStopSpec"><span class="hs-identifier hs-type">NStopSpec</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>   </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;stopspec&quot;</span></span><span>
+</span><span id="line-113"></span><span>  </span><span class="annot"><a href="Node.html#NArg"><span class="hs-identifier hs-type">NArg</span></a></span><span class="hs-special">{</span><span id="local-6989586621679180169"><span class="annot"><span class="annottext">[Char]
+nName :: DNode -&gt; [Char]
+nName :: [Char]
+</span><a href="Node.html#nName"><span class="hs-glyph hs-var hs-var">..</span></a></span></span><span class="hs-special">}</span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">[Char]
+</span><span class="hs-string">&quot;arg &quot;</span></span><span>       </span><span class="annot"><span class="annottext">[Char] -&gt; [Char] -&gt; [Char]
+forall a. Semigroup a =&gt; a -&gt; a -&gt; a
+</span><span class="hs-operator hs-var">&lt;&gt;</span></span><span> </span><span class="annot"><span class="annottext">[Char]
+</span><a href="#local-6989586621679180169"><span class="hs-identifier hs-var">nName</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-114"></span><span>  </span><span class="annot"><a href="Node.html#NSuper"><span class="hs-identifier hs-type">NSuper</span></a></span><span class="hs-special">{</span><span class="hs-special">}</span><span>      </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;super&quot;</span></span><span>
+</span><span id="line-115"></span><span>
+</span><span id="line-116"></span><span class="annot"><span class="hs-comment">-- | Render a directed edge with a small @(\&quot;srcPort\&quot;,\&quot;dstPort\&quot;)@ label.</span></span><span>
+</span><span id="line-117"></span><span class="annot"><a href="Synthesis.GraphViz.html#ppEdge"><span class="hs-identifier hs-type">ppEdge</span></a></span><span> </span><span class="hs-glyph">::</span><span> </span><span class="hs-special">(</span><span class="annot"><a href="Types.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">,</span><span> </span><span class="annot"><a href="Types.html#NodeId"><span class="hs-identifier hs-type">NodeId</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">-&gt;</span><span> </span><span class="annot"><span class="hs-identifier hs-type">Text</span></span><span>
+</span><span id="line-118"></span><span id="ppEdge"><span class="annot"><span class="annottext">ppEdge :: (NodeId, Text, NodeId, Text) -&gt; Text
+</span><a href="Synthesis.GraphViz.html#ppEdge"><span class="hs-identifier hs-var hs-var">ppEdge</span></a></span></span><span> </span><span class="hs-special">(</span><span id="local-6989586621679180171"><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180171"><span class="hs-identifier hs-var">s</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180172"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180172"><span class="hs-identifier hs-var">sp</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180173"><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180173"><span class="hs-identifier hs-var">d</span></a></span></span><span class="hs-special">,</span><span> </span><span id="local-6989586621679180174"><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180174"><span class="hs-identifier hs-var">dp</span></a></span></span><span class="hs-special">)</span><span> </span><span class="hs-glyph">=</span><span>
+</span><span id="line-119"></span><span>  </span><span class="annot"><span class="annottext">[Text] -&gt; Text
+</span><span class="hs-identifier hs-var">T.concat</span></span><span>
+</span><span id="line-120"></span><span>    </span><span class="hs-special">[</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;  n&quot;</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">NodeId -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180171"><span class="hs-identifier hs-var">s</span></a></span><span class="hs-special">)</span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot; -&gt; n&quot;</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">[Char] -&gt; Text
+</span><span class="hs-identifier hs-var">T.pack</span></span><span> </span><span class="hs-special">(</span><span class="annot"><span class="annottext">NodeId -&gt; [Char]
+forall a. Show a =&gt; a -&gt; [Char]
+</span><span class="hs-identifier hs-var">show</span></span><span> </span><span class="annot"><span class="annottext">NodeId
+</span><a href="#local-6989586621679180173"><span class="hs-identifier hs-var">d</span></a></span><span class="hs-special">)</span><span>
+</span><span id="line-121"></span><span>    </span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot; [label=\&quot;(&quot;</span></span><span class="hs-special">,</span><span> </span><span class="hs-keyword">if</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Bool
+</span><span class="hs-identifier hs-var">T.null</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180172"><span class="hs-identifier hs-var">sp</span></a></span><span> </span><span class="hs-keyword">then</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;0&quot;</span></span><span> </span><span class="hs-keyword">else</span><span> </span><span class="annot"><span class="annottext">Text -&gt; Text
+</span><span class="hs-identifier hs-var">T.toUpper</span></span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180172"><span class="hs-identifier hs-var">sp</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;,&quot;</span></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text
+</span><a href="#local-6989586621679180174"><span class="hs-identifier hs-var">dp</span></a></span><span class="hs-special">,</span><span> </span><span class="annot"><span class="annottext">Text
+</span><span class="hs-string">&quot;)\&quot;, fontsize=10];&quot;</span></span><span>
+</span><span id="line-122"></span><span>    </span><span class="hs-special">]</span><span>
+</span><span id="line-123"></span></pre></body></html>
