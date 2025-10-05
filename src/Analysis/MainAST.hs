@@ -1,5 +1,44 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+{-|
+Module      : Main
+Description : CLI entry point that parses, semantically checks, and renders the AST to Graphviz DOT.
+Copyright   :
+License     :
+Maintainer  : ricardo@example.com
+Stability   : experimental
+Portability : portable
+
+## Overview
+
+This executable reads a program in the project’s Haskell-like subset,
+runs **lexing** ('Lexer.alexScanTokens'), **parsing** ('Parser.parse'),
+optionally **renames super-instructions** ('Semantic.assignSuperNames'),
+and performs **semantic + typing checks** ('Semantic.checkAll').
+If no errors are found, the resulting 'Syntax.Program' is rendered as a
+Graphviz DOT graph via 'ASTGen.programToDot' and written to @stdout@.
+
+## Usage
+
+- From a file:
+@
+lambdaflow-ast path/to/source.hsk > ast.dot
+@
+
+- From standard input:
+@
+cat source.hsk | lambdaflow-ast > ast.dot
+@
+
+If any errors are detected, they are printed to @stderr@ and the process exits
+with a non-zero status.
+
+## Exit codes
+
+- @0@: success; DOT printed to @stdout@
+- non-@0@: failure; errors printed to @stderr@
+
+-}
 -- | Entry point for the AST graph generation tool.
 -- 
 -- This executable reads a Haskell subset program from a file or standard input,
@@ -38,4 +77,4 @@ main = do
   let ast  = assignSuperNames ast0
   case checkAll ast of
     []   -> TLIO.putStr $ programToDot ast
-    errs -> mapM_ print errs >> exitFailure
+    errs -> mapM_ print errs >> exitFailure esse agora
