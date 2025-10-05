@@ -1,11 +1,10 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 {-|
-Module      : ASTGen
+Module      : Analysis.ASTGen
 Description : DOT graph generator for the core AST, covering all language constructors (patterns and expressions), including TALM-style 'Super'.
-Copyright   :
-License     :
-Maintainer  : ricardo@example.com
+Maintainer  : ricardofilhoschool@gmail.com
 Stability   : experimental
 Portability : portable
 
@@ -28,14 +27,9 @@ including the 'Super' extension node for coarse-grained super-instructions.
 - Patterns: 'PWildcard', 'PVar', 'PLit', 'PList', 'PTuple', 'PCons'
 - Expressions: 'Var', 'Lit', 'Lambda', 'If', 'Cons', 'Case', 'Let', 'App',
   'BinOp', 'UnOp', 'List', 'Tuple', 'Super'
-
 -}
--- Generates DOT for the AST.
--- Covers ALL constructors in use:
---  - Patterns: PWildcard, PVar, PLit, PList, PTuple, PCons
---  - Expr: Var, Lit, Lambda, If, Cons, Case, Let, App, BinOp, UnOp, List, Tuple, Super
 
-module ASTGen
+module Analysis.ASTGen
   ( astToDot       -- Program -> Text
   , programToDot   -- synonym
   ) where
@@ -256,8 +250,6 @@ visitExpr = \case
     emitNode me ("Super[" ++ k ++ "]\\nname=" ++ nm
                  ++ "\\ninput=" ++ inp ++ "\\noutput=" ++ out)
     pure me
-
-
   where
     -- | Emit a leaf node with a given label and return its 'NodeId'.
     leaf :: String -> M NodeId
@@ -321,4 +313,4 @@ showBin = \case
 showUn :: UnOperator -> String
 showUn = \case
   Neg -> "negate"
-  Not -> "not" esse agora\
+  Not -> "not"

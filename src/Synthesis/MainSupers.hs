@@ -1,6 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- Lê .hsk, faz parse+check, renomeia Supers para s#, coleta e imprime Supers.hs (ou nada).
+-- |
+-- Description : Read a .hsk file, parse + check, rename Supers to s#, collect and emit Supers.hs (or nothing).
+-- Maintainer  : ricardofilhoschool@gmail.com
+-- Stability   : experimental
+-- Portability : portable
+--
+-- Usage:
+--   supersgen [file]
+-- If no file is provided, reads source from STDIN. On success, prints the
+-- generated Supers module to STDOUT. If there are no supers, prints an empty
+-- string so the Makefile can skip building the shared library.
 
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -30,5 +40,5 @@ main = do
       let ast  = assignSuperNames ast0
           base = case args of { [file] -> takeBaseName file; _ -> "stdin" }
           out  = emitSupersModule base (collectSupers ast)
-      putStr out   -- vazio ⇒ Makefile detecta e não gera .so
+      putStr out   -- empty ⇒ Makefile detects and skips .so generation
     errs -> mapM_ (hPutStrLn stderr . show) errs >> exitFailure

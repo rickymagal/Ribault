@@ -1,50 +1,56 @@
--- Source/Port.hs
 {-# LANGUAGE RecordWildCards #-}
 
--- | Abstrações de portas de nó (equivalente aos SteerPort / InstPort do compilador-C).
---   Também define helpers para construir arestas de maneira segura.
-module Port
-  ( -- * Tipos
-    Port(..)
-  , portNode          -- extrai o NodeId
-  , portId            -- extrai o nome da porta
+-- |
+-- Module      : Port
+-- Description : Node port abstractions (akin to the C-compiler's SteerPort / InstPort).
+-- Maintainer  : ricardofilhoschool@gmail.com
+-- Stability   : experimental
+-- Portability : portable
+--
+-- Provides typed ports for nodes and helpers to build edges safely.
 
-    -- * Conectores
+module Port
+  ( -- * Types
+    Port(..)
+  , portNode          -- extract the NodeId
+  , portId            -- extract the port name
+
+    -- * Connectors
   , (-->), edge
   ) where
 
 import           Types  (NodeId, PortId, Edge)
 
 --------------------------------------------------------------------------------
--- Porta interna
+-- Internal port
 --------------------------------------------------------------------------------
 
--- | “Saída de nó” ou “ponto de conexão” em ‘GraphViz’.
+-- | “Node output” or “connection point” as used in GraphViz.
 data Port
-  = InstPort  { pNode :: !NodeId, pName :: !PortId }   -- ^ porta genérica
-  | SteerPort { pNode :: !NodeId, pName :: !PortId }   -- ^ "t" / "f"
+  = InstPort  { pNode :: !NodeId, pName :: !PortId }   -- ^ generic port
+  | SteerPort { pNode :: !NodeId, pName :: !PortId }   -- ^ \"t\" / \"f\"
   deriving (Eq, Ord, Show)
 
--- | Extrai o ‘NodeId’.
+-- | Extract the 'NodeId'.
 portNode :: Port -> NodeId
 portNode = pNode
 
--- | Extrai o nome da porta.
+-- | Extract the port name.
 portId :: Port -> PortId
 portId = pName
 
 --------------------------------------------------------------------------------
--- Construção de arestas
+-- Edge construction
 --------------------------------------------------------------------------------
 
 infixr 1 -->
--- | Syntactic sugar: @a --> b@ monta uma aresta ‘out → in’.
-(--> ) :: Port            -- ^ origem
-       -> Port            -- ^ destino
+-- | Syntactic sugar: @a --> b@ builds an edge 'out → in'.
+(--> ) :: Port            -- ^ source
+       -> Port            -- ^ target
        -> Edge
 a --> b = ( portNode a, portId a
           , portNode b, portId b )
 
--- | Constrói uma aresta explicitando todos os nomes de porta.
+-- | Build an edge by explicitly specifying all port names.
 edge :: NodeId -> PortId -> NodeId -> PortId -> Edge
 edge = (,,,)

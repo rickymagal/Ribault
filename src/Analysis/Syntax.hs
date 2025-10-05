@@ -5,7 +5,7 @@ Module      : Syntax
 Description : Core Abstract Syntax Tree (AST) for a small, strict, purely functional language with extensions for TALM-style super blocks.
 Copyright   :
 License     :
-Maintainer  : ricardo@example.com
+Maintainer  : ricardofilhoschool@gmail.com
 Stability   : experimental
 Portability : portable
 

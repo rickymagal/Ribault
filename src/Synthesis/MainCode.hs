@@ -1,19 +1,28 @@
-{-# LANGUAGE LambdaCase #-}   
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
--- | Entry point para gerar **TALM assembly** a partir da mesma pipeline
---   usada no MainGraph.  Ele:
+
+-- |
+-- Module      : Main
+-- Description : Entry point to generate TALM assembly from the same pipeline as MainGraph.
+-- Maintainer  : ricardofilhoschool@gmail.com
+-- Stability   : experimental
+-- Portability : portable
 --
---   1. Lê fonte Haskell-subset (arquivo ou stdin)
---   2. Faz lexing, parsing e verificação semântica
---   3. Constrói o grafo data-flow (Inst)
---   4. Converte o grafo para assembly TALM e imprime em stdout
+-- Pipeline:
 --
---   Compile, por exemplo:
---     ghc -O2 -isrc -o lambdaflow-asm src/Synthesis/MainASM.hs
+--  1. Read Haskell-subset source (file or STDIN)
+--  2. Lex, parse, and run semantic checks
+--  3. Build the dataflow graph (Inst-level)
+--  4. Convert the graph to TALM assembly and print to STDOUT
 --
---   Uso:
---     lambdaflow-asm programa.hsk
---     cat prog.hsk | lambdaflow-asm
+-- Build example:
+--
+-- > ghc -O2 -isrc -o lambdaflow-asm src/Synthesis/MainASM.hs
+--
+-- Usage:
+--
+-- > lambdaflow-asm program.hsk
+-- > cat prog.hsk | lambdaflow-asm
 -----------------------------------------------------------------------------
 module Main where
 
@@ -22,7 +31,7 @@ import System.IO          (readFile, getContents, hPutStrLn, stderr)
 import System.Exit        (exitFailure)
 import qualified Data.Text            as TS
 import qualified Data.Text.Lazy       as TL
-import qualified Data.Text.Lazy.IO as TLIO
+import qualified Data.Text.Lazy.IO    as TLIO
 
 -- Front-end ---------------------------------------------------------------
 import Lexer    (alexScanTokens)
@@ -31,10 +40,11 @@ import Syntax   (Program)
 import Semantic (checkAll)
 
 -- Back-end ----------------------------------------------------------------
+import qualified Synthesis.Builder  as DF   -- AST → DGraph
+import qualified Synthesis.Codegen  as CG   -- DGraph → TALM assembly (strict Text)
 
-import qualified Synthesis.Builder  as DF   -- AST → [Inst]
-import qualified Synthesis.Codegen  as CG   -- [Inst] → TALM assembly (lazy Text)
-
+-----------------------------------------------------------------------------
+-- | Main executable. See module header for behavior and usage.
 -----------------------------------------------------------------------------
 main :: IO ()
 main = do
@@ -43,11 +53,12 @@ main = do
            []     -> getContents
            _      -> hPutStrLn stderr "Usage: lambdaflow-asm [file]" >> exitFailure
 
-  let ast = parse (alexScanTokens src)
+  let ast :: Program
+      ast = parse (alexScanTokens src)
 
   case checkAll ast of
     [] -> do
       let df      = DF.buildProgram ast
-          asmText = TL.fromStrict (CG.assemble df)   -- ← aqui
+          asmText = TL.fromStrict (CG.assemble df)
       TLIO.putStr asmText
     errs -> mapM_ (hPutStrLn stderr . show) errs >> exitFailure

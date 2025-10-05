@@ -1,8 +1,26 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main where
 
+-- |
+-- Module      : Main
+-- Description : Front-end (lexer/parser/semantic check) → Dataflow builder → GraphViz DOT.
+-- Maintainer  : ricardofilhoschool@gmail.com
+-- Stability   : experimental
+-- Portability : portable
+--
+-- Reads a source file (or STDIN), lexes/parses it into an AST, runs semantic
+-- checks, and—if successful—builds a dataflow graph and pretty-prints it
+-- as GraphViz DOT to STDOUT. On semantic errors, prints them to STDERR and
+-- exits with failure.
+--
+-- Usage:
+--
+-- > lambdaflow-df [file]
+--
+-- If @file@ is omitted, input is read from STDIN.
+
 ----------------------------------------------------------------------
--- Bibliotecas padrão
+-- Standard libraries
 ----------------------------------------------------------------------
 import Prelude            hiding (readFile, getContents)
 import System.Environment (getArgs)
@@ -26,6 +44,8 @@ import qualified Synthesis.Builder  as DF  -- buildProgram :: Program -> DFG
 import qualified Synthesis.GraphViz as GV  -- toDot        :: DFG     -> Text
 
 ----------------------------------------------------------------------
+-- | Main entry point. See module header for behavior and usage.
+----------------------------------------------------------------------
 main :: IO ()
 main = do
   src <- getInput
@@ -37,7 +57,7 @@ main = do
     errs -> mapM_ (hPutStrLn stderr . show) errs >> exitFailure
 
 ----------------------------------------------------------------------
--- Util: arquivo ou stdin ------------------------------------------------
+-- Input utility: file or STDIN
 ----------------------------------------------------------------------
 getInput :: IO String
 getInput = do

@@ -2,6 +2,23 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
+{-|
+Module      : Synthesis.Builder
+Description : Lowers the core AST to a dataflow graph (DFG) of 'DNode's, wiring ports and managing environments/aliases.
+Copyright   :
+License     :
+Maintainer  : ricardofilhoschool@gmail.com
+Stability   : experimental
+Portability : portable
+
+This module builds a 'DFG' from a 'Syntax.Program'. It:
+
+* Tracks lexical environments and free variables during synthesis.
+* Emits nodes/edges, including fan-out via an alias mechanism.
+* Handles applications (including n-ary flattening), conditionals, lists/tuples.
+* Creates call/return groups for function calls and lambdas.
+* Assigns names to @Super@ blocks via 'Semantic.assignSuperNames' before building.
+-}
 module Synthesis.Builder
   ( DFG
   , buildProgram
@@ -22,46 +39,65 @@ import           Unique                 (Unique, evalUnique, freshId)
 import           Node                   (DNode(..))
 
 -- Grafo final
+
+-- | Final dataflow graph specialized to 'DNode'.
 type DFG = DGraph DNode
 
 -- Ambiente
+
+-- | Builder-time binding: either a realized 'Port' or a lambda to be built.
 data Binding = BPort Port | BLam [Ident] Expr
+
+-- | A single-scope environment mapping identifiers to 'Binding'.
 type Env = M.Map Ident Binding
 
+-- | Aliases for a producer output identified by ('NodeId', output name).
 type AliasMap    = M.Map (NodeId, String) [Port]
+
+-- | Stack of currently active (being-built) functions.
 type ActiveStack = [Ident]
 
+-- | Global state for the builder pass.
 data BuildS = BuildS
-  { bsGraph      :: !DFG
-  , bsEnv        :: ![Env]
-  , bsAliases    :: !AliasMap
-  , bsActive     :: !ActiveStack
-  , bsFloatFuns  :: !(S.Set Ident)
+  { bsGraph      :: !DFG           -- ^ Accumulated graph.
+  , bsEnv        :: ![Env]         -- ^ Environment stack (innermost at head).
+  , bsAliases    :: !AliasMap      -- ^ Extra outputs that mirror a producer port.
+  , bsActive     :: !ActiveStack   -- ^ Functions under construction (re-entrancy guard).
+  , bsFloatFuns  :: !(S.Set Ident) -- ^ Functions observed in float contexts.
   }
 
+-- | Initial empty builder state.
 emptyS :: BuildS
 emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty
 
+-- | Builder monad with unique-id generation.
 newtype Build a = Build { unBuild :: StateT BuildS Unique a }
   deriving (Functor, Applicative, Monad)
 
+-- | Execute a 'Build' computation, returning the result and final state.
 runBuild :: Build a -> (a, BuildS)
 runBuild m = evalUnique (runStateT (unBuild m) emptyS)
 
 -- escopo ----------------------------------------------------------------
 
+-- | Push a fresh environment onto the stack.
 pushEnv, popEnv :: Build ()
 pushEnv = Build $ modify (\s -> s { bsEnv = M.empty : bsEnv s })
+
+-- | Pop the current environment (no-op on empty).
 popEnv  = Build $ modify (\s -> case bsEnv s of [] -> s; (_:rs) -> s { bsEnv = rs })
 
+-- | Run a computation with a temporary fresh environment.
 withEnv :: Build a -> Build a
 withEnv m = do pushEnv; x <- m; popEnv; pure x
 
+-- | Insert a 'Binding' for an identifier into the current environment.
 insertB :: Ident -> Binding -> Build ()
 insertB x b = Build $ modify $ \s -> case bsEnv s of
   (e:rs) -> s { bsEnv = M.insert x b e : rs }
   []     -> s
 
+-- | Look up an identifier through the stacked environments (inner to outer).
 lookupB :: Ident -> Build (Maybe Binding)
 lookupB x = Build $ gets $ \s ->
   let go []     = Nothing
@@ -70,34 +106,43 @@ lookupB x = Build $ gets $ \s ->
 
 -- marcação de função float ---------------------------------------------
 
+-- | Mark a function as having been used in a floating-point context.
 markFloatFun :: Ident -> Build ()
 markFloatFun f = Build $ modify (\s -> s { bsFloatFuns = S.insert f (bsFloatFuns s) })
 
+-- | Check whether a function is marked as float.
 isFloatFun :: Ident -> Build Bool
 isFloatFun f = Build $ gets (\s -> S.member f (bsFloatFuns s))
 
+-- | True if the top of the active stack is a float-marked function.
 isFloatActive :: Build Bool
 isFloatActive = Build $ gets $ \s -> case bsActive s of
   (f:_) -> S.member f (bsFloatFuns s)
   _     -> False
 
 -- helper: está construindo 'f' agora?
+
+-- | Is a given function currently being built (in the active stack)?
 isActiveFun :: Ident -> Build Bool
 isActiveFun f = Build $ gets (\s -> f `elem` bsActive s)
 
 -- edges + aliases ------------------------------------------------------
 
+-- | Emit a raw 'Edge' into the graph.
 emit :: Edge -> Build ()
 emit e = Build $ modify (\s -> s { bsGraph = addEdge e (bsGraph s) })
 
+-- | Connect two 'Port's by emitting an edge.
 connect :: Port -> Port -> Build ()
 connect a b = emit (a --> b)
 
+-- | Register additional alias outputs for the same producer port.
 registerAlias :: Port -> [Port] -> Build ()
 registerAlias src extras = Build $ modify $ \s ->
   let k = (pNode src, pName src)
   in s { bsAliases = M.insertWith (++) k extras (bsAliases s) }
 
+-- | Connect a destination to a source and all of its aliases.
 connectPlus :: Port -> Port -> Build ()
 connectPlus src dst = Build $ do
   s <- get
@@ -108,6 +153,7 @@ connectPlus src dst = Build $ do
 
 -- nós ------------------------------------------------------------------
 
+-- | Create a new node with label and payload, returning its 'NodeId'.
 newNode :: String -> DNode -> Build NodeId
 newNode lbl nd = Build $ do
   s   <- get
@@ -116,15 +162,18 @@ newNode lbl nd = Build $ do
   put s { bsGraph = g' }
   pure nid
 
+-- | Create an n-ary node and connect sequential inputs to its ports.
 naryNode :: String -> DNode -> [Port] -> Build NodeId
 naryNode lbl nd ins = do
   nid <- newNode lbl nd
   zipWithM_ (\i p -> connectPlus p (InstPort nid (show i))) [0..] ins
   pure nid
 
+-- | Convenience accessor for the first output port of a node.
 out0 :: NodeId -> Port
 out0 nid = InstPort nid "0"
 
+-- | Write a display name into a 'DNode' (for debugging/graphs).
 setName :: String -> DNode -> DNode
 setName l n = case n of
   NConstI{}   -> n{ nName = l }
@@ -166,19 +215,24 @@ setName l n = case n of
 
 -- codificação pares/listas ---------------------------------------------
 
+-- | Base constant used by the pair encoding scheme.
 pairBase :: Int
 pairBase = 1000003
 
+-- | Emit an integer constant node.
 constI :: Int -> Build Port
 constI k = newNode ("const_" ++ show k) (NConstI "" k) >>= \nid -> pure (out0 nid)
 
 -- immediates (sem aliases!)
+
+-- | Add immediate @k@ to input (no alias expansion).
 addI :: Port -> Int -> Build Port
 addI p k = do
   nid <- newNode ("addi_" ++ show k) (NAddI "" k)
   connect p (InstPort nid "0")
   pure (out0 nid)
 
+-- | Subtract immediate @k@ from input (no alias expansion).
 subI :: Port -> Int -> Build Port
 subI p k = do
   nid <- newNode ("subi_" ++ show k) (NSubI "" k)
@@ -186,21 +240,27 @@ subI p k = do
   pure (out0 nid)
 
 -- fmuli helper (sem aliases!)
+
+-- | Multiply by a floating immediate (no alias expansion).
 fmulI :: Port -> Float -> Build Port
 fmulI p k = do
   nid <- newNode ("fmuli_" ++ show k) (NFMulI "" k)
   connect p (InstPort nid "0")
   pure (out0 nid)
 
+-- | Port representing the empty list.
 nilP :: Build Port
 nilP = constI (-1)
 
+-- | Predicate: is the list port equal to 'nilP'?
 isNilP :: Port -> Build Port
 isNilP xs = do
   n <- nilP
   bin2 "equal" (NEqual "") xs n
 
 -- cons(a,b) = (a+2)*B + (b+2)
+
+-- | Encode a pair/list cell via the affine scheme using 'pairBase'.
 pairEnc :: Port -> Port -> Build Port
 pairEnc a b = do
   a2 <- addI a 2
@@ -209,12 +269,14 @@ pairEnc a b = do
   m  <- bin2Node "mul" (NMul "") a2 k
   bin2 "add" (NAdd "") (out0 m) b2
 
+-- | Decode first component from encoded pair.
 fstDec :: Port -> Build Port
 fstDec p = do
   k  <- constI pairBase
   qN <- bin2Node "div" (NDiv "") p k
   subI (out0 qN) 2
 
+-- | Decode second component from encoded pair.
 sndDec :: Port -> Build Port
 sndDec p = do
   k  <- constI pairBase
@@ -223,7 +285,7 @@ sndDec p = do
   r  <- bin2 "sub" (NSub "") p (out0 mN)
   subI r 2
 
--- foldrM local
+-- | Local right-associative monadic fold (used for list construction).
 foldrM' :: (a -> b -> Build b) -> b -> [a] -> Build b
 foldrM' f z0 = go
   where
@@ -233,6 +295,7 @@ foldrM' f z0 = go
 
 -- API ------------------------------------------------------------------
 
+-- | Build a 'DFG' from a 'Program'. Also assigns super names first.
 buildProgram :: Program -> DFG
 buildProgram p0 =
   let Program decls = assignSuperNames p0
@@ -241,6 +304,7 @@ buildProgram p0 =
         mapM_ buildZero decls
   in bsGraph st
   where
+    -- | Build and expose zero-argument functions as graph roots.
     buildZero (FunDecl f ps body) | null ps = do
       p <- withEnv (goExpr body)
       insertB f (BPort p)
@@ -249,11 +313,15 @@ buildProgram p0 =
     buildZero _ = pure ()
 
 -- função já construída?
+
+-- | Has a return node for the given function @f@ already been emitted?
 funBuilt :: Ident -> Build Bool
 funBuilt f = Build $ gets $ \s -> any isRet (M.toList (dgNodes (bsGraph s)))
   where isRet (_, n) = case n of { NRet f' -> f' == f; _ -> False }
 
 -- evita reentrada recursiva
+
+-- | Ensure a function @f@ is built at most once; guard against recursion.
 ensureBuilt :: Ident -> [Ident] -> Expr -> Build ()
 ensureBuilt f ps body = do
   done   <- funBuilt f
@@ -271,6 +339,8 @@ ensureBuilt f ps body = do
        pure ()
 
 -- variável livre -> NArg
+
+-- | Treat an unbound variable as a free 'NArg' input node.
 freeVar :: Ident -> Build Port
 freeVar x = do
   nid <- newNode x (NArg x)
@@ -279,6 +349,8 @@ freeVar x = do
   pure p
 
 -- detecta se um Port carrega float (por origem)
+
+-- | Heuristically check if a port originates from floating-point ops/values.
 portIsFloat :: Port -> Build Bool
 portIsFloat p = Build $ gets $ \s -> case M.lookup (pNode p) (dgNodes (bsGraph s)) of
   Just NConstF{}     -> True
@@ -289,6 +361,7 @@ portIsFloat p = Build $ gets $ \s -> case M.lookup (pNode p) (dgNodes (bsGraph s
   Just (NRetSnd f _) -> S.member f (bsFloatFuns s)
   _                  -> False
 
+-- | Is the current operation in a floating-point context?
 isFloatContext :: Port -> Port -> Build Bool
 isFloatContext a b = do
   af <- isFloatActive
@@ -298,6 +371,7 @@ isFloatContext a b = do
 
 -- Expressões -----------------------------------------------------------
 
+-- | Synthesize an expression into the graph and return its output 'Port'.
 goExpr :: Expr -> Build Port
 goExpr = \case
   Var x -> do
@@ -403,11 +477,13 @@ goExpr = \case
 
 -- Declarações ----------------------------------------------------------
 
+-- | Insert a function lambda into the environment.
 goDecl :: Decl -> Build ()
 goDecl (FunDecl f ps body) = insertB f (BLam ps body)
 
 -- Aplicação n-ária -----------------------------------------------------
 
+-- | Flatten nested applications into @(head, args)@.
 flattenApp :: Expr -> (Expr, [Expr])
 flattenApp = \case
   App f x ->
@@ -415,6 +491,7 @@ flattenApp = \case
     in (g, xs ++ [x])
   e -> (e, [])
 
+-- | Mark a function as active while executing an action, then restore.
 withActive :: Ident -> Build a -> Build a
 withActive f m = Build $ do
   s <- get
@@ -425,10 +502,14 @@ withActive f m = Build $ do
   pure r
 
 -- taskId determinístico
+
+-- | Deterministic task identifier derived from the function name.
 funTaskId :: Ident -> Int
 funTaskId ident = foldl (\h c -> h * 131 + fromEnum c) 7 (show ident)
 
 -- nó de argumento formal
+
+-- | Ensure the formal argument node @fun#i@ exists and return its output port.
 argNode :: String -> Int -> Build Port
 argNode fun i = Build $ do
   s <- get
@@ -449,6 +530,8 @@ argNode fun i = Build $ do
   pure (out0 nid)
 
 -- formal + alias para o real
+
+-- | Bind a formal parameter to the actual input port, wiring aliases.
 bindFormal :: String -> Int -> Ident -> Port -> Build ()
 bindFormal fun i formal actual = do
   ap <- argNode fun i
@@ -457,6 +540,7 @@ bindFormal fun i formal actual = do
     InstPort nid _ -> connectPlus actual (InstPort nid "0")
     _              -> pure ()
 
+-- | Apply a function or lambda to argument expressions.
 goApp :: Expr -> [Expr] -> Build Port
 goApp fun args = case fun of
   Var f -> do
@@ -507,6 +591,7 @@ goApp fun args = case fun of
 
 -- Literais -------------------------------------------------------------
 
+-- | Build a constant for a 'Literal'.
 litNode :: Literal -> Build Port
 litNode = \case
   LInt n    -> constI n
@@ -517,9 +602,11 @@ litNode = \case
 
 -- Helpers --------------------------------------------------------------
 
+-- | Convenience for a binary operation node, returning its output port.
 bin2 :: String -> DNode -> Port -> Port -> Build Port
 bin2 _lbl nd a b = out0 <$> bin2Node "b2" nd a b
 
+-- | Build a binary operation node, returning its 'NodeId'.
 bin2Node :: String -> DNode -> Port -> Port -> Build NodeId
 bin2Node lbl nd a b = do
   nid <- newNode lbl nd
@@ -527,23 +614,28 @@ bin2Node lbl nd a b = do
   connectPlus b (InstPort nid "1")
   pure nid
 
+-- | Logical NOT implemented as equality with zero.
 notP :: Port -> Build Port
 notP x = do z <- constI 0; bin2 "equal" (NEqual "") x z
 
+-- | Logical OR implemented as @(a+b) > 0@.
 orP :: Port -> Port -> Build Port
 orP a b = do s <- bin2Node "add" (NAdd "") a b
              z <- constI 0
              bin2 "gthan" (NGThan "") (out0 s) z
 
+-- | Logical AND using bitwise-and node.
 andP :: Port -> Port -> Build Port
 andP a b = bin2 "band" (NBand "") a b
 
+-- | Boolean constants (1/0).
 trueP, falseP :: Build Port
 trueP  = constI 1
 falseP = constI 0
 
 -- CASE / Pattern matching ----------------------------------------------
 
+-- | Compile a @case@ by building guards and steering results.
 compileCase :: Expr -> [(Pattern, Expr)] -> Build Port
 compileCase scr alts = do
   pscr <- goExpr scr
@@ -553,6 +645,7 @@ compileCase scr alts = do
     []       -> falseP
     (h:rest) -> registerAlias h rest >> pure h
   where
+    -- | Build each alternative with its predicate and guard.
     goAlts _    _     []            acc = pure (reverse acc)
     goAlts pscr taken ((p,e):rs) acc = do
       (pPred, binds) <- patPred pscr p
@@ -568,6 +661,7 @@ compileCase scr alts = do
       taken' <- orP taken pPred
       goAlts pscr taken' rs (out:acc)
 
+-- | Build the predicate and bindings for matching a 'Pattern' against a scrutinee port.
 patPred :: Port -> Pattern -> Build (Port, [(Ident, Port)])
 patPred scr = \case
   PTuple [p1,p2] -> do
@@ -594,9 +688,11 @@ patPred scr = \case
                   pure (eq, [])
   _         -> trueP >>= \t -> pure (t, [])
 
+-- | Bind @x@ if the pattern is 'PVar'; otherwise no bindings.
 bindIfVar :: Pattern -> Port -> [(Ident, Port)]
 bindIfVar (PVar x) p = [(x,p)]
 bindIfVar _        _ = []
 
+-- | Literal helper that defers to 'litNode'.
 litNode' :: Literal -> Build Port
 litNode' = litNode

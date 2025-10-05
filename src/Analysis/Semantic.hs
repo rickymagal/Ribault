@@ -6,7 +6,7 @@ Module      : Semantic
 Description : Semantic checks (scope, arity, duplicates) and lightweight type inference over the core AST, plus desugaring and super-name assignment utilities.
 Copyright   :
 License     :
-Maintainer  : ricardo@example.com
+Maintainer  : ricardofilhoschool@gmail.com
 Stability   : experimental
 Portability : portable
 

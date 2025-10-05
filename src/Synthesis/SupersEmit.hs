@@ -1,6 +1,17 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 
--- Emite o módulo Haskell com símbolos s# exportados via FFI (perfil B)
+-- |
+-- Module      : Synthesis.SupersEmit
+-- Description : Emit a Haskell module exposing s# symbols via FFI (profile B).
+-- Maintainer  : ricardofilhoschool@gmail.com
+-- Stability   : experimental
+-- Portability : portable
+--
+-- Generates the Haskell source for a module named @Supers@ that exports
+-- super-instruction entry points via the FFI. Each exported symbol follows
+-- “profile B”: @sN :: Ptr Int64 -> Ptr Int64 -> IO ()@, reading @in[0]@
+-- and writing @out[0]@. Helpers for list encoding/decoding (compatible with
+-- the Builder) are emitted alongside the supers.
 module Synthesis.SupersEmit
   ( emitSupersModule  -- :: FileBase -> [SuperSpec] -> String
   ) where
@@ -11,20 +22,20 @@ import Data.List (dropWhileEnd)
 
 emitSupersModule :: String -> [SuperSpec] -> String
 emitSupersModule baseName specs
-  | null specs = ""  -- sem supers → sem arquivo
+  | null specs = ""  -- no supers → no file
   | otherwise  = unlines $
       [ "{-# LANGUAGE ForeignFunctionInterface #-}"
-      , "-- Gerado automaticamente para o programa: " ++ baseName
+      , "-- Automatically generated for program: " ++ baseName
       , "module Supers where"
       , ""
       , "import Foreign.Ptr (Ptr)"
       , "import Foreign.Storable (peek, poke)"
       , "import Data.Int (Int64)"
       , ""
-      , "-- Perfil B: sN :: Ptr Int64 -> Ptr Int64 -> IO ()"
-      , "-- Contrato: lê in[0] e escreve em out[0]."
+      , "-- Profile B: sN :: Ptr Int64 -> Ptr Int64 -> IO ()"
+      , "-- Contract: reads in[0] and writes to out[0]."
       , ""
-      , "-- Helpers de codificação compatíveis com o Builder:"
+      , "-- Encoding helpers compatible with the Builder:"
       , "pairBase :: Int64"
       , "pairBase = 1000003"
       , ""
@@ -77,19 +88,19 @@ emitOne (SuperSpec nm _kind inp out bodyRaw) =
        , "  let r = " ++ nm ++ "_impl x"
        , "  poke pout r"
        , ""
-       , "-- Função pura interna:"
-       , "-- - decodifica a entrada Int64 para lista em '" ++ inp ++ "'"
-       , "-- - executa o corpo salvo na AST (declarações + definição de '" ++ out ++ "')"
-       , "-- - codifica '" ++ out ++ "' de volta para Int64"
+       , "-- Internal pure function:"
+       , "-- - decodes the Int64 input into list '" ++ inp ++ "'"
+       , "-- - executes the stored body (declarations + definition of '" ++ out ++ "')"
+       , "-- - encodes '" ++ out ++ "' back to Int64"
        , nm ++ "_impl :: Int64 -> Int64"
        , nm ++ "_impl x ="
        , "  let"
        , "    " ++ inp ++ " = toList x"
        ]
-       ++ indent 4 bodyCore   -- <<< alinhar todas as bindings do let no mesmo nível
+       ++ indent 4 bodyCore   -- <<< align all let-bindings at the same level
        ++ [ "  in fromList " ++ out ]
 
--- ===== helpers de formatação =====
+-- ===== formatting helpers =====
 
 trimBlankEnds :: String -> String
 trimBlankEnds s =
@@ -99,7 +110,7 @@ trimBlankEnds s =
   where
     isBlank l = all isSpace l
 
--- remove o recuo mínimo comum das linhas não vazias
+-- Remove the minimal common indentation from non-empty lines
 normalizeIndent :: String -> [String]
 normalizeIndent s =
   let ls = lines s
