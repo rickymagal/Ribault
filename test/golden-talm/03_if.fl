@@ -1,15 +1,16 @@
 const z0, 0
 const n0, 3
 const n1, 2
-callgroup("c2","max")
-callsnd max[0], n0, c2
-callsnd max[1], n1, c2
-retsnd max[0], z0, c2
-gthan n6, n-1, n-1
-steer s7, n6, n-1
-steer s8, n6, n-1
-ret main, [s8.f, s7.t], z0
-gthan n10, n-1, n-1
-steer s11, n10, n-1
-steer s12, n10, n-1
-ret max, [s12.f, s11.t], z0
+gthan n2, n-1, n-1
+steer s3, n2, n-1
+steer s4, n2, n-1
+ret max, s4.g, z0
+callgroup("cg16","max")
+callsnd max[0], n0, cg16
+callsnd max[1], n1, cg16
+retsnd max[0], z0, cg16
+ret main, max[0], z0
+gthan n11, n-1, n-1
+steer s12, n11, n-1
+steer s13, n11, n-1
+ret max, s13.g, z0

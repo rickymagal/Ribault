@@ -1,0 +1,503 @@
+const z0, 0
+const n0, -1
+const n1, -1
+fconst n2, 1.0
+fconst n3, 2.0
+addi n4, n3, 2
+addi n5, n1, 2
+const n6, 1000003
+mul n7, n4, n6
+add n8, n7, n5
+addi n9, n2, 2
+addi n10, n8, 2
+const n11, 1000003
+mul n12, n9, n11
+add n13, n12, n10
+const n14, -1
+fconst n15, 3.0
+fconst n16, 4.0
+addi n17, n16, 2
+addi n18, n14, 2
+const n19, 1000003
+mul n20, n17, n19
+add n21, n20, n18
+addi n22, n15, 2
+addi n23, n21, 2
+const n24, 1000003
+mul n25, n22, n24
+add n26, n25, n23
+addi n27, n26, 2
+addi n28, n0, 2
+const n29, 1000003
+mul n30, n27, n29
+add n31, n30, n28
+addi n32, n13, 2
+addi n33, n31, 2
+const n34, 1000003
+mul n35, n32, n34
+add n36, n35, n33
+const n37, -1
+const n38, -1
+fconst n39, 5.0
+fconst n40, 6.0
+addi n41, n40, 2
+addi n42, n38, 2
+const n43, 1000003
+mul n44, n41, n43
+add n45, n44, n42
+addi n46, n39, 2
+addi n47, n45, 2
+const n48, 1000003
+mul n49, n46, n48
+add n50, n49, n47
+const n51, -1
+fconst n52, 7.0
+fconst n53, 8.0
+addi n54, n53, 2
+addi n55, n51, 2
+const n56, 1000003
+mul n57, n54, n56
+add n58, n57, n55
+addi n59, n52, 2
+addi n60, n58, 2
+const n61, 1000003
+mul n62, n59, n61
+add n63, n62, n60
+addi n64, n63, 2
+addi n65, n37, 2
+const n66, 1000003
+mul n67, n64, n66
+add n68, n67, n65
+addi n69, n50, 2
+addi n70, n68, 2
+const n71, 1000003
+mul n72, n69, n71
+add n73, n72, n70
+add n74, z0, z0
+add n75, z0, z0
+add n76, z0, z0
+const n77, 0
+const n78, -1
+equal n79, n76, n78
+const n80, 0
+equal n81, n77, n80
+band n82, n79, n81
+const n83, -1
+steer s84, n82, n83
+add n85, n77, n79
+const n86, 0
+gthan n87, n85, n86
+const n88, 1
+const n89, 0
+equal n90, n87, n89
+band n91, n88, n90
+add n92, z0, z0
+const n93, 0
+const n94, -1
+equal n95, n92, n94
+const n96, 0
+equal n97, n93, n96
+band n98, n95, n97
+const n99, -1
+steer s100, n98, n99
+add n101, n93, n95
+const n102, 0
+gthan n103, n101, n102
+const n104, 1
+const n105, 0
+equal n106, n103, n105
+band n107, n104, n106
+add n108, z0, z0
+add n109, z0, z0
+callgroup("cg30","heads")
+callsnd heads[0], n109, cg30
+retsnd heads[0], z0, cg30
+addi n113, n108, 2
+addi n114, heads[0], 2
+const n115, 1000003
+mul n116, n113, n115
+add n117, n116, n114
+steer s118, n107, n117
+ret heads, s118.w, z0
+callgroup("cg40","heads")
+callsnd heads[0], n76, cg40
+retsnd heads[0], z0, cg40
+add n123, z0, z0
+const n124, 0
+const n125, -1
+equal n126, n123, n125
+const n127, 0
+equal n128, n124, n127
+band n129, n126, n128
+const n130, -1
+steer s131, n129, n130
+add n132, n124, n126
+const n133, 0
+gthan n134, n132, n133
+const n135, 1
+const n136, 0
+equal n137, n134, n136
+band n138, n135, n137
+add n139, z0, z0
+add n140, z0, z0
+callgroup("cg61","tails")
+callsnd tails[0], n140, cg61
+retsnd tails[0], z0, cg61
+addi n144, n139, 2
+addi n145, tails[0], 2
+const n146, 1000003
+mul n147, n144, n146
+add n148, n147, n145
+steer s149, n138, n148
+ret tails, s149.w, z0
+callgroup("cg71","tails")
+callsnd tails[0], n76, cg71
+retsnd tails[0], z0, cg71
+callgroup("cg74","transpose")
+callsnd transpose[0], tails[0], cg74
+retsnd transpose[0], z0, cg74
+addi n157, heads[0], 2
+addi n158, transpose[0], 2
+const n159, 1000003
+mul n160, n157, n159
+add n161, n160, n158
+steer s162, n91, n161
+ret transpose, s162.w, z0
+callgroup("cg84","transpose")
+callsnd transpose[0], n74, cg84
+retsnd transpose[0], z0, cg84
+add n167, z0, z0
+add n168, z0, z0
+add n169, z0, z0
+const n170, 0
+const n171, -1
+equal n172, n169, n171
+const n173, 0
+equal n174, n170, n173
+band n175, n172, n174
+const n176, 0
+steer s177, n175, n176
+add n178, n170, n172
+const n179, 0
+gthan n180, n178, n179
+const n181, 1
+const n182, 0
+equal n183, n180, n182
+band n184, n181, n183
+const n185, 1
+add n186, z0, z0
+callgroup("cg17","len")
+callsnd len[0], n186, cg17
+retsnd len[0], z0, cg17
+add n190, n185, len[0]
+steer s191, n184, n190
+ret len, s191.w, z0
+callgroup("cg23","len")
+callsnd len[0], n168, cg23
+retsnd len[0], z0, cg23
+const n196, 0
+add n197, z0, z0
+const n198, 8
+ret p, n198, z0
+callgroup("cg30","p")
+callsnd p[0], n196, cg30
+retsnd p[0], z0, cg30
+div n203, len[0], p[0]
+const n204, 0
+lthan n205, n203, n204
+equal n206, n203, n204
+add n207, n205, n206
+const n208, 0
+gthan n209, n207, n208
+const n210, 1
+steer s211, n209, n210
+steer s212, n209, n203
+lthan n213, len[0], [s212.g, s211.w]
+equal n214, len[0], [s212.g, s211.w]
+add n215, n213, n214
+const n216, 0
+gthan n217, n215, n216
+add n218, z0, z0
+add n219, z0, z0
+const n220, 0
+const n221, -1
+equal n222, n219, n221
+const n223, 0
+equal n224, n220, n223
+band n225, n222, n224
+const n226, -1
+steer s227, n225, n226
+add n228, n220, n222
+const n229, 0
+gthan n230, n228, n229
+const n231, 1
+const n232, 0
+equal n233, n230, n232
+band n234, n231, n233
+add n235, z0, z0
+add n236, z0, z0
+add n237, z0, z0
+const n238, 0
+const n239, -1
+equal n240, n236, n239
+const n241, 0
+equal n242, n238, n241
+band n243, n240, n242
+const n244, -1
+steer s245, n243, n244
+add n246, n238, n240
+const n247, 0
+gthan n248, n246, n247
+const n249, 1
+const n250, 0
+equal n251, n248, n250
+band n252, n249, n251
+add n253, z0, z0
+add n254, z0, z0
+add n255, z0, z0
+const n256, 0
+const n257, -1
+equal n258, n255, n257
+const n259, 0
+equal n260, n256, n259
+band n261, n258, n260
+fconst n262, 0.0
+steer s263, n261, n262
+add n264, n256, n258
+const n265, 0
+gthan n266, n264, n265
+const n267, 1
+const n268, 0
+equal n269, n266, n268
+band n270, n267, n269
+const n271, 0
+const n272, -1
+equal n273, n254, n272
+const n274, 0
+equal n275, n271, n274
+band n276, n273, n275
+fconst n277, 0.0
+steer s278, n276, n277
+add n279, n271, n273
+const n280, 0
+gthan n281, n279, n280
+const n282, 1
+const n283, 0
+equal n284, n281, n283
+band n285, n282, n284
+add n286, z0, z0
+fconst n287, 1.0
+mul n288, n286, n287
+add n289, z0, z0
+fconst n290, 1.0
+mul n291, n289, n290
+mul n292, n288, n291
+add n293, z0, z0
+add n294, z0, z0
+callgroup("cg35","dot")
+callsnd dot[0], n293, cg35
+callsnd dot[1], n294, cg35
+retsnd dot[0], z0, cg35
+add n299, n292, dot[0]
+steer s300, n285, n299
+steer s301, n270, s278.w
+ret dot, s301.w, z0
+callgroup("cg43","dot")
+callsnd dot[0], n237, cg43
+callsnd dot[1], n253, cg43
+retsnd dot[0], z0, cg43
+add n307, z0, z0
+callgroup("cg48","rowTimes")
+callsnd rowTimes[0], n237, cg48
+callsnd rowTimes[1], n307, cg48
+retsnd rowTimes[0], z0, cg48
+addi n312, dot[0], 2
+addi n313, rowTimes[0], 2
+const n314, 1000003
+mul n315, n312, n314
+add n316, n315, n313
+steer s317, n252, n316
+ret rowTimes, s317.w, z0
+callgroup("cg59","rowTimes")
+callsnd rowTimes[0], n235, cg59
+callsnd rowTimes[1], n218, cg59
+retsnd rowTimes[0], z0, cg59
+add n323, z0, z0
+callgroup("cg64","mmult")
+callsnd mmult[0], n323, cg64
+callsnd mmult[1], n218, cg64
+retsnd mmult[0], z0, cg64
+addi n328, rowTimes[0], 2
+addi n329, mmult[0], 2
+const n330, 1000003
+mul n331, n328, n330
+add n332, n331, n329
+steer s333, n234, n332
+ret mmult, s333.w, z0
+callgroup("cg75","mmult")
+callsnd mmult[0], n168, cg75
+callsnd mmult[1], n167, cg75
+retsnd mmult[0], z0, cg75
+add n339, z0, z0
+add n340, z0, z0
+add n341, z0, z0
+add n342, z0, z0
+const n343, 0
+lthan n344, n342, n343
+equal n345, n342, n343
+add n346, n344, n345
+const n347, 0
+gthan n348, n346, n347
+const n349, -1
+const n350, 0
+const n351, -1
+equal n352, n341, n351
+const n353, 0
+equal n354, n350, n353
+band n355, n352, n354
+const n356, -1
+steer s357, n355, n356
+add n358, n350, n352
+const n359, 0
+gthan n360, n358, n359
+const n361, 1
+const n362, 0
+equal n363, n360, n362
+band n364, n361, n363
+add n365, z0, z0
+const n366, 1
+sub n367, n342, n366
+add n368, z0, z0
+callgroup("cg19","takeN")
+callsnd takeN[0], n367, cg19
+callsnd takeN[1], n368, cg19
+retsnd takeN[0], z0, cg19
+addi n373, n365, 2
+addi n374, takeN[0], 2
+const n375, 1000003
+mul n376, n373, n375
+add n377, n376, n374
+steer s378, n364, n377
+steer s379, n348, n349
+steer s380, n348, s357.w
+ret takeN, s380.g, z0
+callgroup("cg32","takeN")
+callsnd takeN[0], n340, cg32
+callsnd takeN[1], n339, cg32
+retsnd takeN[0], z0, cg32
+add n386, z0, z0
+add n387, z0, z0
+const n388, 0
+lthan n389, n387, n388
+equal n390, n387, n388
+add n391, n389, n390
+const n392, 0
+gthan n393, n391, n392
+const n394, 0
+const n395, -1
+equal n396, n386, n395
+const n397, 0
+equal n398, n394, n397
+band n399, n396, n398
+const n400, -1
+steer s401, n399, n400
+add n402, n394, n396
+const n403, 0
+gthan n404, n402, n403
+const n405, 1
+const n406, 0
+equal n407, n404, n406
+band n408, n405, n407
+const n409, 1
+sub n410, n387, n409
+add n411, z0, z0
+callgroup("cg62","dropN")
+callsnd dropN[0], n410, cg62
+callsnd dropN[1], n411, cg62
+retsnd dropN[0], z0, cg62
+steer s416, n408, dropN[0]
+steer s417, n393, n386
+steer s418, n393, s401.w
+ret dropN, s418.g, z0
+callgroup("cg70","dropN")
+callsnd dropN[0], n340, cg70
+callsnd dropN[1], n339, cg70
+retsnd dropN[0], z0, cg70
+addi n424, takeN[0], 2
+addi n425, dropN[0], 2
+const n426, 1000003
+mul n427, n424, n426
+add n428, n427, n425
+ret splitAtN, n428, z0
+callgroup("cg80","splitAtN")
+callsnd splitAtN[0], [s212.g, s211.w], cg80
+callsnd splitAtN[1], n168, cg80
+retsnd splitAtN[0], z0, cg80
+const n434, 0
+const n435, 1000003
+div n436, splitAtN[0], n435
+subi n437, n436, 2
+const n438, 1000003
+div n439, splitAtN[0], n438
+mul n440, n439, n438
+sub n441, splitAtN[0], n440
+subi n442, n441, 2
+const n443, 1
+const n444, 0
+equal n445, n434, n444
+band n446, n443, n445
+callgroup("cg97","mmultPar")
+callsnd mmultPar[0], n437, cg97
+callsnd mmultPar[1], n167, cg97
+retsnd mmultPar[0], z0, cg97
+callgroup("cg11","mmultPar")
+callsnd mmultPar[0], n442, cg11
+callsnd mmultPar[1], n167, cg11
+retsnd mmultPar[0], z0, cg11
+add n455, z0, z0
+add n456, z0, z0
+const n457, 0
+const n458, -1
+equal n459, n456, n458
+const n460, 0
+equal n461, n457, n460
+band n462, n459, n461
+steer s463, n462, n455
+add n464, n457, n459
+const n465, 0
+gthan n466, n464, n465
+const n467, 1
+const n468, 0
+equal n469, n466, n468
+band n470, n467, n469
+add n471, z0, z0
+add n472, z0, z0
+callgroup("cg33","append")
+callsnd append[0], n472, cg33
+callsnd append[1], n455, cg33
+retsnd append[0], z0, cg33
+addi n477, n471, 2
+addi n478, append[0], 2
+const n479, 1000003
+mul n480, n477, n479
+add n481, n480, n478
+steer s482, n470, n481
+ret append, s482.w, z0
+callgroup("cg44","append")
+callsnd append[0], mmultPar[0], cg44
+callsnd append[1], mmultPar[0], cg44
+retsnd append[0], z0, cg44
+steer s488, n446, append[0]
+steer s489, n217, mmult[0]
+steer s490, n217, s488.w
+ret mmultPar, s490.g, z0
+callgroup("cg52","mmultPar")
+callsnd mmultPar[0], n75, cg52
+callsnd mmultPar[1], transpose[0], cg52
+retsnd mmultPar[0], z0, cg52
+ret matrixMul, mmultPar[0], z0
+callgroup("cg57","matrixMul")
+callsnd matrixMul[0], n36, cg57
+callsnd matrixMul[1], n73, cg57
+retsnd matrixMul[0], z0, cg57
+ret main, matrixMul[0], z0

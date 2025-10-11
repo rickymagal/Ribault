@@ -1,15 +1,14 @@
 const z0, 0
 const n0, 1
-callgroup("c1","squarePlusOne")
-callsnd squarePlusOne[0], n0, c1
-retsnd squarePlusOne[0], z0, c1
-mul n4, n-1, n-1
-ret sq, n4, z0
-const n6, 1
-add n7, n4, n6
-ret main, n7, z0
+mul n1, n-1, n-1
+const n2, 1
+add n3, n1, n2
+ret squarePlusOne, n3, z0
+callgroup("cg15","squarePlusOne")
+callsnd squarePlusOne[0], n0, cg15
+retsnd squarePlusOne[0], z0, cg15
+ret main, squarePlusOne[0], z0
 mul n9, n-1, n-1
-ret sq, n9, z0
-const n11, 1
-add n12, n9, n11
-ret squarePlusOne, n12, z0
+const n10, 1
+add n11, n9, n10
+ret squarePlusOne, n11, z0
