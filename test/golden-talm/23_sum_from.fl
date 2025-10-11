@@ -1,41 +1,26 @@
 const z0, 0
 const n0, 10000
 const n1, 0
-callgroup("c2","sumFrom")
-callsnd sumFrom[0], n0, c2
-callsnd sumFrom[1], n1, c2
-retsnd sumFrom[0], z0, c2
-add n6, n0, z0
-add n7, n1, z0
+add n2, z0, z0
+add n3, z0, z0
+const n4, 0
+lthan n5, n3, n4
+equal n6, n3, n4
+add n7, n5, n6
 const n8, 0
-lthan n9, n7, n8
-equal n10, n7, n8
-add n11, n9, n10
-const n12, 0
-gthan n13, n11, n12
-const n14, 1
-sub n15, n7, n14
-add n16, n6, n7
-callgroup("c17","sumFrom")
-callsnd sumFrom[0], n15, c17
-callsnd sumFrom[1], n16, c17
-retsnd sumFrom[0], z0, c17
-steer s21, n13, n6
-steer s22, n13, sumFrom[0]
-ret main, [s22.f, s21.t], z0
-const n24, 0
-lthan n25, n7, n24
-equal n26, n7, n24
-add n27, n25, n26
-const n28, 0
-gthan n29, n27, n28
-const n30, 1
-sub n31, n7, n30
-add n32, n6, n7
-callgroup("c33","sumFrom")
-callsnd sumFrom[0], n31, c33
-callsnd sumFrom[1], n32, c33
-retsnd sumFrom[0], z0, c33
-steer s37, n29, n6
-steer s38, n29, sumFrom[0]
-ret sumFrom, [s38.f, s37.t], z0
+gthan n9, n7, n8
+const n10, 1
+sub n11, n3, n10
+add n12, n2, n3
+callgroup("cg23","sumFrom")
+callsnd sumFrom[0], n11, cg23
+callsnd sumFrom[1], n12, cg23
+retsnd sumFrom[0], z0, cg23
+steer s17, n9, n2
+steer s18, n9, sumFrom[0]
+ret sumFrom, s18.g, z0
+callgroup("cg30","sumFrom")
+callsnd sumFrom[0], n0, cg30
+callsnd sumFrom[1], n1, cg30
+retsnd sumFrom[0], z0, cg30
+ret main, sumFrom[0], z0

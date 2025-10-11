@@ -1,33 +1,41 @@
 const z0, 0
 const n0, 1
 const n1, 2
-const n2, 1000003
-mul n3, n0, n2
-add n4, n3, n1
-ret tupleVal, n4, z0
-const n6, -1
-const n7, 1
-const n8, 2
-const n9, 3
-const n10, 1000003
-mul n11, n9, n10
-add n12, n11, n6
-const n13, 1000003
-mul n14, n8, n13
-add n15, n14, n12
-const n16, 1000003
-mul n17, n7, n16
-add n18, n17, n15
-ret listVal, n18, z0
-const n20, 0
-ret stringVal, n20, z0
-const n22, 122
-ret charVal, n22, z0
-fconst n24, 3.14
-ret floatVal, n24, z0
-const n26, 42
-ret intVal, n26, z0
+addi n2, n0, 2
+addi n3, n1, 2
+const n4, 1000003
+mul n5, n2, n4
+add n6, n5, n3
+ret tupleVal, n6, z0
+const n8, -1
+const n9, 1
+const n10, 2
+const n11, 3
+addi n12, n11, 2
+addi n13, n8, 2
+const n14, 1000003
+mul n15, n12, n14
+add n16, n15, n13
+addi n17, n10, 2
+addi n18, n16, 2
+const n19, 1000003
+mul n20, n17, n19
+add n21, n20, n18
+addi n22, n9, 2
+addi n23, n21, 2
+const n24, 1000003
+mul n25, n22, n24
+add n26, n25, n23
+ret listVal, n26, z0
 const n28, 0
-ret falseBool, n28, z0
-const n30, 1
-ret trueBool, n30, z0
+ret stringVal, n28, z0
+const n30, 122
+ret charVal, n30, z0
+fconst n32, 3.14
+ret floatVal, n32, z0
+const n34, 42
+ret intVal, n34, z0
+const n36, 0
+ret falseBool, n36, z0
+const n38, 1
+ret trueBool, n38, z0
