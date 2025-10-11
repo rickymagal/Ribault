@@ -645,9 +645,23 @@ compileCase scr alts = do
     []       -> falseP
     (h:rest) -> registerAlias h rest >> pure h
   where
-    -- | Build each alternative with its predicate and guard.
-    goAlts _    _     []            acc = pure (reverse acc)
-    goAlts pscr taken ((p,e):rs) acc = do
+    -- Última alternativa: NÃO compute orP/taken' (evita nó morto).
+    goAlts _    _     []              acc = pure (reverse acc)
+    goAlts pscr taken [(p,e)]         acc = do
+      (pPred, binds) <- patPred pscr p
+      ntaken <- notP taken
+      guardi <- andP pPred ntaken
+      val <- withEnv $ do
+               mapM_ (\(x,v) -> insertB x (BPort v)) binds
+               goExpr e
+      sid <- newNode "steer" (NSteer "")
+      connect val    (InstPort sid "0")
+      connect guardi (InstPort sid "1")
+      let out = SteerPort sid "t"
+      pure (reverse (out:acc))
+
+    -- Alternativas intermediárias: mantém o cálculo de taken'
+    goAlts pscr taken ((p,e):rs)     acc = do
       (pPred, binds) <- patPred pscr p
       ntaken <- notP taken
       guardi <- andP pPred ntaken
