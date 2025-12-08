@@ -1,0 +1,36 @@
+-- Vector sum with multiple supers
+
+sum_list xs =
+  case xs of
+    []      -> 0;
+    y:ys    -> y + sum_list ys;;
+
+chunk2 xs =
+  case xs of
+    []        -> [];
+    a:b:rest  -> [a, b] : chunk2 rest;
+    _         -> [xs];;
+
+sum_chunk xs =
+  super single input (xs) output (r)
+#BEGINSUPER
+  -- Haskell code compiled by GHC
+  -- xs :: [Int], r :: Int
+  sum xs
+#ENDSUPER
+
+sum_chunks xss =
+  super parallel input (xss) output (rs)
+#BEGINSUPER
+  -- Haskell code compiled by GHC
+  -- xss :: [[Int]], rs :: [Int]
+  map sum xss
+#ENDSUPER
+
+vector_sum xs =
+  let parts     = chunk2 xs;
+      partials  = sum_chunks parts
+  in sum_list partials
+
+main =
+  vector_sum [1,2,3,4,5,6]

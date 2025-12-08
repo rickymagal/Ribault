@@ -17,71 +17,79 @@ $idchar  = [_A-Za-z0-9']
 
 tokens :-
 
-$white+                              { skip }
-\n                                   { skip }
-"--".*                               { skip }
+-- Normal mode: skip whitespace, newlines, comments
+<0> $white+                         { skip }
+<0> \n                              { skip }
+<0> "--".*                          { skip }
 
-<0> "#BEGINSUPER"                    { actBeginSuper }
-<super> "#ENDSUPER"                  { actEndSuper }
-<super> \n                           { actSuperAcc }
-<super> .                            { actSuperAcc }
+-- Enter/leave super mode
+<0>     "#BEGINSUPER"               { actBeginSuper }
+<super> "#ENDSUPER"                 { actEndSuper }
+<super> \n                          { actSuperAcc }
+<super> .                           { actSuperAcc }
 
-"let"                                { actEmit TokenLet }
-"in"                                 { actEmit TokenIn }
-"if"                                 { actEmit TokenIf }
-"then"                               { actEmit TokenThen }
-"else"                               { actEmit TokenElse }
-"case"                               { actEmit TokenCase }
-"of"                                 { actEmit TokenOf }
-"not"                                { actEmit TokenNot }
+-- Keywords (normal mode only)
+<0> "let"                           { actEmit TokenLet }
+<0> "in"                            { actEmit TokenIn }
+<0> "if"                            { actEmit TokenIf }
+<0> "then"                          { actEmit TokenThen }
+<0> "else"                          { actEmit TokenElse }
+<0> "case"                          { actEmit TokenCase }
+<0> "of"                            { actEmit TokenOf }
+<0> "not"                           { actEmit TokenNot }
 
-"True"                               { actEmit (TokenBool True) }
-"False"                              { actEmit (TokenBool False) }
+<0> "True"                          { actEmit (TokenBool True) }
+<0> "False"                         { actEmit (TokenBool False) }
 
-"->"                                 { actEmit TokenArrow }
-"=="                                 { actEmit TokenEq }
-"/="                                 { actEmit TokenNeq }
-"<="                                 { actEmit TokenLe }
-">="                                 { actEmit TokenGe }
-"<"                                  { actEmit TokenLt }
-">"                                  { actEmit TokenGt }
-"&&"                                 { actEmit TokenAnd }
-"||"                                 { actEmit TokenOr }
+-- Operators (normal mode only)
+<0> "->"                            { actEmit TokenArrow }
+<0> "=="                            { actEmit TokenEq }
+<0> "/="                            { actEmit TokenNeq }
+<0> "<="                            { actEmit TokenLe }
+<0> ">="                            { actEmit TokenGe }
+<0> "<"                             { actEmit TokenLt }
+<0> ">"                             { actEmit TokenGt }
+<0> "&&"                            { actEmit TokenAnd }
+<0> "||"                            { actEmit TokenOr }
 
-"\+"                                 { actEmit TokenPlus }
-"-"                                  { actEmit TokenMinus }
-"*"                                  { actEmit TokenTimes }
-"/"                                  { actEmit TokenDiv }
-"%"                                  { actEmit TokenMod }
+<0> "\+"                            { actEmit TokenPlus }
+<0> "-"                             { actEmit TokenMinus }
+<0> "*"                             { actEmit TokenTimes }
+<0> "/"                             { actEmit TokenDiv }
+<0> "%"                             { actEmit TokenMod }
 
-"="                                  { actEmit TokenEquals }
-[\\]                                 { actEmit TokenBackslash }
-"_"                                  { actEmit TokenUnderscore }
+<0> "="                             { actEmit TokenEquals }
+<0> [\\]                            { actEmit TokenBackslash }
+<0> "_"                             { actEmit TokenUnderscore }
 
-"("                                  { actEmit TokenLParen }
-")"                                  { actEmit TokenRParen }
-"["                                  { actEmit TokenLBracket }
-"]"                                  { actEmit TokenRBracket }
-","                                  { actEmit TokenComma }
-":"                                  { actEmit TokenColon }
-";"                                  { actEmit TokenSemi }
+-- Delimiters (normal mode only)
+<0> "("                             { actEmit TokenLParen }
+<0> ")"                             { actEmit TokenRParen }
+<0> "["                             { actEmit TokenLBracket }
+<0> "]"                             { actEmit TokenRBracket }
+<0> ","                             { actEmit TokenComma }
+<0> ":"                             { actEmit TokenColon }
+<0> ";"                             { actEmit TokenSemi }
 
-"super"                              { actEmit TokenSuper }
-"single"                             { actEmit TokenSingle }
-"parallel"                           { actEmit TokenParallel }
-"input"                              { actEmit TokenInput }
-"output"                             { actEmit TokenOutput }
+-- Super headers (normal mode only)
+<0> "super"                         { actEmit TokenSuper }
+<0> "single"                        { actEmit TokenSingle }
+<0> "parallel"                      { actEmit TokenParallel }
+<0> "input"                         { actEmit TokenInput }
+<0> "output"                        { actEmit TokenOutput }
 
-$digit+ "." $digit+                  { \i n -> actEmitLex (\s -> TokenFloat (read s)) i n }
-$digit+                              { \i n -> actEmitLex (\s -> TokenInt   (read s)) i n }
+-- Literals (normal mode only)
+<0> $digit+ "." $digit+             { \i n -> actEmitLex (\s -> TokenFloat (read s)) i n }
+<0> $digit+                         { \i n -> actEmitLex (\s -> TokenInt   (read s)) i n }
 
-\'[^\\\']\'                          { \i n -> actEmitLex (\s -> TokenChar   (read s)) i n }
-\"([^\\\"]|\\.)*\"                   { \i n -> actEmitLex (\s -> TokenString (read s)) i n }
+<0> \'[^\\\']\'                     { \i n -> actEmitLex (\s -> TokenChar   (read s)) i n }
+<0> \"([^\\\"]|\\.)*\"              { \i n -> actEmitLex (\s -> TokenString (read s)) i n }
 
-$alpha $idchar*                      { \i n -> actEmitLex TokenIdent i n }
+-- Identifiers (normal mode only)
+<0> $alpha $idchar*                 { \i n -> actEmitLex TokenIdent i n }
 
--- catch-all: consume any remaining character (including weird spaces) and ignore
-.                                     { skip }
+-- Catch-all in normal mode: skip any remaining character
+<0> .                               { skip }
 
 {
 -- ===== Tokens =====
@@ -108,7 +116,7 @@ data Token
   | TokenEOF
   deriving (Eq, Show)
 
--- ===== User state (only for super bodies) =====
+-- ===== User state: only super bodies =====
 data AlexUserState = AlexUserState
   { stSuper   :: [Char]
   , stInSuper :: !Bool
@@ -151,7 +159,6 @@ actEndSuper _ _ = do
 
 -- ===== EOF / scanAll =====
 
--- Alex will call this when it hits real EOF; we map it to a sentinel token.
 alexEOF :: Alex Token
 alexEOF = pure TokenEOF
 

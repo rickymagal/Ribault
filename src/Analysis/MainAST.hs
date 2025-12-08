@@ -14,8 +14,8 @@ import System.IO          (readFile, getContents, hPutStrLn, stderr)
 import System.Exit        (exitFailure)
 import qualified Data.Text.Lazy.IO as TLIO
 
-import Lexer              (alexScanTokens)
-import Parser             (parse)
+import Analysis.Lexer     (scanAll)
+import Analysis.Parser    (parse)
 import Syntax             (Program)
 import Semantic           (checkAll, assignSuperNames)
 import Analysis.ASTGen    (programToDot)
@@ -28,10 +28,13 @@ main = do
     []     -> getContents
     _      -> hPutStrLn stderr "Usage: lambdaflow-ast [file]" >> exitFailure
 
-  let ast0 :: Program
-      ast0 = parse (alexScanTokens input)
-      ast  = assignSuperNames ast0
+  case scanAll input of
+    Left err -> hPutStrLn stderr ("Lexer error: " ++ err) >> exitFailure
+    Right toks -> do
+      let ast0 :: Program
+          ast0 = parse toks
+          ast  = assignSuperNames ast0
 
-  case checkAll ast of
-    []   -> TLIO.putStr (programToDot ast)
-    errs -> mapM_ (hPutStrLn stderr . show) errs >> exitFailure
+      case checkAll ast of
+        []   -> TLIO.putStr (programToDot ast)
+        errs -> mapM_ (hPutStrLn stderr . show) errs >> exitFailure
