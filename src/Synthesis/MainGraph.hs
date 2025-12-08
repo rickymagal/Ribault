@@ -10,8 +10,8 @@ module Main where
 --
 -- Reads a source file (or STDIN), lexes/parses it into an AST, runs semantic
 -- checks, and—if successful—builds a dataflow graph and pretty-prints it
--- as GraphViz DOT to STDOUT. On semantic errors, prints them to STDERR and
--- exits with failure.
+-- as GraphViz DOT to STDOUT. On semantic or lexical errors, prints them to
+-- STDERR and exits with failure.
 --
 -- Usage:
 --
@@ -32,10 +32,10 @@ import qualified Data.Text.Lazy.IO as TLIO
 ----------------------------------------------------------------------
 -- Front-end
 ----------------------------------------------------------------------
-import Lexer    (alexScanTokens)
-import Parser   (parse)
-import Semantic (checkAll)
-import Syntax   (Program)
+import Analysis.Lexer    (Token, scanAll)
+import Analysis.Parser   (parse)
+import Semantic          (checkAll)
+import Syntax            (Program)
 
 ----------------------------------------------------------------------
 -- Back-end: Builder → DOT
@@ -49,8 +49,13 @@ import qualified Synthesis.GraphViz as GV  -- toDot        :: DFG     -> Text
 main :: IO ()
 main = do
   src <- getInput
+
+  tokens <- case scanAll src of
+    Left err -> hPutStrLn stderr ("Lexical error: " ++ err) >> exitFailure
+    Right ts -> pure ts
+
   let ast :: Program
-      ast = parse (alexScanTokens src)
+      ast = parse tokens
 
   case checkAll ast of
     []   -> TLIO.putStr . GV.toDot $ DF.buildProgram ast

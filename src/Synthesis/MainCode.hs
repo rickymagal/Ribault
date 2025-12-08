@@ -17,7 +17,7 @@
 --
 -- Build example:
 --
--- > ghc -O2 -isrc -o lambdaflow-asm src/Synthesis/MainASM.hs
+-- > ghc -O2 -isrc -o lambdaflow-asm src/Synthesis/MainCode.hs
 --
 -- Usage:
 --
@@ -29,19 +29,20 @@ module Main where
 import System.Environment (getArgs)
 import System.IO          (readFile, getContents, hPutStrLn, stderr)
 import System.Exit        (exitFailure)
-import qualified Data.Text            as TS
-import qualified Data.Text.Lazy       as TL
-import qualified Data.Text.Lazy.IO    as TLIO
+
+import qualified Data.Text       as TS
+import qualified Data.Text.Lazy  as TL
+import qualified Data.Text.Lazy.IO as TLIO
 
 -- Front-end ---------------------------------------------------------------
-import Lexer    (alexScanTokens)
-import Parser   (parse)
-import Syntax   (Program)
-import Semantic (checkAll)
+import Analysis.Lexer  (Token, scanAll)
+import Analysis.Parser (parse)
+import Syntax          (Program)
+import Semantic        (checkAll)
 
 -- Back-end ----------------------------------------------------------------
-import qualified Synthesis.Builder  as DF   -- AST → DGraph
-import qualified Synthesis.Codegen  as CG   -- DGraph → TALM assembly (strict Text)
+import qualified Synthesis.Builder as DF  -- AST → DGraph
+import qualified Synthesis.Codegen as CG  -- DGraph → TALM assembly (strict Text)
 
 -----------------------------------------------------------------------------
 -- | Main executable. See module header for behavior and usage.
@@ -53,8 +54,12 @@ main = do
            []     -> getContents
            _      -> hPutStrLn stderr "Usage: lambdaflow-asm [file]" >> exitFailure
 
+  tokens <- case scanAll src of
+    Left err -> hPutStrLn stderr ("Lexical error: " ++ err) >> exitFailure
+    Right ts -> pure ts
+
   let ast :: Program
-      ast = parse (alexScanTokens src)
+      ast = parse tokens
 
   case checkAll ast of
     [] -> do
