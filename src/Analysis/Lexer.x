@@ -1,154 +1,168 @@
 {
-module Lexer where
-import Data.Maybe (fromMaybe)
+module Analysis.Lexer
+  ( Token(..)
+  , scanAll
+  , alexMonadScan
+  ) where
+
+import Control.Monad (when)
 }
 
-%wrapper "posn"
+%wrapper "monadUserState"
 
-$white   = [\ \t\r\n]
-$digit   = 0-9
+$white   = [\ \t\r]
+$digit   = [0-9]
 $alpha   = [A-Za-z]
 $idchar  = [_A-Za-z0-9']
 
 tokens :-
 
-$white+                  ;
-"--"[^\n]*               ;
+$white+                              { skip }
+\n                                   { skip }
+"--".*                               { skip }
 
-"#BEGINSUPER"(.|\r|\n)*"#ENDSUPER"   { \p s ->
-      let body = take (length s - 20) (drop 11 s)   -- descarta "#BEGINSUPER" (11) e "#ENDSUPER" (9)
-      in (p, TokenSuperBody body)
-  }
-"let"                    { \p _ -> (p, TokenLet) }
-"in"                     { \p _ -> (p, TokenIn) }
-"if"                     { \p _ -> (p, TokenIf) }
-"then"                   { \p _ -> (p, TokenThen) }
-"else"                   { \p _ -> (p, TokenElse) }
-"case"                   { \p _ -> (p, TokenCase) }
-"of"                     { \p _ -> (p, TokenOf) }
-"not"                    { \p _ -> (p, TokenNot) }
+<0> "#BEGINSUPER"                    { actBeginSuper }
+<super> "#ENDSUPER"                  { actEndSuper }
+<super> \n                           { actSuperAcc }
+<super> .                            { actSuperAcc }
 
-"True"                   { \p _ -> (p, TokenBool True) }
-"False"                  { \p _ -> (p, TokenBool False) }
+"let"                                { actEmit TokenLet }
+"in"                                 { actEmit TokenIn }
+"if"                                 { actEmit TokenIf }
+"then"                               { actEmit TokenThen }
+"else"                               { actEmit TokenElse }
+"case"                               { actEmit TokenCase }
+"of"                                 { actEmit TokenOf }
+"not"                                { actEmit TokenNot }
 
-"->"                     { \p _ -> (p, TokenArrow) }
-"=="                     { \p _ -> (p, TokenEq) }
-"/="                     { \p _ -> (p, TokenNeq) }
-"<="                     { \p _ -> (p, TokenLe) }
-">="                     { \p _ -> (p, TokenGe) }
-"<"                      { \p _ -> (p, TokenLt) }
-">"                      { \p _ -> (p, TokenGt) }
-"&&"                     { \p _ -> (p, TokenAnd) }
-"||"                     { \p _ -> (p, TokenOr) }
+"True"                               { actEmit (TokenBool True) }
+"False"                              { actEmit (TokenBool False) }
 
-"+"                      { \p _ -> (p, TokenPlus) }
-"-"                      { \p _ -> (p, TokenMinus) }
-"*"                      { \p _ -> (p, TokenTimes) }
-"/"                      { \p _ -> (p, TokenDiv) }
-"%"                      { \p _ -> (p, TokenMod) }
+"->"                                 { actEmit TokenArrow }
+"=="                                 { actEmit TokenEq }
+"/="                                 { actEmit TokenNeq }
+"<="                                 { actEmit TokenLe }
+">="                                 { actEmit TokenGe }
+"<"                                  { actEmit TokenLt }
+">"                                  { actEmit TokenGt }
+"&&"                                 { actEmit TokenAnd }
+"||"                                 { actEmit TokenOr }
 
-"="                      { \p _ -> (p, TokenEquals) }
-"\"                      { \p _ -> (p, TokenBackslash) }
-"_"                      { \p _ -> (p, TokenUnderscore) }
-			 
-"("                      { \p _ -> (p, TokenLParen) }
-")"                      { \p _ -> (p, TokenRParen) }
-"["                      { \p _ -> (p, TokenLBracket) }
-"]"                      { \p _ -> (p, TokenRBracket) }
-","                      { \p _ -> (p, TokenComma) }
-";"                      { \p _ ->   (p, TokenSemi) }
-":"                      { \p _ -> (p, TokenColon) }
-"super"                  { \p _ -> (p, TokenSuper) }
-"single"                 { \p _ -> (p, TokenSingle) }
-"parallel"               { \p _ -> (p, TokenParallel) }
-"input"                  { \p _ -> (p, TokenInput) }
-"output"                 { \p _ -> (p, TokenOutput) }
+"\+"                                 { actEmit TokenPlus }
+"-"                                  { actEmit TokenMinus }
+"*"                                  { actEmit TokenTimes }
+"/"                                  { actEmit TokenDiv }
+"%"                                  { actEmit TokenMod }
 
-$digit+ "." $digit+     { \p s -> (p, TokenFloat (read s)) }
-$digit+                 { \p s -> (p, TokenInt (read s)) }
+"="                                  { actEmit TokenEquals }
+[\\]                                 { actEmit TokenBackslash }
+"_"                                  { actEmit TokenUnderscore }
 
-\'[^\\']\'              { \p s -> (p, TokenChar (read s)) }
-\"([^\\\"]|\\.)*\"      { \p s -> (p, TokenString (read s)) }
+"("                                  { actEmit TokenLParen }
+")"                                  { actEmit TokenRParen }
+"["                                  { actEmit TokenLBracket }
+"]"                                  { actEmit TokenRBracket }
+","                                  { actEmit TokenComma }
+":"                                  { actEmit TokenColon }
+";"                                  { actEmit TokenSemi }
 
-$alpha $idchar*          { \p s -> (p, TokenIdent s) }
-"-"                      { \p _ -> (p, TokenMinus) }
-.                         { \p s -> error ("Erro léxico: caractere inesperado " ++ s ++ " em " ++ show p) }
+"super"                              { actEmit TokenSuper }
+"single"                             { actEmit TokenSingle }
+"parallel"                           { actEmit TokenParallel }
+"input"                              { actEmit TokenInput }
+"output"                             { actEmit TokenOutput }
+
+$digit+ "." $digit+                  { \i n -> actEmitLex (\s -> TokenFloat (read s)) i n }
+$digit+                              { \i n -> actEmitLex (\s -> TokenInt   (read s)) i n }
+
+\'[^\\\']\'                          { \i n -> actEmitLex (\s -> TokenChar   (read s)) i n }
+\"([^\\\"]|\\.)*\"                   { \i n -> actEmitLex (\s -> TokenString (read s)) i n }
+
+$alpha $idchar*                      { \i n -> actEmitLex TokenIdent i n }
+
+-- catch-all: consume any remaining character (including weird spaces) and ignore
+.                                     { skip }
 
 {
-
+-- ===== Tokens =====
 data Token
   = TokenLet | TokenIn | TokenIf | TokenThen | TokenElse
   | TokenCase | TokenOf
   | TokenNot
   | TokenBool Bool
-  
-  -- Palavras-chave do modo super
   | TokenSuper | TokenSingle | TokenParallel
-  | TokenInput | TokenOutput   | TokenSuperBody String
-  
-  -- Operadores
+  | TokenInput | TokenOutput
+  | TokenSuperBody String
   | TokenArrow
   | TokenEq | TokenNeq | TokenLe | TokenGe | TokenLt | TokenGt
   | TokenAnd | TokenOr
   | TokenPlus | TokenMinus | TokenTimes | TokenDiv | TokenMod
-
-  -- Símbolos
   | TokenEquals
   | TokenBackslash
   | TokenUnderscore
   | TokenLParen | TokenRParen
   | TokenLBracket | TokenRBracket
   | TokenComma | TokenColon | TokenSemi
-
-  -- Literais e identificadores
-  | TokenInt Int
-  | TokenFloat Double
-  | TokenChar Char
-  | TokenString String
+  | TokenInt Int | TokenFloat Double | TokenChar Char | TokenString String
   | TokenIdent String
-  deriving (Eq)
+  | TokenEOF
+  deriving (Eq, Show)
 
-instance Show Token where
-  show TokenSemi        = ";"
-  show TokenColon       = ":" 
-  show TokenLet         = "let"
-  show TokenIn          = "in"
-  show TokenIf          = "if"
-  show TokenThen        = "then"
-  show TokenElse        = "else"
-  show TokenCase        = "case"
-  show TokenOf          = "of"
-  show TokenNot         = "not"
-  show (TokenBool b)    = show b
-  show TokenArrow       = "->"
-  show TokenEq          = "=="
-  show TokenNeq         = "/="
-  show TokenLe          = "<="
-  show TokenGe          = ">="
-  show TokenLt          = "<"
-  show TokenGt          = ">"
-  show TokenAnd         = "&&"
-  show TokenOr          = "||"
-  show TokenPlus        = "+"
-  show TokenMinus       = "-"
-  show TokenTimes       = "*"
-  show TokenDiv         = "/"
-  show TokenMod         = "%"
-  show TokenEquals      = "="
-  show TokenBackslash   = "\\"
-  show TokenUnderscore  = "_"
-  show TokenLParen      = "("
-  show TokenRParen      = ")"
-  show TokenLBracket    = "["
-  show TokenRBracket    = "]"
-  show TokenComma       = ","
-  show (TokenInt n)     = show n
-  show (TokenFloat f)   = show f
-  show (TokenChar c)    = show c
-  show (TokenString s)  = show s
-  show (TokenIdent s)   = s
+-- ===== User state (only for super bodies) =====
+data AlexUserState = AlexUserState
+  { stSuper   :: [Char]
+  , stInSuper :: !Bool
+  }
 
-type PosnToken = (AlexPosn, Token)
-alexScanTokens :: String -> [PosnToken]
+alexInitUserState :: AlexUserState
+alexInitUserState = AlexUserState
+  { stSuper   = []
+  , stInSuper = False
+  }
+
+-- ===== Emit helpers =====
+actEmit :: Token -> AlexAction Token
+actEmit t _ _ = pure t
+
+actEmitLex :: (String -> Token) -> AlexAction Token
+actEmitLex f (_,_,_,str) n = pure (f (take n str))
+
+-- ===== super mode =====
+actBeginSuper :: AlexAction Token
+actBeginSuper _ _ = do
+  alexSetStartCode super
+  st <- alexGetUserState
+  alexSetUserState st { stInSuper = True, stSuper = [] }
+  alexMonadScan
+
+actSuperAcc :: AlexAction Token
+actSuperAcc _ n = do
+  (_,_,_,str) <- alexGetInput
+  st <- alexGetUserState
+  alexSetUserState st { stSuper = stSuper st ++ take n str }
+  alexMonadScan
+
+actEndSuper :: AlexAction Token
+actEndSuper _ _ = do
+  alexSetStartCode 0
+  st <- alexGetUserState
+  alexSetUserState st { stInSuper = False }
+  pure (TokenSuperBody (stSuper st))
+
+-- ===== EOF / scanAll =====
+
+-- Alex will call this when it hits real EOF; we map it to a sentinel token.
+alexEOF :: Alex Token
+alexEOF = pure TokenEOF
+
+scanAll :: String -> Either String [Token]
+scanAll s = runAlex s (go [])
+  where
+    go :: [Token] -> Alex [Token]
+    go acc = do
+      t <- alexMonadScan
+      case t of
+        TokenEOF -> pure (reverse acc)
+        _        -> go (t : acc)
 
 }
