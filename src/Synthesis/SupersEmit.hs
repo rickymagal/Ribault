@@ -20,6 +20,7 @@ import Synthesis.SuperExtract
 import Data.Char (isSpace)
 import Data.List (dropWhileEnd)
 
+-- | Generate a complete Supers.hs module for a given program and its supers.
 emitSupersModule :: String -> [SuperSpec] -> String
 emitSupersModule baseName specs
   | null specs = ""  -- no supers → no file
@@ -28,9 +29,9 @@ emitSupersModule baseName specs
       , "-- Automatically generated for program: " ++ baseName
       , "module Supers where"
       , ""
-      , "import Foreign.Ptr (Ptr)"
+      , "import Foreign.Ptr      (Ptr)"
       , "import Foreign.Storable (peek, poke)"
-      , "import Data.Int (Int64)"
+      , "import Data.Int         (Int64)"
       , ""
       , "-- Profile B: sN :: Ptr Int64 -> Ptr Int64 -> IO ()"
       , "-- Contract: reads in[0] and writes to out[0]."
@@ -53,7 +54,9 @@ emitSupersModule baseName specs
       , ""
       , "toList :: Int64 -> [Int64]"
       , "toList n | n == nil  = []"
-      , "         | otherwise = let h = fstDec n; t = sndDec n in h : toList t"
+      , "         | otherwise = let h = fstDec n"
+      , "                            t = sndDec n"
+      , "                        in h : toList t"
       , ""
       , "fromList :: [Int64] -> Int64"
       , "fromList []     = nil"
@@ -61,9 +64,10 @@ emitSupersModule baseName specs
       ]
       ++ concatMap emitOne specs
 
+-- | Emit one super (its FFI wrapper + pure @_impl@).
 emitOne :: SuperSpec -> [String]
 emitOne (SuperSpec nm _kind inp out bodyRaw) =
-  let bodyCore = normalizeIndent (trimBlankEnds bodyRaw)  -- [String]
+  let bodyCore = normalizeIndent (trimBlankHash bodyRaw)  -- [String], sem linhas '#'
   in if null bodyCore
      then
        [ ""
@@ -97,30 +101,43 @@ emitOne (SuperSpec nm _kind inp out bodyRaw) =
        , "  let"
        , "    " ++ inp ++ " = toList x"
        ]
-       ++ indent 4 bodyCore   -- <<< align all let-bindings at the same level
+       ++ indent 4 bodyCore
        ++ [ "  in fromList " ++ out ]
 
--- ===== formatting helpers =====
+----------------------------------------------------------------
+-- Formatting helpers
+----------------------------------------------------------------
 
-trimBlankEnds :: String -> String
-trimBlankEnds s =
-  let ls   = lines s
-      dropBE = dropWhile isBlank . dropWhileEnd isBlank
-  in unlines (dropBE ls)
-  where
-    isBlank l = all isSpace l
+-- | Remove blank lines from topo/fundo E QUALQUER linha cujo primeiro
+-- caractere não em branco seja '#'. Isso mata vestígios de #BEGINSUPER,
+-- #ENDSUPER ou comentários iniciados por '#', que quebrariam a sintaxe.
+trimBlankHash :: String -> String
+trimBlankHash s =
+  let ls0   = lines s
+      -- descarta linhas só de espaço ou que começam com '#'
+      isBlank l = all isSpace l
+      isHash l  =
+        case dropWhile isSpace l of
+          ('#':_) -> True
+          _       -> False
+      isIgn l   = isBlank l || isHash l
+      dropBE    = dropWhile isIgn . dropWhileEnd isIgn
+      ls1       = dropBE ls0
+      ls2       = filter (not . isHash) ls1
+  in unlines ls2
 
--- Remove the minimal common indentation from non-empty lines
+-- | Remove a indentação mínima comum de todas as linhas não vazias.
 normalizeIndent :: String -> [String]
 normalizeIndent s =
-  let ls = lines s
+  let ls       = lines s
       nonblank = filter (not . all isSpace) ls
       leadSpaces l = length (takeWhile isSpace l)
-      base = case nonblank of
-               [] -> 0
-               _  -> minimum (map leadSpaces nonblank)
+      base     = case nonblank of
+                   [] -> 0
+                   _  -> minimum (map leadSpaces nonblank)
   in map (drop base) ls
 
+-- | Indentar todas as linhas com @n@ espaços.
 indent :: Int -> [String] -> [String]
 indent n ls =
   let pad = replicate n ' '

@@ -1,44 +1,63 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
--- Description : Read a .hsk file, parse + check, rename Supers to s#, collect and emit Supers.hs (or nothing).
+-- Module      : Main
+-- Description : CLI that extracts supers from a program and emits a Supers.hs module.
 -- Maintainer  : ricardofilhoschool@gmail.com
 -- Stability   : experimental
 -- Portability : portable
 --
--- Usage:
---   supersgen [file]
--- If no file is provided, reads source from STDIN. On success, prints the
--- generated Supers module to STDOUT. If there are no supers, prints an empty
--- string so the Makefile can skip building the shared library.
+-- Pipeline:
+--   1. Read Haskell-subset source (file or stdin)
+--   2. Lex and parse into AST
+--   3. Assign symbolic names to Super nodes (s1, s2, ...)
+--   4. Collect super specifications
+--   5. Emit a Haskell module (Supers.hs) with FFI exports
+--
+-- Note: this tool does NOT run semantic/type checks. That is done in the
+-- synthesis/codegen pipeline; here we only need a structurally valid AST
+-- to extract supers and generate the FFI shim.
+module Main where
 
 import System.Environment (getArgs)
-import System.Exit (exitFailure)
-import System.IO (hPutStrLn, stderr)
-import System.FilePath (takeBaseName)
+import System.Exit        (exitFailure)
+import System.FilePath    (takeBaseName)
+import System.IO          (readFile, getContents, hPutStrLn, stderr)
 
-import Lexer   (alexScanTokens)
-import Parser  (parse)
-import Semantic (checkAll, assignSuperNames)
-import Syntax
-
-import Synthesis.SuperExtract (collectSupers)
-import Synthesis.SupersEmit   (emitSupersModule)
+import qualified Analysis.Lexer         as L
+import qualified Analysis.Parser        as P
+import qualified Syntax        as S
+import qualified Semantic      as Sem
+import qualified Synthesis.SuperExtract as SE
+import qualified Synthesis.SupersEmit   as SEt
 
 main :: IO ()
 main = do
-  args <- getArgs
-  src  <- case args of
-            [file] -> readFile file
-            []     -> getContents
-            _      -> hPutStrLn stderr "Usage: supersgen [file]" >> exitFailure
+  args  <- getArgs
+  input <- case args of
+    [file] -> readFile file
+    []     -> getContents
+    _      -> do
+      hPutStrLn stderr "Usage: supersgen <file.hsk>"
+      exitFailure
 
-  let ast0 = parse (alexScanTokens src)
+  -- Lexing
+  toks <- case L.scanAll input of
+    Left err -> do
+      hPutStrLn stderr ("Lexical error: " ++ err)
+      exitFailure
+    Right ts -> pure ts
 
-  case checkAll ast0 of
-    [] -> do
-      let ast  = assignSuperNames ast0
-          base = case args of { [file] -> takeBaseName file; _ -> "stdin" }
-          out  = emitSupersModule base (collectSupers ast)
-      putStr out   -- empty ⇒ Makefile detects and skips .so generation
-    errs -> mapM_ (hPutStrLn stderr . show) errs >> exitFailure
+  -- Parsing + assign super names
+  let ast0 :: S.Program
+      ast0 = P.parse toks
+      ast  = Sem.assignSuperNames ast0
+
+  -- Collect supers and emit Supers.hs source
+  let baseName = case args of
+        [file] -> takeBaseName file
+        []     -> "stdin"
+      specs = SE.collectSupers ast
+      hsSrc = SEt.emitSupersModule baseName specs
+
+  putStr hsSrc
