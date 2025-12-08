@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Espera estas variáveis vindas do 'make supers'
+# Expected environment variables from "make supers"
 : "${EXE_SUPERS:?}" "${GHC:?}" "${GHC_LIBDIR:?}" "${GHC_RTS_DIR:?}" "${SUPERS_DIR:?}"
 : "${DEPS_PATTERNS:?}" "${SUPERS_LINK_FLAGS:?}" "${PY_ALIAS:?}" "${PY_FIX:?}" "${TESTS:?}"
-# Opcional: se definida, copia libgmp local
+# Optional: if defined, copy a local libgmp
 : "${GMP_CANDIDATES:=}"
 
-# Lista de testes (sem espaços nos paths)
+# Tests list (no spaces in paths)
 tests=( $TESTS )
 
 for f in "${tests[@]}"; do
@@ -23,46 +23,48 @@ for f in "${tests[@]}"; do
   if [[ -s "$outdir/Supers.hs.tmp" ]]; then
     mv "$outdir/Supers.hs.tmp" "$outdir/Supers.hs"
 
-    # Duplicar exports: "sN" também como "super(N-1)"
+    # Duplicate exports: "sN" also as "super(N-1)"
     python3 "$PY_ALIAS" "$outdir/Supers.hs"
 
-    # Stub para inicializar o RTS dentro da .so
+    # Small C stub to initialize the RTS inside the .so
     echo "[C    ] $outdir/supers_rts_init.o"
     cc -fPIC -O2 -I"$GHC_LIBDIR/include" \
        -c tools/supers_rts_init.c -o "$outdir/supers_rts_init.o"
 
-    # Escolhe o RTS não-threaded (libHSrts-ghc*.so)
-    rtsbase="$(basename "$(ls "$GHC_RTS_DIR"/libHSrts-ghc*.so | head -n1)" .so)"
-    rtsbase="${rtsbase#lib}"
-
     echo "[GHC  ] $sofile"
-    GHC_ENVIRONMENT=- "$GHC" $SUPERS_LINK_FLAGS \
-      -optl -L"$GHC_RTS_DIR" -optl -l"$rtsbase" \
+    # IMPORTANT:
+    # Let GHC handle RTS linking; do NOT inject -r or explicit libHSrts here.
+    # We ignore SUPERS_LINK_FLAGS because they are the source of the -r + .so conflict.
+    GHC_ENVIRONMENT=- "$GHC" \
+      -shared -dynamic -fPIC -no-hs-main \
       -o "$sofile" "$outdir/Supers.hs" "$outdir/supers_rts_init.o"
 
     mkdir -p "$depdir"
 
-    # Copia TODAS as deps Haskell que podem ser NEEDED pela .so
+    # Copy all Haskell shared-library dependencies that may be NEEDED by the .so
     for pat in $DEPS_PATTERNS; do
       for so in "$GHC_LIBDIR"/$pat; do
         [[ -f "$so" ]] && cp -L "$so" "$depdir/"
       done
     done
 
-    # Opcional: fechar libgmp localmente (se variável tiver sido passada)
+    # Optionally bundle a local libgmp if a candidate was provided
     if [[ -n "$GMP_CANDIDATES" ]]; then
       for g in $GMP_CANDIDATES; do
-        [[ -f "$g" ]] && { cp -L "$g" "$depdir/"; break; }
+        if [[ -f "$g" ]]; then
+          cp -L "$g" "$depdir/"
+          break
+        fi
       done
     fi
 
-    # RPATH curto apontando p/ bundle
+    # Short RPATH pointing to the local bundle
     if command -v patchelf >/dev/null 2>&1; then
       patchelf --force-rpath --set-rpath '$ORIGIN/ghc-deps:$ORIGIN' "$sofile" || true
     fi
 
-    # Garante stack não-executável em TUDO (a .so e cada dependência)
-    echo "[STACK] removendo EXEC de $sofile e deps (via Python)"
+    # Ensure non-executable stack on the .so and all its deps
+    echo "[STACK] clearing EXEC flag from $sofile and deps (via Python)"
     python3 "$PY_FIX" "$sofile" "$depdir"/*.so || true
 
   else
