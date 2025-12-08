@@ -293,13 +293,18 @@ inferExpr fenv tenv expr = case expr of
       (r0:rs') -> foldM unifyReturn r0 rs'
       []       -> throwError (Mismatch scr scrT scrT)
   Let ds e -> do
+    -- Include let-bound functions in the function environment
     let fenv' = Map.union (buildFuncEnv ds) fenv
-    tenv' <- foldM (\envAcc d -> case d of
-                 FunDecl fn [] bd' -> do
-                   t <- inferExpr fenv envAcc bd'
-                   return (Map.insert fn t envAcc)
-                 _ -> return envAcc
-               ) tenv ds
+    -- Sequentially infer nullary bindings, but each body sees all let-bound functions
+    tenv' <- foldM
+               (\envAcc d -> case d of
+                  FunDecl fn [] bd' -> do
+                    t <- inferExpr fenv' envAcc bd'
+                    return (Map.insert fn t envAcc)
+                  _ -> return envAcc
+               )
+               tenv
+               ds
     inferExpr fenv' tenv' e
   App{} -> do
     let (fn0,args) = flattenApp expr
