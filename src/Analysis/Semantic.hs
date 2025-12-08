@@ -4,30 +4,6 @@
 {-|
 Module      : Semantic
 Description : Semantic checks (scope, arity, duplicates) and lightweight type inference over the core AST, plus desugaring and super-name assignment utilities.
-Copyright   :
-License     :
-Maintainer  : ricardofilhoschool@gmail.com
-Stability   : experimental
-Portability : portable
-
-## Overview
-
-This module provides:
-
-1. **Semantic checking** (non-typing): undefined variables, arity mismatches,
-   duplicate function names, duplicate parameters, and duplicate pattern vars.
-2. **Lightweight type inference** over a small type algebra (lists, tuples,
-   functions, literals, basic unary/binary operators).
-3. **Utilities**: a tiny desugaring (turns @f = \\ps -> e@ into @f ps = e@),
-   and a pass to assign fresh names to 'Super' blocks.
-
-## Notes
-
-- Application trees are flattened left-associatively for both checks and inference.
-- The type inference uses ad-hoc unification helpers; it is not general HM.
-- Only top-level function declarations exist in 'Program'.
-- In 'Let', only function declarations are (optionally) given local types.
-
 -}
 module Semantic where
 
@@ -39,10 +15,6 @@ import Control.Monad.State
 import Control.Monad (forM, foldM, zipWithM, unless)
 
 -- | Desugar a single declaration.
---
--- === Description
--- Collapses a point-free form @f = \\ps -> e@ into an explicit clause
--- @f ps = e@. Other declarations are returned unchanged.
 desugarDecl :: Decl -> Decl
 desugarDecl (FunDecl f [] (Lambda ps e)) = FunDecl f ps e
 desugarDecl d = d
@@ -104,8 +76,6 @@ data InferState = InferState { count :: Int }
 type Infer a = ExceptT TypeError (State InferState) a
 
 -- | Build a top-level signature (arity) from a list of declarations.
---
--- If a function appears multiple times, the first arity is kept.
 buildSig :: [Decl] -> Sig
 buildSig =
   foldr
@@ -123,10 +93,6 @@ buildFuncEnv =
        in (f, (tvs, tr)))
 
 -- | Run semantic checks (no typing) over the program and collect all errors.
---
--- Checks:
--- - Duplicate top-level functions
--- - Undefined vars, arity, duplicate params/pattern vars
 semanticCheck :: Program -> [Error]
 semanticCheck prog =
   let Program ds = desugarProgram prog
@@ -173,16 +139,11 @@ checkExpr sig env expr = case expr of
         env'   = Set.union env (Set.fromList (fnames ++ params))
     in errsDecl ++ checkExpr sig env' body
   App{} ->
+    -- Só checamos recursivamente; NÃO emitimos mais ArityMismatch aqui.
     let (fn0,args) = flattenApp expr
         eFn = checkExpr sig env fn0
         eAs = concatMap (checkExpr sig env) args
-        arErr = case fn0 of
-          Var f
-            | Just ar <- Map.lookup f sig
-            , ar /= length args
-              -> [ArityMismatch f ar (length args)]
-          _ -> []
-    in eFn ++ eAs ++ arErr
+    in eFn ++ eAs
   BinOp _ l r ->
     checkExpr sig env l ++ checkExpr sig env r
   UnOp _ x ->
@@ -224,7 +185,6 @@ checkProgram prog =
       fenv = buildFuncEnv ds
   in concatMap (runDecl fenv Map.empty) ds
   where
-    -- | Type-check a single function body with fresh arg types and a fresh return.
     runDecl fenv tenv (FunDecl f ps b) =
       let argTys = replicate (length ps) (TVar "_")
           retTy  = TVar ("r_" ++ f)
@@ -251,7 +211,6 @@ unifyReturn expected actual
   , length ps == length qs         = mapM_ (uncurry unifyReturn) (zip ps qs) >> unifyReturn r s
   | otherwise                      = throwError (Mismatch (Var "<return>") expected actual)
 
--- | Test whether a type is a type variable.
 isTVar :: Type -> Bool
 isTVar (TVar _) = True
 isTVar _        = False
@@ -293,9 +252,7 @@ inferExpr fenv tenv expr = case expr of
       (r0:rs') -> foldM unifyReturn r0 rs'
       []       -> throwError (Mismatch scr scrT scrT)
   Let ds e -> do
-    -- Include let-bound functions in the function environment
     let fenv' = Map.union (buildFuncEnv ds) fenv
-    -- Sequentially infer nullary bindings, but each body sees all let-bound functions
     tenv' <- foldM
                (\envAcc d -> case d of
                   FunDecl fn [] bd' -> do
@@ -307,19 +264,15 @@ inferExpr fenv tenv expr = case expr of
                ds
     inferExpr fenv' tenv' e
   App{} -> do
+    -- Aplicação relaxada: inferimos função e argumentos,
+    -- mas não geramos mais erro por quantidade/tipo de argumentos.
     let (fn0,args) = flattenApp expr
     fty   <- inferExpr fenv tenv fn0
-    argTs <- mapM (inferExpr fenv tenv) args
+    _     <- mapM (inferExpr fenv tenv) args
     case fty of
-      TFun ps r
-        | length ps /= length argTs
-          -> throwError (Mismatch expr (TFun ps r) (TFun argTs r))
-        | and (zipWith match ps argTs)
-          -> return r
-        | otherwise
-          -> throwError (Mismatch expr (TFun ps r) (TFun argTs r))
-      TVar _ -> freshTypeVar
-      _      -> throwError (Mismatch expr (TVar "_") fty)
+      TFun _ r -> return r
+      TVar _   -> freshTypeVar
+      _        -> freshTypeVar
   BinOp op l r -> do
     tl <- inferExpr fenv tenv l
     tr <- inferExpr fenv tenv r
@@ -358,7 +311,6 @@ inferExpr fenv tenv expr = case expr of
       Just t  -> return t
       Nothing -> freshTypeVar
   where
-    -- | Unify two element types (used for lists/tuples), producing a resolved type.
     unifyTypes :: Expr -> Type -> Type -> Infer Type
     unifyTypes e t1 t2 = case (t1,t2) of
       (TVar _, t)            -> return t
@@ -411,7 +363,6 @@ inferPattern = \case
       $ throwError (Mismatch (Lit (LString "pattern")) (TList t1) t2)
     return (v1 ++ v2, TList t1)
 
--- | Type of a literal constant.
 literalType :: Literal -> Type
 literalType = \case
   LInt _    -> TInt
@@ -420,7 +371,6 @@ literalType = \case
   LChar _   -> TChar
   LString _ -> TString
 
--- | Typing rules for numeric / boolean / comparison binary operators.
 numBin, boolBin, compBin :: BinOperator -> Type -> Type -> Infer Type
 numBin _ TInt   TInt   = return TInt
 numBin _ TFloat TFloat = return TFloat
@@ -440,13 +390,11 @@ compBin _ (TVar _) _ = return TBool
 compBin _ _ (TVar _) = return TBool
 compBin op a b       = throwError (BinOpTypeErr op a b)
 
--- | Ensure a condition type is boolean (or polymorphic to be resolved later).
 ensureBool :: Expr -> Type -> Infer ()
 ensureBool _ TBool    = return ()
 ensureBool _ (TVar _) = return ()
 ensureBool e t        = throwError (CondNotBool e t)
 
--- | Generate a fresh type variable @t1, t2, ...@.
 freshTypeVar :: Infer Type
 freshTypeVar = do
   s <- get
@@ -454,18 +402,13 @@ freshTypeVar = do
   put s { count = n }
   return (TVar ("t" ++ show n))
 
--- | Predicate: is this type a polymorphic variable?
 isPoly :: Type -> Bool
 isPoly (TVar _) = True
 isPoly _        = False
 
--- | Run both passes and return all collected errors.
 checkAll :: Program -> [Error]
 checkAll p = semanticCheck p ++ checkProgram p
 
--- | Assign fresh symbolic names @s1, s2, ...@ to 'Super' nodes across the program.
---
--- This transform preserves the kind, input/output variables and body content.
 assignSuperNames :: Program -> Program
 assignSuperNames (Program ds) =
   Program (evalState (mapM goDecl ds) (1 :: Int))
