@@ -209,7 +209,7 @@ $(EXE_DF): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
            $(TYPES_HS) $(PORT_HS) $(NODE_HS)
 	@echo "[GHC  ] $@"
 	@mkdir -p $(EXE_DF).obj $(EXE_DF).hi
-	$(GHC) -O2 \
+	$(GHC) -O2 -package mtl \
 	      -odir $(EXE_DF).obj -hidir $(EXE_DF).hi \
 	      -o $@ \
 	      $(MAIN_DF_HS) $(LEXER_HS) $(PARSER_HS) \
@@ -220,7 +220,7 @@ $(EXE_DF): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
 $(EXE_AST): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS) $(MAIN_AST_HS)
 	@echo "[GHC  ] $@"
 	@mkdir -p $(EXE_AST).obj $(EXE_AST).hi
-	$(GHC) -O2 \
+	$(GHC) -O2 -package mtl \
 	      -odir $(EXE_AST).obj -hidir $(EXE_AST).hi \
 	      -o $@ \
 	      $(MAIN_AST_HS) $(LEXER_HS) $(PARSER_HS) \
@@ -231,7 +231,7 @@ $(EXE_CODE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
              $(TYPES_HS) $(PORT_HS) $(NODE_HS)
 	@echo "[GHC  ] $@"
 	@mkdir -p $(EXE_CODE).obj $(EXE_CODE).hi
-	$(GHC) -O2 \
+	$(GHC) -O2 -package mtl \
 	      -odir $(EXE_CODE).obj -hidir $(EXE_CODE).hi \
 	       -o $@ \
 	      $(MAIN_CODE_HS) $(LEXER_HS) $(PARSER_HS) \

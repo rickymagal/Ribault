@@ -3,17 +3,23 @@
 
 import argparse, os, random
 
-TMPL = r"""-- dyck_path_template.hsk
--- ------------------------------------------------------------
--- Controle: n, delta, imb, p
--- ------------------------------------------------------------
+TMPL = r"""-- dyck_path.hsk
+-- Dyck path validation with tunable parameters:
+-- * Size (n)
+-- * Parenthesis imbalance (delta)
+-- * Work imbalance (imb 0-100)
+-- * Number of processors (p)
+
+-- PARAMETERS (overwritten by script)
 
 n x     = __N__;
 p x     = __P__;
 imb x   = __IMB__;
 delta x = __DELTA__;
 
--- Funções auxiliares ------------------------------------------
+-- ------------------------------------------------------------
+-- Helpers (all definitions end with ';')
+-- ------------------------------------------------------------
 
 len xs = case xs of
   []      -> 0;
@@ -34,29 +40,40 @@ splitAtN k xs = (takeN k xs, dropN k xs);
 
 replicateN k x = if k <= 0 then [] else x : replicateN (k-1) x;
 
--- Geração da sequência ----------------------------------------
+-- ------------------------------------------------------------
+-- Dyck-like sequence generator with controlled imbalance
+-- '(' →  1 ; ')' → -1
+-- ------------------------------------------------------------
 
-repeatDyck m acc = if m == 0 then acc else repeatDyck (m - 1) (1 : -1 : acc);
+repeatDyck m acc =
+  if m == 0
+  then acc
+  else repeatDyck (m - 1) (1 : -1 : acc)
+;
 
 append xs ys = case xs of
-[] -> ys;
-(h:ts) -> h : append ts ys;
+  []     -> ys;
+  (h:ts) -> h : append ts ys;
 ;
 
 generateDyck len d =
-	     let base = repeatDyck (len / 2) [] in
-	     if d == 0
-	     then base
-	     else if d > 0
-	     	  then append base (replicateN d 1)
-		  else append base (replicateN (0 - d) (-1))
+  let base = repeatDyck (len / 2) [] in
+  if d == 0
+    then base
+    else if d > 0
+      then append base (replicateN d 1)
+      else append base (replicateN (0 - d) (-1))
 ;
 
 inputSeq = generateDyck (n 0) (delta 0);
 
--- SUPER: devolve (somaTotal, minPrefixo) ----------------------
+-- ------------------------------------------------------------
+-- SUPER: sequential processing of a chunk
+-- returns (totalSum, minPrefix)
+-- ------------------------------------------------------------
 
-analyseChunk lst = super single input (lst) output (res)
+analyseChunk lst =
+  super single input (lst) output (res)
   #BEGINSUPER
     aux s mn []     = (s, mn)
     aux s mn (x:xs) =
@@ -72,35 +89,44 @@ chunkPair lst = case analyseChunk lst of
   [s, mn] -> (s, mn);
 ;
 
--- Divisão desequilibrada (IMB) --------------------------------
+-- ------------------------------------------------------------
+-- Imbalanced split controlled by IMB (work-skew)
+-- IMB = 0 → 50/50 ; IMB ≈100 → ~75/25
+-- ------------------------------------------------------------
 
 splitImb xs =
   splitAtN (((len xs) * (100 + (imb 0))) / 200) xs
 ;
 
--- Recursão paralela com fallback para SUPER --------------------
+-- ------------------------------------------------------------
+-- Parallel recursion with SUPER grain control
+-- ------------------------------------------------------------
 
 threshold = (n 0) / (p 0);
 
-checkRec n0 lst = if (len lst) <= n0
-  then chunkPair lst
-  else case splitImb lst of
-    (lft, rgt) ->
-      case checkRec n0 lft of
-        (s1, m1) ->
-          case checkRec n0 rgt of
-            (s2, m2) ->
-              ( s1 + s2
-              , if m1 < (s1 + m2) then m1 else (s1 + m2) );;;
+checkRec n0 lst =
+  if (len lst) <= n0
+    then chunkPair lst
+    else case splitImb lst of
+      (lft, rgt) ->
+        case checkRec n0 lft of
+          (s1, m1) ->
+            case checkRec n0 rgt of
+              (s2, m2) ->
+                ( s1 + s2
+                , if m1 < (s1 + m2) then m1 else (s1 + m2) );;;
 ;
 
--- Verificação final -------------------------------------------
+-- ------------------------------------------------------------
+-- Final Dyck check
+-- ------------------------------------------------------------
 
-validateDyck lst = case checkRec threshold lst of
-  (tot, mn) -> (tot == 0) && (mn >= 0);
+validateDyck lst =
+  case checkRec threshold lst of
+    (tot, mn) -> (tot == 0) && (mn >= 0);
 ;
 
-main = validateDyck inputSeq;
+main = validateDyck inputSeq
 """
 
 def emit_hsk(path, N, P, IMB, DELTA, vec_kind):
