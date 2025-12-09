@@ -21,9 +21,9 @@ add_pairs pairs =
 print_final cs =
   super single input (cs) output (out)
 #BEGINSUPER
-    let _ = print "Hello World!"
-    let _ = print cs
-    out = 0
+    hello = print "Hello World!"
+    shown = print cs
+    out   = [0]
 #ENDSUPER;
 
 main =
