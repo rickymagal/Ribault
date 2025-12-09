@@ -1,6 +1,6 @@
--- Merge Sort in the subset of the compiled functional language
--- Agora tudo é finalizado com ";". Quando o subvetor ficar com
--- tamanho <= (tamanhoOriginal / p), chamamos a SUPER (p = 4).
+-- Merge Sort in the compiled functional subset
+-- Everything ends with ";". When a sublist size becomes <= (originalSize / p),
+-- we offload it to a SUPER that runs a full merge sort in Haskell.
 
 -- length
 len xs = case xs of
@@ -8,7 +8,7 @@ len xs = case xs of
   (_:ys)  -> 1 + len ys;
 ;
 
--- Merge two sorted lists into a single sorted list
+-- Merge two sorted lists into a single sorted list (pure language version)
 merge xs ys = case xs of
   []      -> ys;
   (x:xt)  -> case ys of
@@ -17,8 +17,8 @@ merge xs ys = case xs of
                 then x : merge xt ys
                 else y : merge xs yt;;
 ;
- 
--- Split a list into two approximately equal halves
+
+-- Split a list into two approximately equal halves (pure language version)
 split lst = case lst of
   []     -> ([], []);
   [x]    -> ([x], []);
@@ -26,32 +26,54 @@ split lst = case lst of
     (xs, ys) -> (x:xs, y:ys);;
 ;
 
--- divisor do threshold
+-- threshold divisor
 p = 4;
 
--- Função de entrada: calcula N0 e chama a versão com threshold
+-- super: full merge sort for short lists
+-- This runs a full recursive merge sort inside the SUPER (Haskell code),
+-- so each call has a relatively large grain.
+ms_super lst =
+  super single input (lst) output (sorted)
+#BEGINSUPER
+    ms []  = []
+    ms [x] = [x]
+    ms xs  =
+      let (l, r) = splitLocal xs
+      in mergeLocal (ms l) (ms r)
+
+    splitLocal []           = ([], [])
+    splitLocal [x]          = ([x], [])
+    splitLocal (x:y:rest)   =
+      let (xs, ys) = splitLocal rest
+      in (x:xs, y:ys)
+
+    mergeLocal [] ys        = ys
+    mergeLocal xs []        = xs
+    mergeLocal (x:xt) (y:yt)
+      | x <= y    = x : mergeLocal xt (y:yt)
+      | otherwise = y : mergeLocal (x:xt) yt
+
+    sorted = ms lst
+#ENDSUPER;
+
+-- entry function: compute N0 and call thresholded version
 mergeSort0 lst = mergeSortT (len lst) lst;
 
--- Merge Sort com fallback para SUPER quando sublista <= N0 / p
+-- Merge Sort with fallback to SUPER when the grain is small enough
 mergeSortT n0 lst = case lst of
   []     -> [];
   (x:[]) -> [x];
-  _      -> if (len lst) <= (n0 / p)
-            then super single input (lst) output (sorted)
-                 #BEGINSUPER
-                 -- Haskell: insertion sort para listas pequenas
-                 insert x [] = [x]
-                 insert x (y:ys)
-                   | x <= y    = x:y:ys
-                   | otherwise = y : insert x ys
-                 isort []     = []
-                 isort (h:t)  = insert h (isort t)
-                 sorted = isort lst
-                 #ENDSUPER
-            else case split lst of
-              (left, right) ->
-                merge (mergeSortT n0 left) (mergeSortT n0 right);;
+  _      ->
+    let n = len lst;
+    in
+      if n <= (n0 / p)
+      -- whole sublist is small: do a full merge sort in a single SUPER
+      then ms_super lst
+      else
+        case split lst of
+          (left, right) ->
+            merge (mergeSortT n0 left) (mergeSortT n0 right);;
 ;
 
--- Exemplo
-main = mergeSort0 [34,7,23,32,5,62,1,9,8,4,3,11];
+-- Example
+main = mergeSort0 [34,7,23,32,5,62,1,9,8,4,3,11]
