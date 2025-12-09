@@ -26,9 +26,18 @@ sum_chunks xss =
 #ENDSUPER;
 
 vector_sum xs =
-  let parts     = chunk2 xs;
-      partials  = sum_chunks parts
-  in sum_list partials;
+  sum_list (sum_chunks (chunk2 xs));
+
+use_sum_chunk xs =
+  case sum_chunk xs of
+    [s] -> s;
+    _   -> 0;;
+
+test_vec =
+  vector_sum [1,2,3,4,5,6];
+
+test_chunk =
+  use_sum_chunk [1,2,3,4,5,6];
 
 main =
-  vector_sum [1,2,3,4,5,6]
+  test_vec + test_chunk
