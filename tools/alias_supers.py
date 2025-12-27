@@ -1,42 +1,62 @@
 #!/usr/bin/env python3
-import re, sys
+"""
+Prefix exported super symbols to avoid collisions.
 
-if len(sys.argv) != 1 and len(sys.argv) != 2:
-    print("uso: alias_supers.py <Supers.hs>")
-    sys.exit(1)
+The generated Supers.hs exports C symbols like "s0", "s1", ...
+If you compile multiple Supers modules into a single shared object, those
+symbols collide. This script rewrites:
 
-path = sys.argv[1] if len(sys.argv)==2 else "Supers.hs"
-txt  = open(path, 'r', encoding='utf-8').read()
+  foreign export ccall "s0" s0 :: ...
 
-# 1) Duplicar cada 'foreign export ... "sN"' com alias 'super(N-1)'
-def add_alias(m):
-    line = m.group(0)
-    n = int(m.group(1))
-    alias = line.replace(f'"s{n}"', f'"super{n-1}"', 1)
-    return line + alias
+into:
 
-txt = re.sub(
-    r'(?m)^\s*foreign\s+export\s+ccall\s+"s(\d+)"[^\n]*\n',
-    add_alias,
-    txt
-)
+  foreign export ccall "<prefix>_s0" s0 :: ...
 
-# 2) Fortalecer toList para não travar em 0 e colocar limite de passos
-pat = re.compile(
-    r'(?ms)^toList\s*::\s*Int64\s*->\s*\[Int64\]\s*.*?^fromList\s*::',
-    re.M
-)
-toList_safe = (
-    "toList :: Int64 -> [Int64]\n"
-    "toList n = go 0 n\n"
-    "  where\n"
-    "    go k m\n"
-    "      | m == nil  = []\n"
-    "      | m == 0    = []  -- trata entrada não inicializada/lixo\n"
-    "      | k > 2000000 = [] -- trava-dura anti-loop\n"
-    "      | otherwise = let h = fstDec m; t = sndDec m in h : go (k+1) t\n\n"
-    "fromList ::"
-)
-txt = pat.sub(toList_safe, txt)
+Usage:
+  python3 tools/alias_supers.py <prefix> [Supers.hs]
+"""
 
-open(path, 'w', encoding='utf-8').write(txt)
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+
+def read_text_fallback(path: Path) -> str:
+    data = path.read_bytes()
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("latin-1")
+
+
+def sanitize_prefix(prefix: str) -> str:
+    p = re.sub(r"[^A-Za-z0-9_]", "_", prefix)
+    if not p or not re.match(r"[A-Za-z_]", p[0]):
+        p = "_" + p
+    return p
+
+
+def main(argv: list[str]) -> int:
+    if not argv:
+        print("Usage: alias_supers.py <prefix> [Supers.hs]", file=sys.stderr)
+        return 2
+
+    prefix = sanitize_prefix(argv[0])
+    path = Path(argv[1]) if len(argv) > 1 else Path("Supers.hs")
+
+    src = read_text_fallback(path)
+
+    def repl(m: re.Match[str]) -> str:
+        sym = m.group(1)
+        return f'foreign export ccall "{prefix}_{sym}"'
+
+    out = re.sub(r'foreign\s+export\s+ccall\s+"(s[0-9]+)"', repl, src)
+
+    path.write_text(out, encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
