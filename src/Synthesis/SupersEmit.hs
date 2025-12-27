@@ -23,7 +23,7 @@ import Data.List (dropWhileEnd)
 -- | Generate a complete Supers.hs module for a given program and its supers.
 emitSupersModule :: String -> [SuperSpec] -> String
 emitSupersModule baseName specs
-  | null specs = ""  -- no supers → no file
+  | null specs = ""  -- no supers -> no file
   | otherwise  = unlines $
       [ "{-# LANGUAGE ForeignFunctionInterface #-}"
       , "-- Automatically generated for program: " ++ baseName
@@ -54,9 +54,7 @@ emitSupersModule baseName specs
       , ""
       , "toList :: Int64 -> [Int64]"
       , "toList n | n == nil  = []"
-      , "         | otherwise = let h = fstDec n"
-      , "                            t = sndDec n"
-      , "                        in h : toList t"
+      , "         | otherwise = let { h = fstDec n; t = sndDec n } in h : toList t"
       , ""
       , "fromList :: [Int64] -> Int64"
       , "fromList []     = nil"
@@ -67,7 +65,7 @@ emitSupersModule baseName specs
 -- | Emit one super (its FFI wrapper + pure @_impl@).
 emitOne :: SuperSpec -> [String]
 emitOne (SuperSpec nm _kind inp out bodyRaw) =
-  let bodyCore = normalizeIndent (trimBlankHash bodyRaw)  -- [String], sem linhas '#'
+  let bodyCore = normalizeIndent (trimBlankHash bodyRaw)
   in if null bodyCore
      then
        [ ""
@@ -108,13 +106,12 @@ emitOne (SuperSpec nm _kind inp out bodyRaw) =
 -- Formatting helpers
 ----------------------------------------------------------------
 
--- | Remove blank lines from topo/fundo E QUALQUER linha cujo primeiro
--- caractere não em branco seja '#'. Isso mata vestígios de #BEGINSUPER,
--- #ENDSUPER ou comentários iniciados por '#', que quebrariam a sintaxe.
+-- | Drop blank lines at the beginning/end and drop any line whose first
+-- non-space character is '#'. This removes markers like #BEGINSUPER/#ENDSUPER
+-- and avoids generating invalid Haskell.
 trimBlankHash :: String -> String
 trimBlankHash s =
   let ls0   = lines s
-      -- descarta linhas só de espaço ou que começam com '#'
       isBlank l = all isSpace l
       isHash l  =
         case dropWhile isSpace l of
@@ -126,7 +123,7 @@ trimBlankHash s =
       ls2       = filter (not . isHash) ls1
   in unlines ls2
 
--- | Remove a indentação mínima comum de todas as linhas não vazias.
+-- | Remove the minimal common indentation from all non-blank lines.
 normalizeIndent :: String -> [String]
 normalizeIndent s =
   let ls       = lines s
@@ -137,7 +134,7 @@ normalizeIndent s =
                    _  -> minimum (map leadSpaces nonblank)
   in map (drop base) ls
 
--- | Indentar todas as linhas com @n@ espaços.
+-- | Indent every line by @n@ spaces.
 indent :: Int -> [String] -> [String]
 indent n ls =
   let pad = replicate n ' '
