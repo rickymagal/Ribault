@@ -2,7 +2,7 @@
 --  MatrixMul.hsk  –  multiplicação de matrizes (Int + Float)
 -- ===============================================================
 
--- nº de processadores (seu script altera este valor)
+-- nº de processadores
 p x = 8;
 
 -- 1. utilidades --------------------------------------------------
