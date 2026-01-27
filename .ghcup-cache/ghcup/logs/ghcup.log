@@ -1,0 +1,15 @@
+Debug: Identified Platform as: Linux UnknownLinux, 24.04
+Info: downloading: https://raw.githubusercontent.com/haskell/ghcup-metadata/master/ghcup-0.0.9.yaml as file /home/ricardomag/Desktop/Ribault/.ghcup-cache/ghcup/cache/ghcup-0.0.9.yaml
+Debug: Skipping and deleting etags file because destination file /home/ricardomag/Desktop/Ribault/.ghcup-cache/ghcup/cache/ghcup-0.0.9.yaml doesn't exist
+Warn: Could not get download info, trying cached version (this may not be recent!)
+If this problem persists, consider switching downloader via: 
+    ghcup config set downloader Wget
+Debug: Error was: []8;;https://errors.haskell.org/messages/GHCup-05841\GHCup-05841]8;;\] Download failed: Process "curl" with arguments ["--dump-header",
+                                                "/tmp/curl-header572155-0", "-fL", "-o",
+                                                "/home/ricardomag/Desktop/Ribault/.ghcup-cache/ghcup/cache/ghcup-0.0.9.yaml.tmp",
+                                                "https://raw.githubusercontent.com/haskell/ghcup-metadata/master/ghcup-0.0.9.yaml"] failed with exit code 6.
+Debug: Decoding yaml at: /home/ricardomag/Desktop/Ribault/.ghcup-cache/ghcup/cache/ghcup-0.0.9.yaml
+Error: []8;;https://errors.haskell.org/messages/GHCup-00160\GHCup-00160]8;;\] JSON decoding failed with: YAML exception:
+Yaml file not found: /home/ricardomag/Desktop/Ribault/.ghcup-cache/ghcup/cache/ghcup-0.0.9.yaml
+Consider removing /home/ricardomag/Desktop/Ribault/.ghcup-cache/ghcup/cache/ghcup-0.0.9.yaml manually.
+

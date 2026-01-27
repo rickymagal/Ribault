@@ -19,20 +19,21 @@ const n16, 0
 equal n17, n14, n16
 band n18, n15, n17
 add n19, z0, z0
-add n20, z0, z0
-add n21, n19, n20
-steer s22, n18, n21
-add n23, n14, n15
-const n24, 0
-gthan n25, n23, n24
-const n26, 1
-const n27, 0
-equal n28, n25, n27
-band n29, n26, n28
-const n30, 0
-steer s31, n29, n30
-ret sumTwo, s31.w, z0
-callgroup("cg43","sumTwo")
-callsnd sumTwo[0], n12, cg43
-retsnd sumTwo[0], z0, cg43
+callgroup("cg30","x")
+callsnd x[0], n19, cg30
+retsnd x[0], z0, cg30
+steer s23, n18, x[0]
+add n24, n14, n15
+const n25, 0
+gthan n26, n24, n25
+const n27, 1
+const n28, 0
+equal n29, n26, n28
+band n30, n27, n29
+const n31, 0
+steer s32, n30, n31
+ret sumTwo, s32.w, z0
+callgroup("cg44","sumTwo")
+callsnd sumTwo[0], n12, cg44
+retsnd sumTwo[0], z0, cg44
 ret main, sumTwo[0], z0

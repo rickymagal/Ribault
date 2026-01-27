@@ -26,7 +26,7 @@ digraph AST {
   12 -> 13;
   14 [shape=box,label="PVar y"];
   12 -> 14;
-  15 [shape=box,label="BinOp +"];
+  15 [shape=box,label="App"];
   16 [shape=box,label="Var x"];
   15 -> 16;
   17 [shape=box,label="Var y"];

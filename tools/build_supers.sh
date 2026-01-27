@@ -125,6 +125,19 @@ detect_dynlib_dir() {
     fi
   done
 
+  # Shim layout: symlinked package dirs under GHC_LIBDIR
+  if ls -1 "$ghc_libdir"/libHSbase-*-ghc"${ghc_ver}".so >/dev/null 2>&1; then
+    echo "$ghc_libdir"
+    return 0
+  fi
+  for d in "$ghc_libdir"/*; do
+    [[ -d "$d" ]] || continue
+    if ls -1 "$d"/libHSbase-*-ghc"${ghc_ver}".so >/dev/null 2>&1; then
+      echo "$d"
+      return 0
+    fi
+  done
+
   echo ""
 }
 
@@ -134,21 +147,33 @@ dynlib_dir_from_rts() {
   dirname "$rts_so"
 }
 
-# Prefer debug RTS if it exists (your shim picks libHSrts-*_debug-...),
-# otherwise threaded, otherwise any RTS.
+# Prefer non-debug RTS, then threaded, and only use debug as last resort.
 detect_rts_so() {
   local dynlib_dir="$1"
   local ghc_ver="$2"
+  local prefer_thr="${SUPERS_THREADED:-1}"
 
   [[ -n "$dynlib_dir" && -d "$dynlib_dir" ]] || { echo ""; return 0; }
 
-  local -a cands=(
-    "$dynlib_dir/libHSrts-"*"_debug-ghc${ghc_ver}.so"
-    "$dynlib_dir/libHSrts-"*"-ghc${ghc_ver}.so"
-    "$dynlib_dir/libHSrts_thr-ghc${ghc_ver}.so"
-    "$dynlib_dir/libHSrts_thr-"*"-ghc${ghc_ver}.so"
-    "$dynlib_dir/libHSrts-"*.so
-  )
+  local -a cands=()
+  if [[ "$prefer_thr" == "1" ]]; then
+    cands+=(
+      "$dynlib_dir/libHSrts_thr-ghc${ghc_ver}.so"
+      "$dynlib_dir/libHSrts_thr-"*"-ghc${ghc_ver}.so"
+      "$dynlib_dir/libHSrts-"*"_thr-ghc${ghc_ver}.so"
+      "$dynlib_dir/libHSrts-"*"-ghc${ghc_ver}.so"
+      "$dynlib_dir/libHSrts-"*"_debug-ghc${ghc_ver}.so"
+      "$dynlib_dir/libHSrts-"*.so
+    )
+  else
+    cands+=(
+      "$dynlib_dir/libHSrts-"*"-ghc${ghc_ver}.so"
+      "$dynlib_dir/libHSrts_thr-ghc${ghc_ver}.so"
+      "$dynlib_dir/libHSrts_thr-"*"-ghc${ghc_ver}.so"
+      "$dynlib_dir/libHSrts-"*"_debug-ghc${ghc_ver}.so"
+      "$dynlib_dir/libHSrts-"*.so
+    )
+  fi
 
   local f
   for f in "${cands[@]}"; do
@@ -216,6 +241,45 @@ normalize_hs_module() {
   mv -f "$tmp" "$hs"
 }
 
+inject_hs_io_init() {
+  local hs="$1"
+  [[ -f "$hs" ]] || die "inject_hs_io_init: missing file: $hs"
+
+  if rg -q "supers_io_init" "$hs"; then
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+
+  awk '
+  BEGIN { inserted_import = 0 }
+  {
+    print $0
+    if (!inserted_import && $0 ~ /import[[:space:]]+System\.IO\.Unsafe/) {
+      print "import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)"
+      inserted_import = 1
+    }
+  }
+  END {
+    if (!inserted_import) {
+      print "import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)"
+    }
+  }
+  ' "$hs" >"$tmp"
+
+  mv -f "$tmp" "$hs"
+
+  cat >>"$hs" <<'EOF'
+
+foreign export ccall "supers_io_init" supers_io_init :: IO ()
+supers_io_init :: IO ()
+supers_io_init = do
+  hSetBuffering stdout NoBuffering
+  hSetBuffering stderr NoBuffering
+EOF
+}
+
 gen_empty_aliases_c() {
   local out_c="$1"
   {
@@ -233,6 +297,8 @@ gen_super_wrappers_c() {
   {
     echo '#include <stdint.h>'
     echo '#include <stdio.h>'
+    echo '#include "queue.h"'
+    echo '#include "interp.h"'
     echo ''
     echo '#if defined(__GNUC__)'
     echo '#  define EXPORT_FN __attribute__((visibility("default")))'
@@ -252,10 +318,19 @@ gen_super_wrappers_c() {
 
     local n=0
     while [[ "$n" -lt "$max" ]]; do
-      echo "extern int64_t s${n}(int64_t) WEAK_FN;"
-      echo "EXPORT_FN USED_FN int64_t super${n}(int64_t x) {"
-      echo "  if (s${n}) return s${n}(x);"
-      echo "  return supers_missing(${n});"
+      echo "extern void s${n}(int64_t *in, int64_t *out) WEAK_FN;"
+      echo "EXPORT_FN USED_FN void super${n}(oper_t **oper, oper_t *result) {"
+      echo "  int64_t in[2];"
+      echo "  int64_t out[1];"
+      echo "  in[0] = (int64_t)oper[0]->value.li;"
+      echo "  in[1] = 0;"
+      echo "  if (oper[1] != NULL) { in[1] = (int64_t)oper[1]->value.li; }"
+      echo "  if (s${n}) {"
+      echo "    s${n}(in, out);"
+      echo "    result[0].value.li = out[0];"
+      echo "  } else {"
+      echo "    result[0].value.li = supers_missing(${n});"
+      echo "  }"
       echo "}"
       echo ''
       n=$((n + 1))
@@ -301,6 +376,10 @@ build_libsupers_so() {
   local ghc="$2"
   local cc="$3"
   local cflags="$4"
+  local rr
+  rr="$(repo_root)"
+  local rts_init_src="$rr/tools/supers_rts_init.c"
+  cflags="$cflags -I$rr/TALM/interp/include"
 
   local ghc_ver="${GHC_VER:-}"
   local ghc_libdir="${GHC_LIBDIR:-}"
@@ -334,10 +413,17 @@ build_libsupers_so() {
 
     rm -f Supers.o supers_wrappers.o supers_aliases.o libsupers.so
 
-    GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC -c Supers.hs -o Supers.o
+    if [[ "${SUPERS_THREADED:-1}" == "1" ]]; then
+      GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC -threaded -c Supers.hs -o Supers.o
+    else
+      GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC -c Supers.hs -o Supers.o
+    fi
 
     "$cc" $cflags -c supers_wrappers.c -o supers_wrappers.o
     "$cc" $cflags -c supers_aliases.c  -o supers_aliases.o
+    if [[ -f "$rts_init_src" ]]; then
+      "$cc" $cflags -c "$rts_init_src" -o supers_rts_init.o
+    fi
 
     local -a ghc_link=(
       -shared
@@ -348,6 +434,9 @@ build_libsupers_so() {
       supers_wrappers.o
       supers_aliases.o
     )
+    if [[ -f supers_rts_init.o ]]; then
+      ghc_link+=(supers_rts_init.o)
+    fi
 
     ghc_link+=(-optl "-Wl,-rpath,\$ORIGIN")
     ghc_link+=(-optl "-Wl,-rpath,\$ORIGIN/ghc-deps")
@@ -360,7 +449,11 @@ build_libsupers_so() {
       -optl "-Wl,--as-needed"
     )
 
-    GHC_ENVIRONMENT=- "$ghc" "${ghc_link[@]}"
+    if [[ "${SUPERS_THREADED:-1}" == "1" ]]; then
+      GHC_ENVIRONMENT=- "$ghc" -threaded "${ghc_link[@]}"
+    else
+      GHC_ENVIRONMENT=- "$ghc" "${ghc_link[@]}"
+    fi
 
     populate_ghc_deps "$out_dir/libsupers.so" "$out_dir/ghc-deps" "$rts_so"
   )
@@ -386,6 +479,7 @@ generate_one() {
   "$supersgen" "$in_hsk" >"$out_hs"
 
   normalize_hs_module "$out_hs"
+  inject_hs_io_init "$out_hs"
 
   gen_empty_aliases_c "$out_dir/supers_aliases.c"
   gen_super_wrappers_c "$out_dir/supers_wrappers.c" "$max"

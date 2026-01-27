@@ -14,7 +14,7 @@ digraph AST {
   0 -> 1;
   6 [shape=box,label="FunDecl add"];
   7 [shape=box,label="Lambda y x"];
-  8 [shape=box,label="BinOp +"];
+  8 [shape=box,label="App"];
   9 [shape=box,label="Var x"];
   8 -> 9;
   10 [shape=box,label="Var y"];

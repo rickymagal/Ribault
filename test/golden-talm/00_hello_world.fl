@@ -1,0 +1,27 @@
+const z0, 0
+const n0, -1
+add n1, z0, z0
+super n2, 0, 1, n1
+ret init_vec, n2, z0
+callgroup("cg14","init_vec")
+callsnd init_vec[0], n0, cg14
+retsnd init_vec[0], z0, cg14
+add n7, z0, z0
+specsuper n8, 0, 1, n7
+ret fill_pairs, n8, z0
+callgroup("cg20","fill_pairs")
+callsnd fill_pairs[0], init_vec[0], cg20
+retsnd fill_pairs[0], z0, cg20
+add n13, z0, z0
+specsuper n14, 0, 1, n13
+ret add_pairs, n14, z0
+callgroup("cg26","add_pairs")
+callsnd add_pairs[0], fill_pairs[0], cg26
+retsnd add_pairs[0], z0, cg26
+add n19, z0, z0
+super n20, 0, 1, n19
+ret print_final, n20, z0
+callgroup("cg32","print_final")
+callsnd print_final[0], add_pairs[0], cg32
+retsnd print_final[0], z0, cg32
+ret main, print_final[0], z0

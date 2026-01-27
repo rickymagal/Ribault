@@ -1,12 +1,16 @@
 const z0, 0
 const n0, 10
 const n1, 4
-add n2, n-1, n-1
-ret add, n2, z0
-callgroup("cg14","add")
-callsnd add[0], n0, cg14
-callsnd add[1], n1, cg14
-retsnd add[0], z0, cg14
+callgroup("cg12","x")
+callsnd x[0], n-1, cg12
+retsnd x[0], z0, cg12
+ret add, x[0], z0
+callgroup("cg16","add")
+callsnd add[0], n0, cg16
+callsnd add[1], n1, cg16
+retsnd add[0], z0, cg16
 ret main, add[0], z0
-add n9, n-1, n-1
-ret add, n9, z0
+callgroup("cg21","x")
+callsnd x[0], n-1, cg21
+retsnd x[0], z0, cg21
+ret add, x[0], z0

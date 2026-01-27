@@ -411,8 +411,11 @@ checkAll p = semanticCheck p ++ checkProgram p
 
 assignSuperNames :: Program -> Program
 assignSuperNames (Program ds) =
-  Program (evalState (mapM goDecl ds) (1 :: Int))
+  Program (evalState (mapM goDecl ds) superBase)
   where
+    -- Reserve s0..s3 for builtin list/pair supers.
+    superBase :: Int
+    superBase = 4
     goDecl (FunDecl f ps e) = FunDecl f ps <$> goExpr e
     goExpr :: Expr -> State Int Expr
     goExpr = \case

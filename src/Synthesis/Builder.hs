@@ -25,9 +25,10 @@ module Synthesis.Builder
   ) where
 
 import           Prelude hiding (lookup)
-import           Control.Monad          (forM_, zipWithM_, when)
+import           Control.Monad          (forM, forM_, zipWithM_, when)
 import           Control.Monad.State    (StateT, get, put, runStateT, gets, modify)
 import           Control.Monad.Trans    (lift)
+import           Data.Maybe             (listToMaybe)
 import qualified Data.Map              as M
 import qualified Data.Set              as S
 
@@ -215,9 +216,28 @@ setName l n = case n of
 
 -- codificação pares/listas ---------------------------------------------
 
--- | Base constant used by the pair encoding scheme.
-pairBase :: Int
-pairBase = 1000003
+-- Builtin supers reserved in Semantic: s0..s3
+builtinListCons :: Int
+builtinListCons = 0
+
+builtinListHead :: Int
+builtinListHead = 1
+
+builtinListTail :: Int
+builtinListTail = 2
+
+builtinListIsNil :: Int
+builtinListIsNil = 3
+
+superNameFromNum :: Int -> String
+superNameFromNum n = "s" ++ show n
+
+superNumFromName :: String -> Int
+superNumFromName ('s':rest) =
+  case reads rest of
+    [(n,"")] -> n
+    _        -> 0
+superNumFromName _ = 0
 
 -- | Emit an integer constant node.
 constI :: Int -> Build Port
@@ -250,40 +270,35 @@ fmulI p k = do
 
 -- | Port representing the empty list.
 nilP :: Build Port
-nilP = constI (-1)
+nilP = constI 0
 
 -- | Predicate: is the list port equal to 'nilP'?
 isNilP :: Port -> Build Port
-isNilP xs = do
-  n <- nilP
-  bin2 "equal" (NEqual "") xs n
+isNilP xs = callBuiltinSuper builtinListIsNil [xs]
 
--- cons(a,b) = (a+2)*B + (b+2)
+callBuiltinSuper :: Int -> [Port] -> Build Port
+callBuiltinSuper num ins = do
+  let nm = "builtin_" ++ superNameFromNum num
+  nid <- naryNode nm NSuper
+           { nName     = ""
+           , superNum  = num
+           , superOuts = 1
+           , superSpec = False
+           , superImm  = Nothing
+           } ins
+  pure (out0 nid)
 
--- | Encode a pair/list cell via the affine scheme using 'pairBase'.
+-- | Encode a pair/list cell via builtin list cons.
 pairEnc :: Port -> Port -> Build Port
-pairEnc a b = do
-  a2 <- addI a 2
-  b2 <- addI b 2
-  k  <- constI pairBase
-  m  <- bin2Node "mul" (NMul "") a2 k
-  bin2 "add" (NAdd "") (out0 m) b2
+pairEnc a b = callBuiltinSuper builtinListCons [a, b]
 
 -- | Decode first component from encoded pair.
 fstDec :: Port -> Build Port
-fstDec p = do
-  k  <- constI pairBase
-  qN <- bin2Node "div" (NDiv "") p k
-  subI (out0 qN) 2
+fstDec p = callBuiltinSuper builtinListHead [p]
 
 -- | Decode second component from encoded pair.
 sndDec :: Port -> Build Port
-sndDec p = do
-  k  <- constI pairBase
-  qN <- bin2Node "div" (NDiv "") p k
-  mN <- bin2Node "mul" (NMul "") (out0 qN) k
-  r  <- bin2 "sub" (NSub "") p (out0 mN)
-  subI r 2
+sndDec p = callBuiltinSuper builtinListTail [p]
 
 -- | Local right-associative monadic fold (used for list construction).
 foldrM' :: (a -> b -> Build b) -> b -> [a] -> Build b
@@ -304,11 +319,12 @@ buildProgram p0 =
         mapM_ buildZero decls
   in bsGraph st
   where
+    retName f = f
     -- | Build and expose zero-argument functions as graph roots.
     buildZero (FunDecl f ps body) | null ps = do
       p <- withEnv (goExpr body)
       insertB f (BPort p)
-      r <- newNode f (NRet f)
+      r <- newNode (retName f) (NRet (retName f))
       connectPlus p (InstPort r "0")
     buildZero _ = pure ()
 
@@ -318,6 +334,25 @@ buildProgram p0 =
 funBuilt :: Ident -> Build Bool
 funBuilt f = Build $ gets $ \s -> any isRet (M.toList (dgNodes (bsGraph s)))
   where isRet (_, n) = case n of { NRet f' -> f' == f; _ -> False }
+
+-- | Return node id for function @f@, creating it if needed.
+retNodeId :: Ident -> Build NodeId
+retNodeId f = Build $ do
+  s <- get
+  let nm    = f
+      found = [ nid
+              | (nid, n) <- M.toList (dgNodes (bsGraph s))
+              , case n of
+                  NRet nm' -> nm' == nm
+                  _        -> False
+              ]
+  case found of
+    (h:_) -> pure h
+    []    -> do
+      nid <- lift freshId
+      let g' = addNode nid (NRet nm) (bsGraph s)
+      put s { bsGraph = g' }
+      pure nid
 
 -- evita reentrada recursiva
 
@@ -467,9 +502,11 @@ goExpr = \case
     pIn <- goExpr (Var inp)
     nid <- naryNode nm NSuper
              { nName     = ""
-             , superNum  = 0
+             , superNum  = superNumFromName nm
              , superOuts = 1
-             , superSpec = case kind of { SuperParallel -> True; SuperSingle -> False }
+             -- Avoid speculative supers for HSK `super parallel` to preserve correctness
+             -- when no explicit commit/stopspec nodes are emitted.
+             , superSpec = False
              , superImm  = Nothing
              } [pIn]
     insertB out (BPort (out0 nid))
@@ -553,17 +590,29 @@ goApp fun args = case fun of
       _                   -> pure ()
 
     let tid = funTaskId f
+        tagNameFromId nid = "cg" ++ show ((nid `mod` 90) + 10)
     cg <- newNode f (NCallGroup f)
     let tag = out0 cg
 
-    forM_ (zip [0..] argv) $ \(i,a) -> do
+    _ <- forM (zip [0..] argv) $ \(i,a) -> do
       cs <- newNode (f ++ "#" ++ show i) (NCallSnd (f ++ "#" ++ show i) tid)
       connectPlus a   (InstPort cs "0")
       connectPlus tag (InstPort cs "1")
+      ap <- argNode f i
+      case ap of
+        InstPort nid _ -> connectPlus (out0 cs) (InstPort nid "0")
+        _              -> pure ()
+      pure cs
 
     rs <- newNode f (NRetSnd f tid)
     connectPlus tag (InstPort rs "1")
-    pure (out0 rs)
+
+    retN <- retNodeId f
+    case listToMaybe argv of
+      Just a0 -> connectPlus a0 (InstPort rs "0")
+      Nothing -> do z <- constI 0; connectPlus z (InstPort rs "0")
+    connectPlus (out0 rs) (InstPort retN "1")
+    pure (InstPort retN (tagNameFromId cg))
 
   Lambda ps body -> do
     let fname = "lambda"

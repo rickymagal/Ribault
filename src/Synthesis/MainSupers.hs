@@ -10,7 +10,7 @@
 -- Pipeline:
 --   1. Read Haskell-subset source (file or stdin)
 --   2. Lex and parse into AST
---   3. Assign symbolic names to Super nodes (s1, s2, ...)
+--   3. Assign symbolic names to Super nodes (s0, s1, ...)
 --   4. Collect super specifications
 --   5. Emit a Haskell module (Supers.hs) with FFI exports
 --

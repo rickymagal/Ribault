@@ -60,7 +60,9 @@ outName g s sp =
                          _   -> T.pack sp
     Just n ->
       case n of
-        NRetSnd{..} -> T.pack nName <> "[0]"
+        NRetSnd{}   -> dstN s
+        NCallSnd{..} -> argAsFunSlot nName
+        NRet{..}    -> if sp=="0" then T.pack nName else T.pack nName <> "." <> T.pack sp
         NDiv{}      -> if sp=="0" then dstN s else dstN s <> ".1"
         NDivI{}     -> if sp=="0" then dstN s else dstN s <> ".1"
         NCommit{}   -> if sp=="0" then dstN s else dstN s <> ".1"
@@ -154,14 +156,14 @@ emitNode g im (nid, dn) =
             <> ", " <> src0 <> ", " <> tag ]
 
     NRetSnd{..} ->
-      let tag = maybe "0" id (findCallgroupTag g im nid)
-      in  [ "retsnd " <> T.pack nName <> "[0], z0, " <> tag ]
+      let src0 = fmtOp (gi "0")
+          tag  = maybe "0" id (findCallgroupTag g im nid)
+      in  [ "retsnd " <> dstN nid <> ", " <> src0 <> ", " <> tag ]
 
     NRet{..} ->
-      let src0 = case gi "0" of
-                   (h:_) -> h
-                   []    -> "z0"
-      in  [ "ret " <> T.pack nName <> ", " <> src0 <> ", z0" ]
+      let src0 = fmtOp (gi "0")
+          src1 = fmtOp (gi "1")
+      in  [ "ret " <> T.pack nName <> ", " <> src0 <> ", " <> src1 ]
 
     -------------------------------------------------- tag/val
     NTagVal{} -> one1 "tagval"
@@ -176,7 +178,7 @@ emitNode g im (nid, dn) =
     NStopSpec{} -> multi "stopspec"
 
     -------------------------------------------------- Formal arg
-    NArg{} -> ["add " <> dstN nid <> ", " <> fmtOp (gi "0") <> ", z0"]
+    NArg{} -> ["addi " <> dstN nid <> ", " <> fmtOp (gi "0") <> ", 0"]
 
     -------------------------------------------------- Super-instruction
     NSuper{..} ->

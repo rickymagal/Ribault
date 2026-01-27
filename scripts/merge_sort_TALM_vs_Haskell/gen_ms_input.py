@@ -1,11 +1,192 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import argparse
 import os
 import random
 
-ASM_TMPL = """-- Merge Sort in the subset of the compiled functional language
+SUPER_BODY_SEQ = """    sorted =
+      let
+        splitLocal []         = ([], [])
+        splitLocal [x]        = ([x], [])
+        splitLocal (x:y:rest) =
+          let (xs, ys) = splitLocal rest
+          in (x:xs, y:ys)
+
+        mergeLocal [] ys        = ys
+        mergeLocal xs []        = xs
+        mergeLocal (x:xt) (y:yt)
+          | x <= y              = x : mergeLocal xt (y:yt)
+          | otherwise           = y : mergeLocal (x:xt) yt
+
+        ms []  = []
+        ms [x] = [x]
+        ms xs  =
+          let (l, r) = splitLocal xs
+          in mergeLocal (ms l) (ms r)
+      in
+        ms lst
+"""
+
+SUPER_BODY_PAR = """    sorted =
+      let
+        forceList []     = ()
+        forceList (_:xs) = forceList xs
+
+        splitLocal []         = ([], [])
+        splitLocal [x]        = ([x], [])
+        splitLocal (x:y:rest) =
+          let (xs, ys) = splitLocal rest
+          in (x:xs, y:ys)
+
+        mergeLocal [] ys        = ys
+        mergeLocal xs []        = xs
+        mergeLocal (x:xt) (y:yt)
+          | x <= y              = x : mergeLocal xt (y:yt)
+          | otherwise           = y : mergeLocal (x:xt) yt
+
+        ms []  = []
+        ms [x] = [x]
+        ms xs  =
+          let (l, r) = splitLocal xs
+              l' = ms l
+              r' = ms r
+          in forceList l' `par` (forceList r' `pseq` mergeLocal l' r')
+      in
+        ms lst
+"""
+
+
+WORKING_TMPL_SUPER = """-- Merge Sort in the compiled functional subset
+-- Goal:
+--  - Keep the parallel structure in the pure subset (DF graph can fork).
+--  - Push only the small-grain full sort into a SUPER at the cutoff.
+--  - Avoid per-node size propagation by using a root-computed depth.
+
+len xs = case xs of
+  []     -> 0;
+  (_:ys) -> 1 + len ys;
+;
+
+merge xs ys = case xs of
+  [] -> ys;
+  (x:xt) -> case ys of
+    [] -> xs;
+    (y:yt) -> if x <= y
+              then x : merge xt ys
+              else y : merge xs yt;;
+;
+
+split lst = case lst of
+  []   -> ([], []);
+  (x:[])  -> ([x], []);
+  x:y:zs ->
+    case split zs of
+      (xs, ys) -> (x:xs, y:ys);;
+;
+
+ms_pure lst = case lst of
+  [] -> [];
+  (x:[]) -> [x];
+  _ ->
+    case split lst of
+      (left, right) -> merge (ms_pure left) (ms_pure right);;
+;
+
+p = __P__;
+cutoff = __CUTOFF__;
+
+depth n = if n <= cutoff then 0 else 1 + depth (n / 2);
+
+-- SUPER: full merge sort for small lists
+ms_super lst =
+  super single input (lst) output (sorted)
+#BEGINSUPER
+__SUPER_BODY__
+#ENDSUPER;
+
+mergeSort0 lst =
+  let d0 = depth (len lst)
+  in mergeSortD d0 lst
+;
+
+mergeSortD d lst = case lst of
+  []     -> [];
+  (x:[]) -> [x];
+  _      ->
+    if d <= 0
+    then __LEAF_FN__ lst
+    else
+      case split lst of
+        (left, right) ->
+          merge (mergeSortD (d - 1) left) (mergeSortD (d - 1) right);;
+;
+
+main = mergeSort0 __VEC__;
+"""
+
+
+WORKING_TMPL_ASM = """-- Merge Sort in the compiled functional subset
+-- Goal:
+--  - Keep the parallel structure in the pure subset (DF graph can fork).
+--  - Use pure assembly code at the cutoff (no SUPERs).
+--  - Avoid per-node size propagation by using a root-computed depth.
+
+len xs = case xs of
+  []     -> 0;
+  (_:ys) -> 1 + len ys;
+;
+
+merge xs ys = case xs of
+  [] -> ys;
+  (x:xt) -> case ys of
+    [] -> xs;
+    (y:yt) -> if x <= y
+              then x : merge xt ys
+              else y : merge xs yt;;
+;
+
+split lst = case lst of
+  []   -> ([], []);
+  (x:[])  -> ([x], []);
+  x:y:zs ->
+    case split zs of
+      (xs, ys) -> (x:xs, y:ys);;
+;
+
+ms_pure lst = case lst of
+  [] -> [];
+  (x:[]) -> [x];
+  _ ->
+    case split lst of
+      (left, right) -> merge (ms_pure left) (ms_pure right);;
+;
+
+p = __P__;
+cutoff = __CUTOFF__;
+
+depth n = if n <= cutoff then 0 else 1 + depth (n / 2);
+
+mergeSort0 lst =
+  let d0 = depth (len lst)
+  in mergeSortD d0 lst
+;
+
+mergeSortD d lst = case lst of
+  []     -> [];
+  (x:[]) -> [x];
+  _      ->
+    if d <= 0
+    then ms_pure lst
+    else
+      case split lst of
+        (left, right) ->
+          merge (mergeSortD (d - 1) left) (mergeSortD (d - 1) right);;
+;
+
+main = mergeSort0 __VEC__;
+"""
+
+SEQ_TMPL = """-- Merge Sort in the subset of the compiled functional language
 
 -- Merge two sorted lists into a single sorted list
 merge xs ys = case xs of
@@ -16,11 +197,10 @@ merge xs ys = case xs of
                   then x : merge xt ys
                   else y : merge xs yt;;
 ;
-
 -- Split a list into two approximately equal halves
 split lst = case lst of
   []   -> ([], []);
-  [x]  -> ([x], []);
+  (x:[])  -> ([x], []);
   x:y:zs ->
     case split zs of
       (xs, ys) -> (x:xs, y:ys);;
@@ -34,125 +214,62 @@ mergeSort lst = case lst of
            (left, right) -> merge (mergeSort left) (mergeSort right);;
 ;
 
--- Main expression for testing
-main = mergeSort __VEC__
+main = mergeSort __VEC__;
 """
 
-SUPER_TMPL = """-- Merge Sort in the compiled functional subset
--- Everything ends with ";". When a sublist size becomes <= (originalSize / p),
--- we offload it to a SUPER that runs a full merge sort in Haskell.
 
--- length
-len xs = case xs of
-  []      -> 0;
-  (_:ys)  -> 1 + len ys;
-;
-
--- Merge two sorted lists into a single sorted list (pure language version)
-merge xs ys = case xs of
-  []      -> ys;
-  (x:xt)  -> case ys of
-    []       -> xs;
-    (y:yt)   -> if x <= y
-                then x : merge xt ys
-                else y : merge xs yt;;
-;
-
--- Split a list into two approximately equal halves (pure language version)
-split lst = case lst of
-  []     -> ([], []);
-  [x]    -> ([x], []);
-  x:y:zs -> case split zs of
-    (xs, ys) -> (x:xs, y:ys);;
-;
-
--- threshold divisor
-p = __P__;
-
--- super: full merge sort for short lists
--- This runs a full recursive merge sort inside the SUPER (Haskell code),
--- so each call has a relatively large grain.
-ms_super lst =
-  super single input (lst) output (sorted)
-#BEGINSUPER
-    ms []  = []
-    ms [x] = [x]
-    ms xs  =
-      let (l, r) = splitLocal xs
-      in mergeLocal (ms l) (ms r)
-
-    splitLocal []           = ([], [])
-    splitLocal [x]          = ([x], [])
-    splitLocal (x:y:rest)   =
-      let (xs, ys) = splitLocal rest
-      in (x:xs, y:ys)
-
-    mergeLocal [] ys        = ys
-    mergeLocal xs []        = xs
-    mergeLocal (x:xt) (y:yt)
-      | x <= y    = x : mergeLocal xt (y:yt)
-      | otherwise = y : mergeLocal (x:xt) yt
-
-    sorted = ms lst
-#ENDSUPER;
-
--- entry function: compute N0 and call thresholded version
-mergeSort0 lst = mergeSortT (len lst) lst;
-
--- Merge Sort with fallback to SUPER when the grain is small enough
-mergeSortT n0 lst = case lst of
-  []     -> [];
-  (x:[]) -> [x];
-  _      ->
-    let n = len lst;
-    in
-      if n <= (n0 / p)
-      -- whole sublist is small: do a full merge sort in a single SUPER
-      then ms_super lst
-      else
-        case split lst of
-          (left, right) ->
-            merge (mergeSortT n0 left) (mergeSortT n0 right);;
-;
-
--- Example
-main = mergeSort0 __VEC__
-"""
-
-def make_vec(n, kind):
+def make_vec(n: int, kind: str) -> str:
     if kind == "range":
-        # descending [n, n-1, ..., 1]
         return "[" + ",".join(str(i) for i in range(n, 0, -1)) + "]"
-    elif kind == "rand":
-        rnd = random.Random(1337)  # deterministic
+    if kind == "rand":
+        rnd = random.Random(1337)
         xs = [rnd.randint(0, n * 2) for _ in range(n)]
         return "[" + ",".join(map(str, xs)) + "]"
-    else:
-        raise SystemExit("vec must be 'range' or 'rand'")
+    raise SystemExit("vec must be 'range' or 'rand'")
 
-def emit_hsk(path, variant, n, p, vec_kind):
+
+def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     vec = make_vec(n, vec_kind)
-    if variant == "asm":
-        src = ASM_TMPL.replace("__VEC__", vec)
-    elif variant == "super":
-        src = SUPER_TMPL.replace("__VEC__", vec).replace("__P__", str(p))
+    if mode == "seq":
+        src = SEQ_TMPL.replace("__VEC__", vec)
     else:
-        raise SystemExit("variant must be 'asm' or 'super'")
+        leaf_mode = os.getenv("MS_LEAF", "super").lower()
+        if leaf_mode == "asm":
+            src = (
+                WORKING_TMPL_ASM.replace("__P__", str(p))
+                .replace("__CUTOFF__", str(cutoff))
+                .replace("__VEC__", vec)
+            )
+        else:
+            leaf_fn = "ms_super"
+            super_par = os.getenv("MS_SUPER_PAR", "0")
+            super_body = SUPER_BODY_PAR if super_par and super_par != "0" else SUPER_BODY_SEQ
+            src = (
+                WORKING_TMPL_SUPER.replace("__P__", str(p))
+                .replace("__CUTOFF__", str(cutoff))
+                .replace("__VEC__", vec)
+                .replace("__LEAF_FN__", leaf_fn)
+                .replace("__SUPER_BODY__", super_body)
+            )
+            if src.count("#BEGINSUPER") != 1:
+                raise SystemExit("expected exactly one SUPER block (ms)")
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[ms_gen_input] wrote {path} (N={n}, P={p}, variant={variant})")
+    print(f"[ms_gen_input] wrote {path} (N={n}, P={p}, vec={vec_kind})")
 
-def main():
+
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--N", type=int, required=True)
     ap.add_argument("--P", type=int, required=True)
     ap.add_argument("--vec", default="range", choices=["range", "rand"])
-    # run.sh does not pass --variant; default needs to be SUPER
-    ap.add_argument("--variant", default="super", choices=["asm", "super"])
+    ap.add_argument("--cutoff", type=int, default=256)
+    ap.add_argument("--mode", default="super", choices=["super", "seq"])
     args = ap.parse_args()
-    emit_hsk(args.out, args.variant, args.N, args.P, args.vec)
+    emit_hsk(args.out, args.N, args.P, args.cutoff, args.vec, args.mode)
+
 
 if __name__ == "__main__":
     main()

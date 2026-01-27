@@ -14,7 +14,8 @@ def read_agg(path, variant):
         for r in cr:
             if r.get("variant","") != variant: continue
             N = int(r["N"]); P = int(r["P"])
-            m = float(r["mean_seconds"]); s = float(r["std_seconds"])
+            m = float(r.get("median_seconds", r.get("mean_seconds", "nan")))
+            s = float(r["std_seconds"])
             byP[P][N] = (m,s)
     return dict(byP)
 
