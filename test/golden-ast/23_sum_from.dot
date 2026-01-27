@@ -33,7 +33,7 @@ digraph AST {
   17 [shape=box,label="Lit 1"];
   15 -> 17;
   13 -> 15;
-  18 [shape=box,label="BinOp +"];
+  18 [shape=box,label="App"];
   19 [shape=box,label="Var acc"];
   18 -> 19;
   20 [shape=box,label="Var n"];

@@ -11,16 +11,18 @@ const n8, 0
 gthan n9, n7, n8
 const n10, 1
 sub n11, n3, n10
-add n12, n2, n3
-callgroup("cg23","sumFrom")
-callsnd sumFrom[0], n11, cg23
-callsnd sumFrom[1], n12, cg23
-retsnd sumFrom[0], z0, cg23
-steer s17, n9, n2
-steer s18, n9, sumFrom[0]
-ret sumFrom, s18.g, z0
-callgroup("cg30","sumFrom")
-callsnd sumFrom[0], n0, cg30
-callsnd sumFrom[1], n1, cg30
-retsnd sumFrom[0], z0, cg30
+callgroup("cg22","acc")
+callsnd acc[0], n3, cg22
+retsnd acc[0], z0, cg22
+callgroup("cg25","sumFrom")
+callsnd sumFrom[0], n11, cg25
+callsnd sumFrom[1], acc[0], cg25
+retsnd sumFrom[0], z0, cg25
+steer s19, n9, n2
+steer s20, n9, sumFrom[0]
+ret sumFrom, s20.g, z0
+callgroup("cg32","sumFrom")
+callsnd sumFrom[0], n0, cg32
+callsnd sumFrom[1], n1, cg32
+retsnd sumFrom[0], z0, cg32
 ret main, sumFrom[0], z0

@@ -21,9 +21,11 @@ add_pairs pairs =
 print_final cs =
   super single input (cs) output (out)
 #BEGINSUPER
-    hello = print "Hello World!"
-    shown = print cs
-    out   = [0]
+    out = unsafePerformIO
+      (do
+        print "Hello World!"
+        print cs
+        pure [0])
 #ENDSUPER;
 
 main =

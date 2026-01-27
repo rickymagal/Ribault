@@ -181,277 +181,281 @@ const n178, 1
 const n179, 0
 equal n180, n177, n179
 band n181, n178, n180
-const n182, 1
+add n182, z0, z0
 add n183, z0, z0
-callgroup("cg14","len")
-callsnd len[0], n183, cg14
-retsnd len[0], z0, cg14
-add n187, n182, len[0]
-steer s188, n181, n187
-ret len, s188.w, z0
-callgroup("cg20","len")
-callsnd len[0], n164, cg20
-retsnd len[0], z0, cg20
-lthan n193, len[0], n165
-equal n194, len[0], n165
-add n195, n193, n194
-const n196, 0
-gthan n197, n195, n196
-add n198, z0, z0
-add n199, z0, z0
-super n200, 0, 1, n199
-ret analyseChunk, n200, z0
-callgroup("cg32","analyseChunk")
-callsnd analyseChunk[0], n198, cg32
-retsnd analyseChunk[0], z0, cg32
-const n205, 0
-const n206, 1
-const n207, 0
-equal n208, n205, n207
-band n209, n206, n208
-add n210, z0, z0
-add n211, z0, z0
-addi n212, n210, 2
-addi n213, n211, 2
-const n214, 1000003
-mul n215, n212, n214
-add n216, n215, n213
-steer s217, n209, n216
-ret chunkPair, s217.w, z0
-callgroup("cg49","chunkPair")
-callsnd chunkPair[0], n164, cg49
-retsnd chunkPair[0], z0, cg49
-add n222, z0, z0
-callgroup("cg53","len")
-callsnd len[0], n222, cg53
-retsnd len[0], z0, cg53
-const n226, 100
-const n227, 0
-add n228, z0, z0
-const n229, 1
-ret imb, n229, z0
-callgroup("cg61","imb")
-callsnd imb[0], n227, cg61
-retsnd imb[0], z0, cg61
-add n234, n226, imb[0]
-mul n235, len[0], n234
-const n236, 200
-div n237, n235, n236
+steer s184, n181, n183
+ret len, s184.w, z0
+callgroup("cg16","len")
+callsnd len[0], n164, cg16
+retsnd len[0], z0, cg16
+lthan n189, len[0], n165
+equal n190, len[0], n165
+add n191, n189, n190
+const n192, 0
+gthan n193, n191, n192
+add n194, z0, z0
+add n195, z0, z0
+super n196, 0, 1, n195
+ret analyseChunk, n196, z0
+callgroup("cg28","analyseChunk")
+callsnd analyseChunk[0], n194, cg28
+retsnd analyseChunk[0], z0, cg28
+const n201, 0
+const n202, 1
+const n203, 0
+equal n204, n201, n203
+band n205, n202, n204
+add n206, z0, z0
+add n207, z0, z0
+addi n208, n206, 2
+addi n209, n207, 2
+const n210, 1000003
+mul n211, n208, n210
+add n212, n211, n209
+steer s213, n205, n212
+ret chunkPair, s213.w, z0
+callgroup("cg45","chunkPair")
+callsnd chunkPair[0], n164, cg45
+retsnd chunkPair[0], z0, cg45
+add n218, z0, z0
+callgroup("cg49","len")
+callsnd len[0], n218, cg49
+retsnd len[0], z0, cg49
+const n222, 0
+add n223, z0, z0
+const n224, 1
+ret imb, n224, z0
+callgroup("cg56","imb")
+callsnd imb[0], n222, cg56
+retsnd imb[0], z0, cg56
+const n229, 0
+callgroup("cg60","imb")
+callsnd imb[0], n229, cg60
+retsnd imb[0], z0, cg60
+mul n233, len[0], imb[0]
+const n234, 200
+div n235, n233, n234
+add n236, z0, z0
+add n237, z0, z0
 add n238, z0, z0
 add n239, z0, z0
-add n240, z0, z0
-add n241, z0, z0
-const n242, 0
-lthan n243, n241, n242
-equal n244, n241, n242
-add n245, n243, n244
-const n246, 0
-gthan n247, n245, n246
+const n240, 0
+lthan n241, n239, n240
+equal n242, n239, n240
+add n243, n241, n242
+const n244, 0
+gthan n245, n243, n244
+const n246, -1
+const n247, 0
 const n248, -1
-const n249, 0
-const n250, -1
-equal n251, n240, n250
-const n252, 0
-equal n253, n249, n252
-band n254, n251, n253
-const n255, -1
-steer s256, n254, n255
-add n257, n249, n251
-const n258, 0
-gthan n259, n257, n258
-const n260, 1
-const n261, 0
-equal n262, n259, n261
-band n263, n260, n262
-add n264, z0, z0
-const n265, 1
-sub n266, n241, n265
-add n267, z0, z0
-callgroup("cg98","takeN")
-callsnd takeN[0], n266, cg98
-callsnd takeN[1], n267, cg98
-retsnd takeN[0], z0, cg98
-addi n272, n264, 2
-addi n273, takeN[0], 2
-const n274, 1000003
-mul n275, n272, n274
-add n276, n275, n273
-steer s277, n263, n276
-steer s278, n247, n248
-steer s279, n247, s256.w
-ret takeN, s279.g, z0
-callgroup("cg21","takeN")
-callsnd takeN[0], n239, cg21
-callsnd takeN[1], n238, cg21
-retsnd takeN[0], z0, cg21
-add n285, z0, z0
-add n286, z0, z0
-const n287, 0
-lthan n288, n286, n287
-equal n289, n286, n287
-add n290, n288, n289
+equal n249, n238, n248
+const n250, 0
+equal n251, n247, n250
+band n252, n249, n251
+const n253, -1
+steer s254, n252, n253
+add n255, n247, n249
+const n256, 0
+gthan n257, n255, n256
+const n258, 1
+const n259, 0
+equal n260, n257, n259
+band n261, n258, n260
+add n262, z0, z0
+const n263, 1
+sub n264, n239, n263
+add n265, z0, z0
+callgroup("cg96","takeN")
+callsnd takeN[0], n264, cg96
+callsnd takeN[1], n265, cg96
+retsnd takeN[0], z0, cg96
+addi n270, n262, 2
+addi n271, takeN[0], 2
+const n272, 1000003
+mul n273, n270, n272
+add n274, n273, n271
+steer s275, n261, n274
+steer s276, n245, n246
+steer s277, n245, s254.w
+ret takeN, s277.g, z0
+callgroup("cg19","takeN")
+callsnd takeN[0], n237, cg19
+callsnd takeN[1], n236, cg19
+retsnd takeN[0], z0, cg19
+add n283, z0, z0
+add n284, z0, z0
+const n285, 0
+lthan n286, n284, n285
+equal n287, n284, n285
+add n288, n286, n287
+const n289, 0
+gthan n290, n288, n289
 const n291, 0
-gthan n292, n290, n291
-const n293, 0
-const n294, -1
-equal n295, n285, n294
-const n296, 0
-equal n297, n293, n296
-band n298, n295, n297
-const n299, -1
-steer s300, n298, n299
-add n301, n293, n295
-const n302, 0
-gthan n303, n301, n302
-const n304, 1
-const n305, 0
-equal n306, n303, n305
-band n307, n304, n306
-const n308, 1
-sub n309, n286, n308
-add n310, z0, z0
-callgroup("cg51","dropN")
-callsnd dropN[0], n309, cg51
-callsnd dropN[1], n310, cg51
-retsnd dropN[0], z0, cg51
-steer s315, n307, dropN[0]
-steer s316, n292, n285
-steer s317, n292, s300.w
-ret dropN, s317.g, z0
-callgroup("cg59","dropN")
-callsnd dropN[0], n239, cg59
-callsnd dropN[1], n238, cg59
-retsnd dropN[0], z0, cg59
-addi n323, takeN[0], 2
-addi n324, dropN[0], 2
-const n325, 1000003
-mul n326, n323, n325
-add n327, n326, n324
-ret splitAtN, n327, z0
-callgroup("cg69","splitAtN")
-callsnd splitAtN[0], n237, cg69
-callsnd splitAtN[1], n222, cg69
-retsnd splitAtN[0], z0, cg69
+const n292, -1
+equal n293, n283, n292
+const n294, 0
+equal n295, n291, n294
+band n296, n293, n295
+const n297, -1
+steer s298, n296, n297
+add n299, n291, n293
+const n300, 0
+gthan n301, n299, n300
+const n302, 1
+const n303, 0
+equal n304, n301, n303
+band n305, n302, n304
+const n306, 1
+sub n307, n284, n306
+add n308, z0, z0
+callgroup("cg49","dropN")
+callsnd dropN[0], n307, cg49
+callsnd dropN[1], n308, cg49
+retsnd dropN[0], z0, cg49
+steer s313, n305, dropN[0]
+steer s314, n290, n283
+steer s315, n290, s298.w
+ret dropN, s315.g, z0
+callgroup("cg57","dropN")
+callsnd dropN[0], n237, cg57
+callsnd dropN[1], n236, cg57
+retsnd dropN[0], z0, cg57
+addi n321, takeN[0], 2
+addi n322, dropN[0], 2
+const n323, 1000003
+mul n324, n321, n323
+add n325, n324, n322
+ret splitAtN, n325, z0
+callgroup("cg67","splitAtN")
+callsnd splitAtN[0], n235, cg67
+callsnd splitAtN[1], n218, cg67
+retsnd splitAtN[0], z0, cg67
 ret splitImb, splitAtN[0], z0
-callgroup("cg74","splitImb")
-callsnd splitImb[0], n164, cg74
-retsnd splitImb[0], z0, cg74
-const n337, 0
-const n338, 1000003
-div n339, splitImb[0], n338
-subi n340, n339, 2
-const n341, 1000003
-div n342, splitImb[0], n341
-mul n343, n342, n341
-sub n344, splitImb[0], n343
-subi n345, n344, 2
-const n346, 1
-const n347, 0
-equal n348, n337, n347
-band n349, n346, n348
-callgroup("cg90","checkRec")
-callsnd checkRec[0], n165, cg90
-callsnd checkRec[1], n340, cg90
-retsnd checkRec[0], z0, cg90
-const n354, 0
-const n355, 1000003
-div n356, checkRec[0], n355
-subi n357, n356, 2
-const n358, 1000003
-div n359, checkRec[0], n358
-mul n360, n359, n358
-sub n361, checkRec[0], n360
-subi n362, n361, 2
-const n363, 1
-const n364, 0
-equal n365, n354, n364
-band n366, n363, n365
-callgroup("cg17","checkRec")
-callsnd checkRec[0], n165, cg17
-callsnd checkRec[1], n345, cg17
-retsnd checkRec[0], z0, cg17
-const n371, 0
-const n372, 1000003
-div n373, checkRec[0], n372
-subi n374, n373, 2
-const n375, 1000003
-div n376, checkRec[0], n375
-mul n377, n376, n375
-sub n378, checkRec[0], n377
-subi n379, n378, 2
-const n380, 1
-const n381, 0
-equal n382, n371, n381
-band n383, n380, n382
-add n384, n357, n374
-add n385, n357, n379
-lthan n386, n362, n385
-add n387, n357, n379
-steer s388, n386, n362
-steer s389, n386, n387
-addi n390, n384, 2
-addi n391, s388.w, 2
-const n392, 1000003
-mul n393, n390, n392
-add n394, n393, n391
-steer s395, n383, n394
-steer s396, n366, s395.w
-steer s397, n349, s396.w
-steer s398, n197, chunkPair[0]
-steer s399, n197, s397.w
-ret checkRec, s399.g, z0
-callgroup("cg51","checkRec")
-callsnd checkRec[0], n163, cg51
-callsnd checkRec[1], n151, cg51
-retsnd checkRec[0], z0, cg51
-const n405, 0
-const n406, 1000003
-div n407, checkRec[0], n406
-subi n408, n407, 2
-const n409, 1000003
-div n410, checkRec[0], n409
-mul n411, n410, n409
-sub n412, checkRec[0], n411
-subi n413, n412, 2
-const n414, 1
-const n415, 0
-equal n416, n405, n415
-band n417, n414, n416
-const n418, 0
-equal n419, n408, n418
-const n420, 0
-gthan n421, n413, n420
-equal n422, n413, n420
-add n423, n421, n422
+callgroup("cg72","splitImb")
+callsnd splitImb[0], n164, cg72
+retsnd splitImb[0], z0, cg72
+const n335, 0
+const n336, 1000003
+div n337, splitImb[0], n336
+subi n338, n337, 2
+const n339, 1000003
+div n340, splitImb[0], n339
+mul n341, n340, n339
+sub n342, splitImb[0], n341
+subi n343, n342, 2
+const n344, 1
+const n345, 0
+equal n346, n335, n345
+band n347, n344, n346
+callgroup("cg88","checkRec")
+callsnd checkRec[0], n165, cg88
+callsnd checkRec[1], n338, cg88
+retsnd checkRec[0], z0, cg88
+const n352, 0
+const n353, 1000003
+div n354, checkRec[0], n353
+subi n355, n354, 2
+const n356, 1000003
+div n357, checkRec[0], n356
+mul n358, n357, n356
+sub n359, checkRec[0], n358
+subi n360, n359, 2
+const n361, 1
+const n362, 0
+equal n363, n352, n362
+band n364, n361, n363
+callgroup("cg15","checkRec")
+callsnd checkRec[0], n165, cg15
+callsnd checkRec[1], n343, cg15
+retsnd checkRec[0], z0, cg15
+const n369, 0
+const n370, 1000003
+div n371, checkRec[0], n370
+subi n372, n371, 2
+const n373, 1000003
+div n374, checkRec[0], n373
+mul n375, n374, n373
+sub n376, checkRec[0], n375
+subi n377, n376, 2
+const n378, 1
+const n379, 0
+equal n380, n369, n379
+band n381, n378, n380
+callgroup("cg32","s1")
+callsnd s1[0], n372, cg32
+retsnd s1[0], z0, cg32
+callgroup("cg35","s1")
+callsnd s1[0], n377, cg35
+retsnd s1[0], z0, cg35
+lthan n388, n360, s1[0]
+callgroup("cg39","s1")
+callsnd s1[0], n377, cg39
+retsnd s1[0], z0, cg39
+steer s392, n388, n360
+steer s393, n388, s1[0]
+addi n394, s1[0], 2
+addi n395, s392.w, 2
+const n396, 1000003
+mul n397, n394, n396
+add n398, n397, n395
+steer s399, n381, n398
+steer s400, n364, s399.w
+steer s401, n347, s400.w
+steer s402, n193, chunkPair[0]
+steer s403, n193, s401.w
+ret checkRec, s403.g, z0
+callgroup("cg55","checkRec")
+callsnd checkRec[0], n163, cg55
+callsnd checkRec[1], n151, cg55
+retsnd checkRec[0], z0, cg55
+const n409, 0
+const n410, 1000003
+div n411, checkRec[0], n410
+subi n412, n411, 2
+const n413, 1000003
+div n414, checkRec[0], n413
+mul n415, n414, n413
+sub n416, checkRec[0], n415
+subi n417, n416, 2
+const n418, 1
+const n419, 0
+equal n420, n409, n419
+band n421, n418, n420
+const n422, 0
+equal n423, n412, n422
 const n424, 0
-gthan n425, n423, n424
-band n426, n419, n425
-steer s427, n417, n426
-ret validateDyck, s427.w, z0
-callgroup("cg79","validateDyck")
-callsnd validateDyck[0], generateDyck[0], cg79
-retsnd validateDyck[0], z0, cg79
+gthan n425, n417, n424
+equal n426, n417, n424
+add n427, n425, n426
+const n428, 0
+gthan n429, n427, n428
+band n430, n423, n429
+steer s431, n421, n430
+ret validateDyck, s431.w, z0
+callgroup("cg83","validateDyck")
+callsnd validateDyck[0], generateDyck[0], cg83
+retsnd validateDyck[0], z0, cg83
 ret main, validateDyck[0], z0
-const n433, 0
-callgroup("cg84","n")
-callsnd n[0], n433, cg84
-retsnd n[0], z0, cg84
 const n437, 0
-callgroup("cg88","p")
-callsnd p[0], n437, cg88
-retsnd p[0], z0, cg88
-div n441, n[0], p[0]
-ret threshold, n441, z0
-const n443, 0
-callgroup("cg94","n")
-callsnd n[0], n443, cg94
-retsnd n[0], z0, cg94
+callgroup("cg88","n")
+callsnd n[0], n437, cg88
+retsnd n[0], z0, cg88
+const n441, 0
+callgroup("cg92","p")
+callsnd p[0], n441, cg92
+retsnd p[0], z0, cg92
+div n445, n[0], p[0]
+ret threshold, n445, z0
 const n447, 0
-callgroup("cg98","delta")
-callsnd delta[0], n447, cg98
-retsnd delta[0], z0, cg98
-callgroup("cg11","generateDyck")
-callsnd generateDyck[0], n[0], cg11
-callsnd generateDyck[1], delta[0], cg11
-retsnd generateDyck[0], z0, cg11
+callgroup("cg98","n")
+callsnd n[0], n447, cg98
+retsnd n[0], z0, cg98
+const n451, 0
+callgroup("cg12","delta")
+callsnd delta[0], n451, cg12
+retsnd delta[0], z0, cg12
+callgroup("cg15","generateDyck")
+callsnd generateDyck[0], n[0], cg15
+callsnd generateDyck[1], delta[0], cg15
+retsnd generateDyck[0], z0, cg15
 ret inputSeq, generateDyck[0], z0

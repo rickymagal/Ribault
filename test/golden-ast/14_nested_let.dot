@@ -18,7 +18,7 @@ digraph AST {
   9 [shape=box,label="Decls"];
   8 -> 9;
   10 [shape=box,label="FunDecl z"];
-  11 [shape=box,label="BinOp +"];
+  11 [shape=box,label="App"];
   12 [shape=box,label="Var x"];
   11 -> 12;
   13 [shape=box,label="Var y"];

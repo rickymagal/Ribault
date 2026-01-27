@@ -3,15 +3,15 @@ digraph AST {
   node [shape=box,fontname="monospace"];
   0 [shape=box,label="Program"];
   1 [shape=box,label="FunDecl main"];
-  2 [shape=box,label="BinOp +"];
-  3 [shape=box,label="Lit 2"];
-  2 -> 3;
-  4 [shape=box,label="BinOp *"];
+  2 [shape=box,label="BinOp *"];
+  3 [shape=box,label="App"];
+  4 [shape=box,label="Lit 2"];
+  3 -> 4;
   5 [shape=box,label="Lit 3"];
-  4 -> 5;
+  3 -> 5;
+  2 -> 3;
   6 [shape=box,label="Lit 4"];
-  4 -> 6;
-  2 -> 4;
+  2 -> 6;
   1 -> 2;
   0 -> 1;
 }

@@ -8,13 +8,12 @@ set -euo pipefail
 START_N=0; STEP=0; N_MAX=0; REPS=1
 PROCS_CSV=""; OUTROOT=""; VEC_MODE="range"; TAG="ghc_ms"
 GHC="${GHC:-ghc}"
+GHC_PKGS="${GHC_PKGS:--package time}"
 PY3="${PY3:-python3}"
-# expõe pacotes necessários (void linux costuma manter como pacotes ocultos)
-GHC_PKGS="${GHC_PKGS:--package parallel -package deepseq}"
 
 usage(){
   echo "uso: $0 --start-N A --step B --n-max C --reps R --procs \"1,2,...\" --outroot DIR [--vec range|rand] [--tag nome]"
-  echo "env: GHC=ghc  PY3=python3  GHC_PKGS='-package parallel -package deepseq'"
+  echo "env: GHC=ghc  PY3=python3"
   exit 2
 }
 
@@ -58,7 +57,7 @@ gen_hs() {
 build_bin() {
   local hs="$1" bin="$2"
   echo "[ghc ] compiling $hs -> $bin"
-  "$GHC" -O2 -threaded -rtsopts $GHC_PKGS -optc-O3 -o "$bin" "$hs" >/dev/null
+  "$GHC" $GHC_PKGS -threaded -rtsopts -o "$bin" "$hs" >/dev/null
 }
 
 run_bin_time_rc() {
@@ -67,7 +66,7 @@ run_bin_time_rc() {
   mkdir -p "$logs"
   local outlog="$logs/run.out" errlog="$logs/run.err"
   set +e
-  "./$bin" +RTS -N"$P" -RTS >"$outlog" 2>"$errlog"
+  "$bin" +RTS -N"$P" -RTS >"$outlog" 2>"$errlog"
   local rc=$?
   set -e
   local secs="NaN"
@@ -101,3 +100,8 @@ while [[ "$N" -le "$N_MAX" ]]; do
 done
 
 echo "[DONE] resultados em: $OUTROOT"
+echo "[plot] gerando graficos"
+"$PY3" "$MS_DIR/plot_hs.py" \
+  --metrics "$METRICS_CSV" \
+  --outdir "$OUTROOT" \
+  --tag "$TAG"

@@ -3,7 +3,7 @@
 
 import argparse, csv, os, math
 from collections import defaultdict
-from statistics import mean, pstdev
+from statistics import median, pstdev
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -27,7 +27,7 @@ def read_rows(metrics_path):
             rows.append((N, P, t))
     return rows
 
-def aggregate(rows):
+def aggregate(rows, trim=1):
     g = defaultdict(list)         # (P,N) -> [times]
     for N, P, t in rows:
         g[(P, N)].append(t)
@@ -36,9 +36,14 @@ def aggregate(rows):
     byP = defaultdict(list)
     for (P, N), vals in g.items():
         vals.sort()
-        m = mean(vals)
-        s = pstdev(vals) if len(vals) > 1 else 0.0
-        byP[P].append((N, m, s, len(vals)))
+        vals_sorted = sorted(vals)
+        if trim > 0 and len(vals_sorted) > (2 * trim):
+            vals_used = vals_sorted[trim:-trim]
+        else:
+            vals_used = vals_sorted
+        m = median(vals_used)
+        s = pstdev(vals_used) if len(vals_used) > 1 else 0.0
+        byP[P].append((N, m, s, len(vals_used)))
 
     for P, entries in byP.items():
         entries.sort(key=lambda x: x[0])
@@ -53,7 +58,7 @@ def save_aggregated_csv(stats, outdir, tag):
     path = os.path.join(outdir, f"metrics_aggregated_{tag}.csv")
     with open(path, "w", newline="") as f:
         cw = csv.writer(f)
-        cw.writerow(["variant","N","P","reps","mean_seconds","std_seconds"])
+        cw.writerow(["variant","N","P","reps","median_seconds","std_seconds"])
         for P in sorted(stats.keys()):
             Ns=stats[P]["Ns"]; mus=stats[P]["mean"]; sigs=stats[P]["std"]; cnts=stats[P]["count"]
             for N, m, s, c in zip(Ns, mus, sigs, cnts):
@@ -146,6 +151,8 @@ def main():
     ap.add_argument("--metrics", required=True)
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--tag", required=True)
+    ap.add_argument("--trim", type=int, default=1,
+                    help="Drop N min/max samples before aggregating (default: 1)")
     ap.add_argument("--baselineP", type=int, default=None)
     args = ap.parse_args()
 
@@ -153,7 +160,7 @@ def main():
     rows = read_rows(args.metrics)
     if not rows:
         print("[plot] no data to plot"); return
-    stats = aggregate(rows)
+    stats = aggregate(rows, trim=args.trim)
     save_aggregated_csv(stats, args.outdir, args.tag)
     plot_runtime(stats, args.outdir, args.tag)
     plot_speedup(stats, args.outdir, args.tag, baselineP=args.baselineP)

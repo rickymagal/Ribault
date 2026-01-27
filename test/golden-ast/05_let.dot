@@ -23,7 +23,7 @@ digraph AST {
   10 -> 12;
   9 -> 10;
   8 -> 9;
-  13 [shape=box,label="BinOp +"];
+  13 [shape=box,label="App"];
   14 [shape=box,label="Var sq"];
   13 -> 14;
   15 [shape=box,label="Lit 1"];

@@ -89,266 +89,116 @@ const n86, 1
 const n87, 0
 equal n88, n85, n87
 band n89, n86, n88
-const n90, 1
+add n90, z0, z0
 add n91, z0, z0
-callgroup("cg12","len")
-callsnd len[0], n91, cg12
-retsnd len[0], z0, cg12
-add n95, n90, len[0]
-steer s96, n89, n95
-ret len, s96.w, z0
-callgroup("cg18","len")
-callsnd len[0], n73, cg18
-retsnd len[0], z0, cg18
-add n101, z0, z0
-add n102, z0, z0
+steer s92, n89, n91
+ret len, s92.w, z0
+callgroup("cg14","len")
+callsnd len[0], n73, cg14
+retsnd len[0], z0, cg14
+add n97, z0, z0
+add n98, z0, z0
+add n99, z0, z0
+const n100, 0
+const n101, -1
+equal n102, n97, n101
 const n103, 0
-const n104, -1
-equal n105, n101, n104
-const n106, 0
-equal n107, n103, n106
-band n108, n105, n107
-const n109, -1
-steer s110, n108, n109
-add n111, n103, n105
+equal n104, n100, n103
+band n105, n102, n104
+const n106, -1
+steer s107, n105, n106
+add n108, n100, n102
+const n109, 0
+gthan n110, n108, n109
+const n111, 1
 const n112, 0
-gthan n113, n111, n112
-const n114, 1
-const n115, 0
-equal n116, n113, n115
-band n117, n114, n116
-const n118, -1
-add n119, z0, z0
-addi n120, n119, 2
-addi n121, n118, 2
-const n122, 1000003
-mul n123, n120, n122
-add n124, n123, n121
-steer s125, n117, n124
-add n126, n113, n114
+equal n113, n110, n112
+band n114, n111, n113
+const n115, -1
+add n116, z0, z0
+addi n117, n116, 2
+addi n118, n115, 2
+const n119, 1000003
+mul n120, n117, n119
+add n121, n120, n118
+steer s122, n114, n121
+add n123, n110, n111
+const n124, 0
+gthan n125, n123, n124
+const n126, 1
 const n127, 0
-gthan n128, n126, n127
-const n129, 1
-const n130, 0
-equal n131, n128, n130
-band n132, n129, n131
-callgroup("cg53","len")
-callsnd len[0], n101, cg53
-retsnd len[0], z0, cg53
-const n136, 4
-div n137, n102, n136
-lthan n138, len[0], n137
-equal n139, len[0], n137
-add n140, n138, n139
-const n141, 0
-gthan n142, n140, n141
-super n143, 0, 1, n101
-add n144, z0, z0
-const n145, 0
-const n146, -1
-equal n147, n144, n146
-const n148, 0
-equal n149, n145, n148
-band n150, n147, n149
-const n151, -1
-const n152, -1
-addi n153, n151, 2
-addi n154, n152, 2
-const n155, 1000003
-mul n156, n153, n155
-add n157, n156, n154
-steer s158, n150, n157
-add n159, n145, n147
-const n160, 0
-gthan n161, n159, n160
-const n162, -1
-equal n163, n144, n162
-const n164, 0
-equal n165, n163, n164
-const n166, 1000003
-div n167, n144, n166
-mul n168, n167, n166
-sub n169, n144, n168
-subi n170, n169, 2
-const n171, -1
-equal n172, n170, n171
-band n173, n165, n172
-const n174, 1000003
-div n175, n144, n174
-subi n176, n175, 2
-const n177, 0
-equal n178, n161, n177
-band n179, n173, n178
-const n180, -1
-addi n181, n176, 2
-addi n182, n180, 2
-const n183, 1000003
-mul n184, n181, n183
-add n185, n184, n182
-const n186, -1
-addi n187, n185, 2
-addi n188, n186, 2
-const n189, 1000003
-mul n190, n187, n189
-add n191, n190, n188
-steer s192, n179, n191
-add n193, n161, n173
-const n194, 0
-gthan n195, n193, n194
-const n196, -1
-equal n197, n144, n196
-const n198, 0
-equal n199, n197, n198
-const n200, 1000003
-div n201, n144, n200
-subi n202, n201, 2
-const n203, 1000003
-div n204, n144, n203
-mul n205, n204, n203
-sub n206, n144, n205
-subi n207, n206, 2
-const n208, 0
-equal n209, n195, n208
-band n210, n199, n209
-add n211, z0, z0
-callgroup("cg42","split")
-callsnd split[0], n211, cg42
-retsnd split[0], z0, cg42
-const n215, 0
-const n216, 1000003
-div n217, split[0], n216
-subi n218, n217, 2
-const n219, 1000003
-div n220, split[0], n219
-mul n221, n220, n219
-sub n222, split[0], n221
-subi n223, n222, 2
-const n224, 1
-const n225, 0
-equal n226, n215, n225
-band n227, n224, n226
-addi n228, n202, 2
-addi n229, n218, 2
-const n230, 1000003
-mul n231, n228, n230
-add n232, n231, n229
-add n233, z0, z0
-addi n234, n233, 2
-addi n235, n223, 2
-const n236, 1000003
-mul n237, n234, n236
-add n238, n237, n235
-addi n239, n232, 2
-addi n240, n238, 2
-const n241, 1000003
-mul n242, n239, n241
-add n243, n242, n240
-steer s244, n227, n243
-steer s245, n210, s244.w
-ret split, s245.w, z0
-callgroup("cg77","split")
-callsnd split[0], n101, cg77
-retsnd split[0], z0, cg77
-const n250, 0
-const n251, 1000003
-div n252, split[0], n251
-subi n253, n252, 2
-const n254, 1000003
-div n255, split[0], n254
-mul n256, n255, n254
-sub n257, split[0], n256
-subi n258, n257, 2
-const n259, 1
-const n260, 0
-equal n261, n250, n260
-band n262, n259, n261
-callgroup("cg93","mergeSortT")
-callsnd mergeSortT[0], n102, cg93
-callsnd mergeSortT[1], n253, cg93
-retsnd mergeSortT[0], z0, cg93
-callgroup("cg97","mergeSortT")
-callsnd mergeSortT[0], n102, cg97
-callsnd mergeSortT[1], n258, cg97
-retsnd mergeSortT[0], z0, cg97
-add n271, z0, z0
-add n272, z0, z0
-const n273, 0
-const n274, -1
-equal n275, n272, n274
-const n276, 0
-equal n277, n273, n276
-band n278, n275, n277
-steer s279, n278, n271
-add n280, n273, n275
-const n281, 0
-gthan n282, n280, n281
-const n283, 1
-const n284, 0
-equal n285, n282, n284
-band n286, n283, n285
-const n287, 0
-const n288, -1
-equal n289, n271, n288
-const n290, 0
-equal n291, n287, n290
-band n292, n289, n291
-steer s293, n292, n272
-add n294, n287, n289
-const n295, 0
-gthan n296, n294, n295
-const n297, 1
-const n298, 0
-equal n299, n296, n298
-band n300, n297, n299
-add n301, z0, z0
-add n302, z0, z0
-lthan n303, n301, n302
-equal n304, n301, n302
-add n305, n303, n304
-const n306, 0
-gthan n307, n305, n306
-add n308, z0, z0
-callgroup("cg49","merge")
-callsnd merge[0], n308, cg49
-callsnd merge[1], n271, cg49
-retsnd merge[0], z0, cg49
-addi n313, n301, 2
-addi n314, merge[0], 2
-const n315, 1000003
-mul n316, n313, n315
-add n317, n316, n314
-add n318, z0, z0
-callgroup("cg59","merge")
-callsnd merge[0], n272, cg59
-callsnd merge[1], n318, cg59
-retsnd merge[0], z0, cg59
-addi n323, n302, 2
-addi n324, merge[0], 2
-const n325, 1000003
-mul n326, n323, n325
-add n327, n326, n324
-steer s328, n307, n317
-steer s329, n307, n327
-steer s330, n300, s328.w
-steer s331, n286, s293.w
-ret merge, s331.w, z0
-callgroup("cg73","merge")
-callsnd merge[0], mergeSortT[0], cg73
-callsnd merge[1], mergeSortT[0], cg73
-retsnd merge[0], z0, cg73
-steer s337, n262, merge[0]
-steer s338, n142, n143
-steer s339, n142, s337.w
-steer s340, n132, s338.w
-ret mergeSortT, s340.w, z0
-callgroup("cg82","mergeSortT")
-callsnd mergeSortT[0], len[0], cg82
-callsnd mergeSortT[1], n73, cg82
-retsnd mergeSortT[0], z0, cg82
+equal n128, n125, n127
+band n129, n126, n128
+const n130, 4
+div n131, n99, n130
+lthan n132, n98, n131
+equal n133, n98, n131
+add n134, n132, n133
+const n135, 0
+gthan n136, n134, n135
+add n137, z0, z0
+super n138, 0, 1, n137
+ret ms_super, n138, z0
+callgroup("cg60","ms_super")
+callsnd ms_super[0], n97, cg60
+retsnd ms_super[0], z0, cg60
+add n143, z0, z0
+super n144, 0, 1, n143
+ret splitCount_super, n144, z0
+callgroup("cg66","splitCount_super")
+callsnd splitCount_super[0], n97, cg66
+retsnd splitCount_super[0], z0, cg66
+const n149, 0
+const n150, 1000003
+div n151, splitCount_super[0], n150
+subi n152, n151, 2
+const n153, 1000003
+div n154, splitCount_super[0], n153
+mul n155, n154, n153
+sub n156, splitCount_super[0], n155
+subi n157, n156, 2
+const n158, 1
+const n159, 0
+equal n160, n149, n159
+band n161, n158, n160
+add n162, z0, z0
+callgroup("cg83","mergeSortT")
+callsnd mergeSortT[0], n99, cg83
+callsnd mergeSortT[1], n162, cg83
+callsnd mergeSortT[2], n152, cg83
+retsnd mergeSortT[0], z0, cg83
+add n168, z0, z0
+add n169, z0, z0
+callgroup("cg90","mergeSortT")
+callsnd mergeSortT[0], n99, cg90
+callsnd mergeSortT[1], n168, cg90
+callsnd mergeSortT[2], n169, cg90
+retsnd mergeSortT[0], z0, cg90
+addi n175, mergeSortT[0], 2
+addi n176, mergeSortT[0], 2
+const n177, 1000003
+mul n178, n175, n177
+add n179, n178, n176
+add n180, z0, z0
+super n181, 0, 1, n180
+ret merge_super, n181, z0
+callgroup("cg13","merge_super")
+callsnd merge_super[0], n179, cg13
+retsnd merge_super[0], z0, cg13
+steer s186, n161, merge_super[0]
+steer s187, n136, ms_super[0]
+steer s188, n136, s186.w
+steer s189, n129, s187.w
+ret mergeSortT, s189.w, z0
+callgroup("cg21","mergeSortT")
+callsnd mergeSortT[0], len[0], cg21
+callsnd mergeSortT[1], len[0], cg21
+callsnd mergeSortT[2], n73, cg21
+retsnd mergeSortT[0], z0, cg21
 ret mergeSort0, mergeSortT[0], z0
-callgroup("cg87","mergeSort0")
-callsnd mergeSort0[0], n72, cg87
-retsnd mergeSort0[0], z0, cg87
+callgroup("cg27","mergeSort0")
+callsnd mergeSort0[0], n72, cg27
+retsnd mergeSort0[0], z0, cg27
 ret main, mergeSort0[0], z0
-const n351, 4
-ret p, n351, z0
+const n201, 4
+ret p, n201, z0

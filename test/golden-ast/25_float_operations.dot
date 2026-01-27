@@ -71,7 +71,7 @@ digraph AST {
   34 [shape=box,label="FunDecl floatSum"];
   35 [shape=box,label="Params y x"];
   34 -> 35;
-  36 [shape=box,label="BinOp +"];
+  36 [shape=box,label="App"];
   37 [shape=box,label="Var x"];
   36 -> 37;
   38 [shape=box,label="Var y"];

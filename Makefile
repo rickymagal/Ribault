@@ -70,7 +70,10 @@ CODE_FL      := $(patsubst $(TEST_DIR)/%.hsk,$(CODE_OUT_DIR)/%.fl,$(TESTS))
 all: df ast code supers
 
 GHC_VER   := $(shell $(GHC) --numeric-version)
+GHC_MAJOR := $(shell echo $(GHC_VER) | cut -d. -f1)
 SHIM_DIR  := build/ghc-shim
+SUPERS_THREADED ?= 1
+SUPERS_WRAPPERS_MAX ?= 256
 
 .PHONY: supers_prepare
 supers_prepare:
@@ -79,12 +82,36 @@ supers_prepare:
 	@mkdir -p "$(SHIM_DIR)/rts"
 	@RTS_DIR="$$(ghc-pkg field rts library-dirs --simple-output)"; \
 	BASE_DIR="$$(dirname "$$RTS_DIR")"; \
-	RTS_SO="$$(ls "$$BASE_DIR"/libHSrts-*-ghc$(GHC_VER).so 2>/dev/null | head -n1)"; \
+	PREF_THR="$${SUPERS_THREADED:-1}"; \
+	if [ "$$PREF_THR" = "1" ]; then \
+	  RTS_SO="$$(ls "$$BASE_DIR"/libHSrts*thr*ghc$(GHC_VER).so 2>/dev/null | grep -v '_debug' | head -n1)"; \
+	  if [ -z "$$RTS_SO" ]; then \
+	    RTS_SO="$$(ls "$$BASE_DIR"/libHSrts*ghc$(GHC_VER).so 2>/dev/null | grep -v '_debug' | head -n1)"; \
+	  fi; \
+	else \
+	  RTS_SO="$$(ls "$$BASE_DIR"/libHSrts*ghc$(GHC_VER).so 2>/dev/null | grep -v '_debug' | grep -v '_thr' | head -n1)"; \
+	  if [ -z "$$RTS_SO" ]; then \
+	    RTS_SO="$$(ls "$$BASE_DIR"/libHSrts*thr*ghc$(GHC_VER).so 2>/dev/null | grep -v '_debug' | head -n1)"; \
+	  fi; \
+	fi; \
 	if [ -z "$$RTS_SO" ]; then \
-	  RTS_SO="$$(ls "$$RTS_DIR"/libHSrts-*-ghc$(GHC_VER).so 2>/dev/null | head -n1)"; \
+	  RTS_SO="$$(ls "$$BASE_DIR"/libHSrts*ghc$(GHC_VER).so 2>/dev/null | head -n1)"; \
+	fi; \
+	if [ -z "$$RTS_SO" ]; then \
+	  if [ "$$PREF_THR" = "1" ]; then \
+	    RTS_SO="$$(ls "$$RTS_DIR"/libHSrts*thr*ghc$(GHC_VER).so 2>/dev/null | grep -v '_debug' | head -n1)"; \
+	  else \
+	    RTS_SO="$$(ls "$$RTS_DIR"/libHSrts*ghc$(GHC_VER).so 2>/dev/null | grep -v '_debug' | grep -v '_thr' | head -n1)"; \
+	  fi; \
+	fi; \
+	if [ -z "$$RTS_SO" ]; then \
+	  RTS_SO="$$(ls "$$RTS_DIR"/libHSrts*ghc$(GHC_VER).so 2>/dev/null | grep -v '_debug' | head -n1)"; \
+	fi; \
+	if [ -z "$$RTS_SO" ]; then \
+	  RTS_SO="$$(ls "$$RTS_DIR"/libHSrts*ghc$(GHC_VER).so 2>/dev/null | head -n1)"; \
 	fi; \
 	test -n "$$RTS_SO" || { \
-	  echo "[shim] ERRO: não achei libHSrts-*-ghc$(GHC_VER).so"; \
+	  echo "[shim] ERRO: não achei libHSrts*ghc$(GHC_VER).so"; \
 	  echo "       Procurei em:"; \
 	  echo "         $$BASE_DIR"; \
 	  echo "         $$RTS_DIR"; \
@@ -92,10 +119,14 @@ supers_prepare:
 	}; \
 	ln -sfn "$$RTS_SO" "$(SHIM_DIR)/rts/libHSrts-ghc$(GHC_VER).so"; \
 	echo "[shim] RTS → $$RTS_SO"
-	@for pkg in base ghc-prim ghc-bignum integer-gmp; do \
-	  dir="$$(ghc-pkg field $$pkg library-dirs --simple-output)"; \
+	@for pkg in base ghc-prim integer-gmp; do \
+	  dir="$$(ghc-pkg field $$pkg library-dirs --simple-output 2>/dev/null || true)"; \
 	  [ -d "$$dir" ] && ln -sfn "$$dir" "$(SHIM_DIR)/$$(basename "$$dir")" || true; \
-	done
+	done; \
+	if ghc-pkg field ghc-bignum library-dirs --simple-output >/dev/null 2>&1; then \
+	  dir="$$(ghc-pkg field ghc-bignum library-dirs --simple-output)"; \
+	  [ -d "$$dir" ] && ln -sfn "$$dir" "$(SHIM_DIR)/$$(basename "$$dir")" || true; \
+	fi
 	@INC_DIRS="$$(ghc-pkg field rts include-dirs --simple-output)"; \
 	CPP=""; CP=""; \
 	for d in $$INC_DIRS; do CPP="$$CPP -I$$d"; CP="$$CP:$$d"; done; \
@@ -123,13 +154,21 @@ GHC_RTS_DIR  := $(GHC_LIBDIR_SHIM)/rts
 CPP_RTS_INCS := $(foreach d,$(RTS_INCDIRS),-I$(d))
 
 # Tudo que a .so pode pedir (cobre layout clássico e Fedora)
+ifeq ($(GHC_MAJOR),8)
+  SUPERS_BIGNUM_PKG :=
+  SUPERS_BIGNUM_PATTERN :=
+else
+  SUPERS_BIGNUM_PKG := -package ghc-bignum
+  SUPERS_BIGNUM_PATTERN := ghc-bignum-*/libHSghc-bignum-*.so
+endif
+
 DEPS_PATTERNS := \
   rts/libHSrts*.so \
   x86_64-linux-ghc-$(GHC_VER)/libHSrts*.so \
   ghc-prim-*/libHSghc-prim-*.so \
   base-*/libHSbase-*.so \
   integer-gmp-*/libHSinteger-gmp-*.so \
-  ghc-bignum-*/libHSghc-bignum-*.so
+  $(SUPERS_BIGNUM_PATTERN)
 
 # (Opcional) libgmp para runtime fechado
 GMP_CANDIDATES := /usr/lib64/libgmp.so.10 /usr/lib/libgmp.so.10
@@ -137,7 +176,7 @@ GMP_CANDIDATES := /usr/lib64/libgmp.so.10 /usr/lib/libgmp.so.10
 # Link sem -threaded (evita *_thr); força noexecstack e rpath curto no bundle local
 SUPERS_LINK_FLAGS := -O2 -shared -dynamic -fPIC -no-hs-main \
                      -hide-all-packages \
-                     -package base -package ghc-prim -package integer-gmp -package ghc-bignum \
+                     -package base -package ghc-prim -package integer-gmp $(SUPERS_BIGNUM_PKG) \
                      -no-user-package-db -package-env - \
                      -optl -Wl,--disable-new-dtags \
                      -optl -Wl,-z,noexecstack \
@@ -150,20 +189,24 @@ $(EXE_SUPERS): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
                $(SUPERS_EXTRACT) $(SUPERS_EMIT) $(MAIN_SUPERS_HS)
 	@echo "[GHC  ] $@"
 	@mkdir -p $(EXE_SUPERS).obj $(EXE_SUPERS).hi
-	GHC_ENVIRONMENT=- $(GHC) -O2 \
+	GHC_ENVIRONMENT=- $(GHC) -O2 -package mtl -package array -package containers -package text \
 	  -odir $(EXE_SUPERS).obj -hidir $(EXE_SUPERS).hi \
 	  -o $@ \
 	  $(MAIN_SUPERS_HS) $(LEXER_HS) $(PARSER_HS) \
 	  $(SYNTAX_HS) $(SEMANTIC_HS) $(UNIQUE_HS) \
 	  $(TYPES_HS) $(PORT_HS) $(NODE_HS) \
 	  $(SUPERS_EXTRACT) $(SUPERS_EMIT)
+	@chmod +x $@
 
 supers: supers_prepare $(EXE_SUPERS)
 	@mkdir -p $(SUPERS_DIR)
-	@EXE_SUPERS="$(EXE_SUPERS)" \
+	@EXE_SUPERS="./$(EXE_SUPERS)" \
+	 SUPERS_THREADED='$(SUPERS_THREADED)' \
+	 SUPERS_WRAPPERS_MAX='$(SUPERS_WRAPPERS_MAX)' \
 	 GHC="$(GHC)" \
 	 GHC_LIBDIR="$(SHIM_DIR)" \
 	 GHC_RTS_DIR="$(SHIM_DIR)/rts" \
+	 RTS_SO="$(abspath $(SHIM_DIR)/rts/libHSrts-ghc$(GHC_VER).so)" \
 	 CPPFLAGS="$$(cat $(SHIM_DIR)/.cppflags)" \
 	 C_INCLUDE_PATH="$$(cat $(SHIM_DIR)/.cpath)" \
 	 CPATH="$$(cat $(SHIM_DIR)/.cpath)" \
@@ -209,7 +252,7 @@ $(EXE_DF): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
            $(TYPES_HS) $(PORT_HS) $(NODE_HS)
 	@echo "[GHC  ] $@"
 	@mkdir -p $(EXE_DF).obj $(EXE_DF).hi
-	$(GHC) -O2 -package mtl \
+	$(GHC) -O2 -package mtl -package array -package containers -package text \
 	      -odir $(EXE_DF).obj -hidir $(EXE_DF).hi \
 	      -o $@ \
 	      $(MAIN_DF_HS) $(LEXER_HS) $(PARSER_HS) \
@@ -220,7 +263,7 @@ $(EXE_DF): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
 $(EXE_AST): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) $(ASTGEN_HS) $(MAIN_AST_HS)
 	@echo "[GHC  ] $@"
 	@mkdir -p $(EXE_AST).obj $(EXE_AST).hi
-	$(GHC) -O2 -package mtl \
+	$(GHC) -O2 -package mtl -package array -package containers -package text \
 	      -odir $(EXE_AST).obj -hidir $(EXE_AST).hi \
 	      -o $@ \
 	      $(MAIN_AST_HS) $(LEXER_HS) $(PARSER_HS) \
@@ -231,7 +274,7 @@ $(EXE_CODE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
              $(TYPES_HS) $(PORT_HS) $(NODE_HS)
 	@echo "[GHC  ] $@"
 	@mkdir -p $(EXE_CODE).obj $(EXE_CODE).hi
-	$(GHC) -O2 -package mtl \
+	$(GHC) -O2 -package mtl -package array -package containers -package text \
 	      -odir $(EXE_CODE).obj -hidir $(EXE_CODE).hi \
 	       -o $@ \
 	      $(MAIN_CODE_HS) $(LEXER_HS) $(PARSER_HS) \
@@ -285,4 +328,5 @@ clean:
 	        $(EXE_DF) $(EXE_AST) $(EXE_CODE) $(EXE_SUPERS) \
 		$(EXE_SUPERS).obj $(EXE_SUPERS).hi 
 	@rm -f $(LEXER_HS) $(PARSER_HS) 
+	@rm -f Supers.hs supers_rts_init.o perf.data tools/supers_rts_init.o
 	@rm -rf $(DF_OUT_DIR) $(AST_OUT_DIR) $(CODE_OUT_DIR) $(SUPERS_DIR) build

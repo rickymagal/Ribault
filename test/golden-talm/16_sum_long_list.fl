@@ -78,11 +78,11 @@ equal n75, n72, n74
 band n76, n73, n75
 add n77, z0, z0
 add n78, z0, z0
-callgroup("cg89","sumList")
-callsnd sumList[0], n78, cg89
-retsnd sumList[0], z0, cg89
-add n82, n77, sumList[0]
-steer s83, n76, n82
+callgroup("cg89","h")
+callsnd h[0], n77, cg89
+callsnd h[1], n78, cg89
+retsnd h[0], z0, cg89
+steer s83, n76, h[0]
 ret sumList, s83.w, z0
 callgroup("cg95","sumList")
 callsnd sumList[0], n60, cg95

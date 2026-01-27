@@ -2,7 +2,7 @@
 
 -- |
 -- Module      : Synthesis.SuperExtract
--- Description : Extracts super-instructions from the AST after 'assignSuperNames' (names s#).
+-- Description : Extracts super-instructions from the AST after 'assignSuperNames' (names s0, s1, ...).
 -- Maintainer  : ricardofilhoschool@gmail.com
 -- Stability   : experimental
 -- Portability : portable
@@ -19,7 +19,7 @@ import Data.List (nubBy)
 
 -- | Minimal metadata needed to emit the supers module.
 data SuperSpec = SuperSpec
-  { ssName :: Ident        -- ^ \"s1\", \"s2\", …
+  { ssName :: Ident        -- ^ \"s0\", \"s1\", …
   , ssKind :: SuperKind    -- ^ metadata (not used by the ABI)
   , ssInp  :: Ident        -- ^ logical input name
   , ssOut  :: Ident        -- ^ logical output name
