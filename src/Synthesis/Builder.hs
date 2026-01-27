@@ -324,7 +324,7 @@ buildProgram p0 =
     buildZero (FunDecl f ps body) | null ps = do
       p <- withEnv (goExpr body)
       insertB f (BPort p)
-      r <- newNode (retName f) (NRet (retName f))
+      r <- retNodeId f
       connectPlus p (InstPort r "0")
     buildZero _ = pure ()
 
@@ -369,7 +369,7 @@ ensureBuilt f ps body = do
                 a <- argNode f i
                 insertB v (BPort a)
               res <- goExpr body
-              r   <- newNode f (NRet f)
+              r <- retNodeId f
               connectPlus res (InstPort r "0")
        pure ()
 
@@ -590,7 +590,7 @@ goApp fun args = case fun of
       _                   -> pure ()
 
     let tid = funTaskId f
-        tagNameFromId nid = "cg" ++ show ((nid `mod` 90) + 10)
+        tagNameFromId nid = "cg" ++ show nid
     cg <- newNode f (NCallGroup f)
     let tag = out0 cg
 

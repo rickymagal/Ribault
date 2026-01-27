@@ -1,5 +1,5 @@
 -- ===============================================================
---  MatrixMul.hsk  –  multiplicação de matrizes (Float)
+--  MatrixMul.hsk  –  multiplicação de matrizes (Int + Float)
 -- ===============================================================
 
 -- nº de processadores (seu script altera este valor)
@@ -7,15 +7,24 @@ p x = 8;
 
 -- 1. utilidades --------------------------------------------------
 
-heads xss = case xss of
-  []             -> [];
-  ((x:_):xss1)   -> x : heads xss1;
-;
+heads xss =
+  super single input (xss) output (hs)
+#BEGINSUPER
+    hs =
+      let rows = map toList xss in
+      let ok = all (\r -> not (null r)) rows in
+      if not ok then [] else map head rows
+#ENDSUPER;
 
-tails xss = case xss of
-  []               -> [];
-  ((_ : xs):xss1)  -> xs : tails xss1;
-;
+tails xss =
+  super single input (xss) output (ts)
+#BEGINSUPER
+    ts =
+      let rows = map toList xss in
+      let ok = all (\r -> not (null r)) rows in
+      if not ok then []
+      else map (fromList . tail) rows
+#ENDSUPER;
 
 append xs ys = case xs of
   []      -> ys;
@@ -41,23 +50,28 @@ splitAtN k xs = (takeN k xs, dropN k xs);
 
 -- 2. transposição -----------------------------------------------
 
-transpose xss = case xss of
-  []     -> [];
-  (_:_)  ->
-    let hs = heads xss in
-    hs : transpose (tails xss);
-;
+transpose xss =
+  super single input (xss) output (out)
+#BEGINSUPER
+    out =
+      let rows = map toList xss
+          transposeList m =
+            case m of
+              [] -> []
+              _  -> if any null m
+                    then []
+                    else map head m : transposeList (map tail m)
+      in map fromList (transposeList rows)
+#ENDSUPER;
 
--- 3. produto escalar (Float) ------------------------------------
+-- 3. produto escalar (Int) --------------------------------------
 
 dot xs ys = case xs of
-  []        -> 0.0;
+  []        -> 0;
   (x:xs1)   -> case ys of
-    []        -> 0.0;
+    []        -> 0;
     (y:ys1)   ->
-      let xf = x * 1.0 in
-      let yf = y * 1.0 in
-      (xf * yf) + dot xs1 ys1;;
+      (x * y) + dot xs1 ys1;;
 ;
 
 -- 4. linha × matriz transposta ----------------------------------
@@ -97,11 +111,80 @@ mmultPar rows colsT =
         append left right;
 ;
 
-matrixMul a b = mmultPar a (transpose b);
+matrixMul ab =
+  super single input (ab) output (out)
+#BEGINSUPER
+    out =
+      let rowsA = map toList (toList (head ab))
+          rowsB = map toList (toList (head (tail ab)))
+          transposeList m =
+            case m of
+              [] -> []
+              _  -> if any null m
+                    then []
+                    else map head m : transposeList (map tail m)
+          colsB = transposeList rowsB
+          dot xs ys = sum (zipWith (*) xs ys)
+          rowTimes row cols = map (dot row) cols
+          result = map (\r -> rowTimes r colsB) rowsA
+      in map fromList result
+#ENDSUPER;
 
 -- 7. exemplo de uso ---------------------------------------------
 
-main =
-  let a = [[1.0, 2.0], [3.0, 4.0]] in
-  let b = [[5.0, 6.0], [7.0, 8.0]] in
-  matrixMul a b;
+print_final xs =
+  super single input (xs) output (out)
+#BEGINSUPER
+    out = unsafePerformIO
+      (do
+        let rows = map toList xs
+        print "MatrixMul:"
+        print rows
+        pure [0])
+#ENDSUPER;
+
+main_int =
+  let a = [[1, 2], [3, 4]] in
+  let b = [[5, 6], [7, 8]] in
+  print_final (matrixMul [a, b]);
+
+-- ===============================================================
+-- 8. versão Float (testa corretude de float em listas) ----------
+-- ===============================================================
+
+matrixMulF ab =
+  super single input (ab) output (out)
+#BEGINSUPER
+    out =
+      let rowsA = map (\rh -> map toFloat (toList rh)) (toList (head ab))
+          rowsB = map (\rh -> map toFloat (toList rh)) (toList (head (tail ab)))
+          transposeList m =
+            case m of
+              [] -> []
+              _  -> if any null m
+                    then []
+                    else map head m : transposeList (map tail m)
+          colsB = transposeList rowsB
+          dot xs ys = sum (zipWith (*) xs ys)
+          rowTimes row cols = map (dot row) cols
+          result = map (\r -> rowTimes r colsB) rowsA
+      in map (fromList . map fromFloat) result
+#ENDSUPER;
+
+print_final_f xs =
+  super single input (xs) output (out)
+#BEGINSUPER
+    out = unsafePerformIO
+      (do
+        let rows = map (\rh -> map toFloat (toList rh)) xs
+        print "MatrixMulF:"
+        print rows
+        pure [0])
+#ENDSUPER;
+
+main_float =
+  let a = [[1.5, 2.25], [3.75, 4.5]] in
+  let b = [[0.5, 1.25], [2.5, 3.5]] in
+  print_final_f (matrixMulF [a, b]);
+
+main = main_float;

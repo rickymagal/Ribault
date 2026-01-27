@@ -18,7 +18,7 @@
 module Synthesis.Codegen (assemble) where
 
 import qualified Data.Map.Strict as M
-import           Data.List       (sortOn)
+import           Data.List       (sortOn, partition)
 import           Data.Char       (isDigit)
 import qualified Data.Text       as T
 
@@ -37,9 +37,9 @@ dstN nid = "n" <> showT nid
 dstS nid = "s" <> showT nid
 
 -- tag   ----------------------------------------------------------------
--- Always force cgNN with NN ∈ [10..99]; avoids leading-zero like “08”
+-- Use globally unique callgroup tags to avoid collisions in the preprocessor.
 tagName :: NodeId -> T.Text
-tagName nid = "cg" <> showT ((nid `mod` 90) + 10)
+tagName nid = "cg" <> showT nid
 
 -- "fun#i" -> "fun[i]"
 argAsFunSlot :: String -> T.Text
@@ -214,7 +214,11 @@ emitNode g im (nid, dn) =
 ----------------------------------------------------------------
 assemble :: DGraph DNode -> T.Text
 assemble g =
-  T.unlines $ "const z0, 0" : concatMap (emitNode g inMap) nodes
+  T.unlines $ "const z0, 0" : concatMap (emitNode g inMap) ordered
   where
     nodes = sortOn fst (M.toList (dgNodes g))
     inMap = buildInputs g
+    (cgs, rest) = partition isCallGroup nodes
+    ordered = cgs ++ rest
+    isCallGroup (_, NCallGroup{}) = True
+    isCallGroup _ = False
