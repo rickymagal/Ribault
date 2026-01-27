@@ -19,7 +19,7 @@ tokens :-
 
 -- Normal mode: skip whitespace, newlines, comments
 <0> $white+                         { skip }
-<0> \n                              { skip }
+<0> \n                              { actNewline }
 <0> "--".*                          { skip }
 
 -- Enter/leave super mode
@@ -120,20 +120,29 @@ data Token
 data AlexUserState = AlexUserState
   { stSuper   :: [Char]
   , stInSuper :: !Bool
+  , stLastTok :: Maybe Token
   }
 
 alexInitUserState :: AlexUserState
 alexInitUserState = AlexUserState
   { stSuper   = []
   , stInSuper = False
+  , stLastTok = Nothing
   }
 
 -- ===== Emit helpers =====
 actEmit :: Token -> AlexAction Token
-actEmit t _ _ = pure t
+actEmit t _ _ = do
+  st <- alexGetUserState
+  alexSetUserState st { stLastTok = Just t }
+  pure t
 
 actEmitLex :: (String -> Token) -> AlexAction Token
-actEmitLex f (_,_,_,str) n = pure (f (take n str))
+actEmitLex f (_,_,_,str) n = do
+  let t = f (take n str)
+  st <- alexGetUserState
+  alexSetUserState st { stLastTok = Just t }
+  pure t
 
 -- ===== super mode =====
 actBeginSuper :: AlexAction Token
@@ -154,8 +163,33 @@ actEndSuper :: AlexAction Token
 actEndSuper _ _ = do
   alexSetStartCode 0
   st <- alexGetUserState
-  alexSetUserState st { stInSuper = False }
-  pure (TokenSuperBody (stSuper st))
+  let t = TokenSuperBody (stSuper st)
+  alexSetUserState st { stInSuper = False, stLastTok = Just t }
+  pure t
+
+canInsertSemi :: Maybe Token -> Bool
+canInsertSemi mt =
+  case mt of
+    Just (TokenIdent _) -> True
+    Just (TokenInt _)   -> True
+    Just (TokenFloat _) -> True
+    Just (TokenChar _)  -> True
+    Just (TokenString _) -> True
+    Just (TokenBool _)  -> True
+    Just TokenRParen    -> True
+    Just TokenRBracket  -> True
+    Just (TokenSuperBody _) -> True
+    Just TokenSemi      -> False
+    _                   -> False
+
+actNewline :: AlexAction Token
+actNewline _ _ = do
+  st <- alexGetUserState
+  if canInsertSemi (stLastTok st)
+    then do
+      alexSetUserState st { stLastTok = Just TokenSemi }
+      pure TokenSemi
+    else alexMonadScan
 
 -- ===== EOF / scanAll =====
 

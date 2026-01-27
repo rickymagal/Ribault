@@ -2,18 +2,18 @@
 
 -- Insere o elemento x em uma lista já ordenada xs
 insert x xs = case xs of
-  []      -> [x];
+  []      -> [x]
+
   (y:ys)  ->
     if x <= y
       then x : xs
-      else y : insert x ys;
-;
+      else y : insert x ys
 
 -- insertionSort: ordena a lista usando insert recursivamente
 insertionSort lst = case lst of
-  []     -> [];
-  (h:t)  -> insert h (insertionSort t);
-;
+  []     -> []
+
+  (h:t)  -> insert h (insertionSort t)
 
 -- Teste em main
 main = insertionSort [34, 7, 23, 32, 5, 62]

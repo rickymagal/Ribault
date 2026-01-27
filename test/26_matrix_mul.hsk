@@ -3,7 +3,7 @@
 -- ===============================================================
 
 -- nº de processadores
-p x = 8;
+p x = 8
 
 -- 1. utilidades --------------------------------------------------
 
@@ -14,7 +14,7 @@ heads xss =
       let rows = map toList xss in
       let ok = all (\r -> not (null r)) rows in
       if not ok then [] else map head rows
-#ENDSUPER;
+#ENDSUPER
 
 tails xss =
   super single input (xss) output (ts)
@@ -24,29 +24,29 @@ tails xss =
       let ok = all (\r -> not (null r)) rows in
       if not ok then []
       else map (fromList . tail) rows
-#ENDSUPER;
+#ENDSUPER
 
 append xs ys = case xs of
-  []      -> ys;
-  (h:ts)  -> h : append ts ys;
-;
+  []      -> ys
+
+  (h:ts)  -> h : append ts ys
 
 len xs = case xs of
-  []      -> 0;
-  (_:ys)  -> 1 + len ys;
-;
+  []      -> 0
+
+  (_:ys)  -> 1 + len ys
 
 takeN k xs = if k <= 0 then [] else case xs of
-  []      -> [];
-  (y:ys)  -> y : takeN (k - 1) ys;
-;
+  []      -> []
+
+  (y:ys)  -> y : takeN (k - 1) ys
 
 dropN k xs = if k <= 0 then xs else case xs of
-  []      -> [];
-  (_:ys)  -> dropN (k - 1) ys;
-;
+  []      -> []
 
-splitAtN k xs = (takeN k xs, dropN k xs);
+  (_:ys)  -> dropN (k - 1) ys
+
+splitAtN k xs = (takeN k xs, dropN k xs)
 
 -- 2. transposição -----------------------------------------------
 
@@ -62,37 +62,38 @@ transpose xss =
                     then []
                     else map head m : transposeList (map tail m)
       in map fromList (transposeList rows)
-#ENDSUPER;
+#ENDSUPER
 
 -- 3. produto escalar (Int) --------------------------------------
 
 dot xs ys = case xs of
-  []        -> 0;
+  []        -> 0
+
   (x:xs1)   -> case ys of
-    []        -> 0;
+    []        -> 0
+
     (y:ys1)   ->
-      (x * y) + dot xs1 ys1;;
-;
+      (x * y) + dot xs1 ys1
 
 -- 4. linha × matriz transposta ----------------------------------
 
 rowTimes row colsT = case colsT of
-  []      -> [];
+  []      -> []
+
   (c:cs)  ->
     let h  = dot row c in
     let ts = rowTimes row cs in
-    h : ts;
-;
+    h : ts
 
 -- 5. multiplicação sequencial ----------------------------------
 
 mmult rows colsT = case rows of
-  []       -> [];
+  []       -> []
+
   (r:rs1)  ->
     let h  = rowTimes r colsT in
     let ts = mmult rs1 colsT in
-    h : ts;
-;
+    h : ts
 
 -- 6. multiplicação paralela guiada por p -----------------------
 
@@ -108,8 +109,7 @@ mmultPar rows colsT =
       (lhs, rhs) ->
         let left  = mmultPar lhs colsT in
         let right = mmultPar rhs colsT in
-        append left right;
-;
+        append left right
 
 matrixMul ab =
   super single input (ab) output (out)
@@ -128,7 +128,7 @@ matrixMul ab =
           rowTimes row cols = map (dot row) cols
           result = map (\r -> rowTimes r colsB) rowsA
       in map fromList result
-#ENDSUPER;
+#ENDSUPER
 
 -- 7. exemplo de uso ---------------------------------------------
 
@@ -141,12 +141,12 @@ print_final xs =
         print "MatrixMul:"
         print rows
         pure [0])
-#ENDSUPER;
+#ENDSUPER
 
 main_int =
   let a = [[1, 2], [3, 4]] in
   let b = [[5, 6], [7, 8]] in
-  print_final (matrixMul [a, b]);
+  print_final (matrixMul [a, b])
 
 -- ===============================================================
 -- 8. versão Float (testa corretude de float em listas) ----------
@@ -169,7 +169,7 @@ matrixMulF ab =
           rowTimes row cols = map (dot row) cols
           result = map (\r -> rowTimes r colsB) rowsA
       in map (fromList . map fromFloat) result
-#ENDSUPER;
+#ENDSUPER
 
 print_final_f xs =
   super single input (xs) output (out)
@@ -180,11 +180,12 @@ print_final_f xs =
         print "MatrixMulF:"
         print rows
         pure [0])
-#ENDSUPER;
+#ENDSUPER
 
 main_float =
   let a = [[1.5, 2.25], [3.75, 4.5]] in
   let b = [[0.5, 1.25], [2.5, 3.5]] in
-  print_final_f (matrixMulF [a, b]);
+  print_final_f (matrixMulF [a, b])
 
-main = main_float;
+main = main_float
+
