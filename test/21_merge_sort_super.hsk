@@ -3,7 +3,7 @@
 --  - Keep the parallel structure in the pure subset (DF graph can fork).
 --  - Push only the small-grain full sort into a SUPER at the cutoff.
 --  - Compute len once at the root
- carry sizes down.
+--    carry sizes down.
 
 len xs = case xs of
   []     -> 0
@@ -82,4 +82,3 @@ mergeSortT n0 n lst = case lst of
           merge (mergeSortT n0 nl left) (mergeSortT n0 nr right)
 
 main = mergeSort0 [34,7,23,32,5,62,1,9,8,4,3,11]
-

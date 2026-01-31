@@ -6,6 +6,7 @@ module Analysis.Lexer
   ) where
 
 import Control.Monad (when)
+import Data.List (stripPrefix)
 }
 
 %wrapper "monadUserState"
@@ -52,7 +53,7 @@ tokens :-
 <0> "&&"                            { actEmit TokenAnd }
 <0> "||"                            { actEmit TokenOr }
 
-<0> "\+"                            { actEmit TokenPlus }
+<0> "+"                             { actEmit TokenPlus }
 <0> "-"                             { actEmit TokenMinus }
 <0> "*"                             { actEmit TokenTimes }
 <0> "/"                             { actEmit TokenDiv }
@@ -69,7 +70,8 @@ tokens :-
 <0> "]"                             { actEmit TokenRBracket }
 <0> ","                             { actEmit TokenComma }
 <0> ":"                             { actEmit TokenColon }
-<0> ";"                             { actEmit TokenSemi }
+-- NOTE: ';' is no longer a source-level separator. Layout will insert TokenSemi.
+<0> ";"                             { skip }
 
 -- Super headers (normal mode only)
 <0> "super"                         { actEmit TokenSuper }
@@ -111,6 +113,7 @@ data Token
   | TokenLParen | TokenRParen
   | TokenLBracket | TokenRBracket
   | TokenComma | TokenColon | TokenSemi
+  | TokenLayoutEnd
   | TokenInt Int | TokenFloat Double | TokenChar Char | TokenString String
   | TokenIdent String
   | TokenEOF
@@ -121,6 +124,10 @@ data AlexUserState = AlexUserState
   { stSuper   :: [Char]
   , stInSuper :: !Bool
   , stLastTok :: Maybe Token
+  , stLayout  :: [(Int, Int)]  -- (indent, parenDepth)
+  , stNeedLayout :: !Bool
+  , stPending :: [Token]
+  , stParens  :: !Int
   }
 
 alexInitUserState :: AlexUserState
@@ -128,14 +135,44 @@ alexInitUserState = AlexUserState
   { stSuper   = []
   , stInSuper = False
   , stLastTok = Nothing
+  , stLayout  = []
+  , stNeedLayout = False
+  , stPending = []
+  , stParens  = 0
   }
 
 -- ===== Emit helpers =====
 actEmit :: Token -> AlexAction Token
 actEmit t _ _ = do
   st <- alexGetUserState
-  alexSetUserState st { stLastTok = Just t }
-  pure t
+  case t of
+    TokenLParen -> do
+      alexSetUserState st { stLastTok = Just t, stNeedLayout = False, stParens = stParens st + 1 }
+      pure t
+    TokenRParen -> do
+      let curP = stParens st
+          newP = max 0 (curP - 1)
+          (pops, remaining) = popWhileDepth curP (stLayout st)
+      if pops > 0 && canInsertSemi (stLastTok st)
+        then do
+          let pending = replicate (pops - 1) TokenLayoutEnd ++ TokenRParen : stPending st
+          alexSetUserState st
+            { stLastTok = Just TokenLayoutEnd
+            , stLayout  = remaining
+            , stPending = pending
+            , stParens  = newP
+            }
+          pure TokenLayoutEnd
+        else do
+          alexSetUserState st { stLastTok = Just t, stNeedLayout = False, stParens = newP }
+          pure t
+    _ -> do
+      let st' = case t of
+            TokenOf  -> st { stLastTok = Just t, stNeedLayout = True }
+            TokenLet -> st { stLastTok = Just t, stNeedLayout = True }
+            _        -> st { stLastTok = Just t, stNeedLayout = False }
+      alexSetUserState st'
+      pure t
 
 actEmitLex :: (String -> Token) -> AlexAction Token
 actEmitLex f (_,_,_,str) n = do
@@ -180,16 +217,147 @@ canInsertSemi mt =
     Just TokenRBracket  -> True
     Just (TokenSuperBody _) -> True
     Just TokenSemi      -> False
+    Just TokenLayoutEnd -> False
     _                   -> False
 
 actNewline :: AlexAction Token
 actNewline _ _ = do
   st <- alexGetUserState
-  if canInsertSemi (stLastTok st)
-    then do
-      alexSetUserState st { stLastTok = Just TokenSemi }
-      pure TokenSemi
-    else alexMonadScan
+  (_,_,_,str) <- alexGetInput
+  case stNeedLayout st of
+    True ->
+      case peekIndent str of
+        Just (ind, _) -> do
+          alexSetUserState st { stNeedLayout = False, stLayout = (ind, stParens st) : stLayout st }
+          alexMonadScan
+        Nothing -> do
+          alexSetUserState st { stNeedLayout = False }
+          alexMonadScan
+    False ->
+      case stLayout st of
+        ((ind,pd):rest) ->
+          case peekIndent str of
+            Just (nextInd, nextRest)
+              | nextInd < ind -> do
+                  let (pops, remaining) = popWhileIndent (\i -> nextInd < i) ((ind,pd) : rest)
+                  let extraEnds = replicate (pops - 1) TokenLayoutEnd
+                  let extraSemi = if null remaining then [TokenSemi] else []
+                  let pending = extraEnds ++ extraSemi ++ stPending st
+                  alexSetUserState st { stLayout = remaining, stLastTok = Just TokenLayoutEnd, stPending = pending }
+                  pure TokenLayoutEnd
+              | nextInd == ind ->
+                  if canInsertSemi (stLastTok st) && not (isContinuationStart nextRest)
+                    then do
+                      alexSetUserState st { stLastTok = Just TokenSemi }
+                      pure TokenSemi
+                    else alexMonadScan
+              | otherwise -> alexMonadScan
+            Nothing -> do
+              let pops = length ((ind,pd):rest)
+              let pending = replicate (pops - 1) TokenLayoutEnd ++ stPending st
+              alexSetUserState st { stLayout = [], stLastTok = Just TokenLayoutEnd, stPending = pending }
+              pure TokenLayoutEnd
+        [] ->
+          if canInsertSemi (stLastTok st) && not (isContinuationStart str)
+            then do
+              alexSetUserState st { stLastTok = Just TokenSemi }
+              pure TokenSemi
+            else alexMonadScan
+
+isContinuationStart :: String -> Bool
+isContinuationStart s =
+  let s' = skipJunk s
+  in case s' of
+      [] -> False
+      '-' : '>' : _ -> True
+      c : _ | c `elem` "+-*/%<>=&|:," -> True
+      ')' : _ -> True
+      ']' : _ -> True
+      '#' : _ -> startsWithPrefix "#BEGINSUPER" s'
+      _ -> startsWithKeyword "else" s'
+        || startsWithKeyword "in" s'
+        || startsWithKeyword "then" s'
+        || startsWithKeyword "of" s'
+
+peekIndent :: String -> Maybe (Int, String)
+peekIndent s = go s
+  where
+    go [] = Nothing
+    go xs =
+      let (ind, rest) = countIndent xs
+      in case rest of
+          [] -> Nothing
+          '\n' : ys -> go ys
+          '\r' : ys -> go ys
+          '-' : '-' : ys -> go (dropWhile (/= '\n') ys)
+          _ -> Just (ind, rest)
+
+countIndent :: String -> (Int, String)
+countIndent s = step 0 s
+  where
+    step n xs =
+      case xs of
+        ' '  : ys -> step (n + 1) ys
+        '\t' : ys -> step (n + 1) ys
+        '\r' : ys -> step n ys
+        _ -> (n, xs)
+
+popWhile :: (a -> Bool) -> [a] -> (Int, [a])
+popWhile p xs = go 0 xs
+  where
+    go n ys =
+      case ys of
+        (z:zs) | p z -> go (n + 1) zs
+        _ -> (n, ys)
+
+popWhileIndent :: (Int -> Bool) -> [(Int, Int)] -> (Int, [(Int, Int)])
+popWhileIndent p xs = go 0 xs
+  where
+    go n ys =
+      case ys of
+        ((i, pd):zs) | p i -> go (n + 1) zs
+        _ -> (n, ys)
+
+popWhileDepth :: Int -> [(Int, Int)] -> (Int, [(Int, Int)])
+popWhileDepth d xs = go 0 xs
+  where
+    go n ys =
+      case ys of
+        ((i, pd):zs) | pd == d -> go (n + 1) zs
+        _ -> (n, ys)
+
+skipJunk :: String -> String
+skipJunk s =
+  case s of
+    [] -> []
+    ' '  : xs -> skipJunk xs
+    '\t' : xs -> skipJunk xs
+    '\r' : xs -> skipJunk xs
+    '\n' : xs -> skipJunk xs
+    '-' : '-' : xs -> skipJunk (dropWhile (/= '\n') xs)
+    _ -> s
+
+startsWithKeyword :: String -> String -> Bool
+startsWithKeyword kw s =
+  case stripPrefix kw s of
+    Just rest ->
+      case rest of
+        (c:_) | isIdChar c -> False
+        _ -> True
+    Nothing -> False
+
+startsWithPrefix :: String -> String -> Bool
+startsWithPrefix pref s =
+  case stripPrefix pref s of
+    Just _ -> True
+    Nothing -> False
+
+isIdChar :: Char -> Bool
+isIdChar c =
+  c == '_' || c == '\'' ||
+  (c >= 'A' && c <= 'Z') ||
+  (c >= 'a' && c <= 'z') ||
+  (c >= '0' && c <= '9')
 
 -- ===== EOF / scanAll =====
 
@@ -201,9 +369,18 @@ scanAll s = runAlex s (go [])
   where
     go :: [Token] -> Alex [Token]
     go acc = do
-      t <- alexMonadScan
+      t <- nextToken
       case t of
         TokenEOF -> pure (reverse acc)
         _        -> go (t : acc)
+
+nextToken :: Alex Token
+nextToken = do
+  st <- alexGetUserState
+  case stPending st of
+    (t:ts) -> do
+      alexSetUserState st { stPending = ts }
+      pure t
+    [] -> alexMonadScan
 
 }

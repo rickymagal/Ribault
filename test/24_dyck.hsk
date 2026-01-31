@@ -16,8 +16,7 @@ imb x   = 1
 delta x = 0
 
 -- ------------------------------------------------------------
--- Helpers (all definitions end with '
-')
+-- Helpers (all definitions end with ')
 -- ------------------------------------------------------------
 
 len xs = case xs of
@@ -42,7 +41,7 @@ replicateN k x = if k <= 0 then [] else x : replicateN (k-1) x
 -- ------------------------------------------------------------
 -- Dyck-like sequence generator with controlled imbalance
 -- '(' →  1 
- ')' → -1
+-- ')' → -1
 -- ------------------------------------------------------------
 
 repeatDyck m acc =
@@ -88,7 +87,7 @@ chunkPair lst = case analyseChunk lst of
 -- ------------------------------------------------------------
 -- Imbalanced split controlled by IMB (work-skew)
 -- IMB = 0 → 50/50 
- IMB ≈100 → ~75/25
+-- IMB ≈100 → ~75/25
 -- ------------------------------------------------------------
 
 splitImb xs =

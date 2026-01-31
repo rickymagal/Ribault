@@ -542,7 +542,7 @@ withActive f m = Build $ do
 
 -- | Deterministic task identifier derived from the function name.
 funTaskId :: Ident -> Int
-funTaskId ident = foldl (\h c -> h * 131 + fromEnum c) 7 (show ident)
+funTaskId _ident = 0
 
 -- nó de argumento formal
 
@@ -590,7 +590,6 @@ goApp fun args = case fun of
       _                   -> pure ()
 
     let tid = funTaskId f
-        tagNameFromId nid = "cg" ++ show nid
     cg <- newNode f (NCallGroup f)
     let tag = out0 cg
 
@@ -604,7 +603,7 @@ goApp fun args = case fun of
         _              -> pure ()
       pure cs
 
-    rs <- newNode f (NRetSnd f tid)
+    rs <- newNode (f ++ "#0") (NRetSnd (f ++ "#0") tid)
     connectPlus tag (InstPort rs "1")
 
     retN <- retNodeId f
@@ -612,7 +611,7 @@ goApp fun args = case fun of
       Just a0 -> connectPlus a0 (InstPort rs "0")
       Nothing -> do z <- constI 0; connectPlus z (InstPort rs "0")
     connectPlus (out0 rs) (InstPort retN "1")
-    pure (InstPort retN (tagNameFromId cg))
+    pure (out0 retN)
 
   Lambda ps body -> do
     let fname = "lambda"
@@ -624,7 +623,7 @@ goApp fun args = case fun of
       cs <- newNode (fname ++ "#" ++ show i) (NCallSnd (fname ++ "#" ++ show i) tid)
       connectPlus a   (InstPort cs "0")
       connectPlus tag (InstPort cs "1")
-    rs <- newNode fname (NRetSnd fname tid)
+    rs <- newNode (fname ++ "#0") (NRetSnd (fname ++ "#0") tid)
     connectPlus tag (InstPort rs "1")
     res <- withEnv $ do
              forM_ (zip3 [0..] ps argv) $ \(i,v,p) -> bindFormal fname i v p
