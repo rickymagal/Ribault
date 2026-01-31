@@ -13,7 +13,6 @@ import Analysis.Lexer (Token(..))
 %left "+" "-"
 %left "*" "/" "%"
 %right "not" "-"
-%right ";"
 %nonassoc "in"       
 %nonassoc "else"
 %right ":"
@@ -26,6 +25,7 @@ import Analysis.Lexer (Token(..))
 %token
   superbody     { TokenSuperBody $$ }
   ";"           { TokenSemi }
+  "layout_end"  { TokenLayoutEnd }
   ":"           { TokenColon }
   "let"         { TokenLet }
   "in"          { TokenIn }
@@ -85,7 +85,7 @@ DeclRest :: { [Decl] }
     | ";" Decl DeclRest             { $2 : $3 }
 
 Decl :: { Decl }
-    : ident Params "=" Expr         { FunDecl $1 (reverse $2) $4 }
+    : ident Params "=" Expr         { FunDecl $1 $2 $4 }
 
 Params :: { [Ident] }
     :                               { [] }
@@ -100,7 +100,7 @@ Expr :: { Expr }
     | Expr ":" Expr                 { Cons $1 $3 }
 
 Lambda :: { Expr }
-    : "\\" LamParams "->" Expr      { Lambda (reverse $2) $4 }
+    : "\\" LamParams "->" Expr      { Lambda $2 $4 }
 
 -- parâmetros de lambda: ou vários ident ou um (x1,x2,…)
 LamParams :: { [Ident] }
@@ -119,17 +119,26 @@ CaseExpr :: { Expr }
     : "case" Expr "of" Alts        { Case $2 $4 }
 
 Alts :: { [(Pattern,Expr)] }
-    : AltList                      { $1 }
+    : AltList LayoutEnd            { $1 }
 
 AltList :: { [(Pattern,Expr)] }
-    : Alt ";"                      { [$1] }
+    : Alt                          { [$1] }
     | Alt ";" AltList              { $1 : $3 }
+
+LayoutEnd :: { () }
+    : "layout_end"                 { () }
+
 
 Alt :: { (Pattern,Expr) }
     : Pattern "->" Expr            { ($1,$3) }
 
 LetExpr :: { Expr }
-    : "let" DeclList "in" Expr     { Let (reverse $2) $4 }
+    : "let" DeclList DeclBlockEnd "in" Expr
+                                   { Let (reverse $2) $5 }
+
+DeclBlockEnd :: { () }
+    :                               { () }
+    | "layout_end"                  { () }
 
 -- expressões binárias, sem rec. à esquerda
 
@@ -241,6 +250,7 @@ Pattern :: { Pattern }
     : "_"                          { PWildcard }
     | ident                        { PVar $1 }
     | Literal                      { PLit $1 }
+    | "(" Pattern ")"              { $2 }
     | Pattern ":" Pattern          { PCons $1 $3 }
     | ListPattern                  { $1 }
     | TuplePattern                 { $1 }
@@ -257,7 +267,8 @@ PatternListTail :: { [Pattern] }
     | "," Pattern PatternListTail  { $2 : $3 }
 
 TuplePattern :: { Pattern }
-    : "(" Pattern PatternTupleTail ")" { PTuple ($2 : $3) }
+    : "(" Pattern "," Pattern PatternTupleTail ")"
+                                   { PTuple ($2 : $4 : $5) }
 PatternTupleTail :: { [Pattern] }
     :                              { [] }
     | "," Pattern PatternTupleTail { $2 : $3 }
