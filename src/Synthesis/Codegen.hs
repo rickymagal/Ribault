@@ -62,7 +62,7 @@ outName g s sp =
       case n of
         NRetSnd{}   -> dstN s
         NCallSnd{..} -> argAsFunSlot nName
-        NRet{..}    -> if sp=="0" then T.pack nName else T.pack nName <> "." <> T.pack sp
+        NRet{..}    -> T.pack nName <> "." <> T.pack sp
         NDiv{}      -> if sp=="0" then dstN s else dstN s <> ".1"
         NDivI{}     -> if sp=="0" then dstN s else dstN s <> ".1"
         NCommit{}   -> if sp=="0" then dstN s else dstN s <> ".1"

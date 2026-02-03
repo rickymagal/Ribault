@@ -65,11 +65,13 @@ data BuildS = BuildS
   , bsAliases    :: !AliasMap      -- ^ Extra outputs that mirror a producer port.
   , bsActive     :: !ActiveStack   -- ^ Functions under construction (re-entrancy guard).
   , bsFloatFuns  :: !(S.Set Ident) -- ^ Functions observed in float contexts.
+  , bsRetVals    :: !(M.Map Ident Port) -- ^ Return value port for each function.
+  , bsGuard      :: !(Maybe Port)  -- ^ Optional guard for gating calls in branches.
   }
 
 -- | Initial empty builder state.
 emptyS :: BuildS
-emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty
+emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty M.empty Nothing
 
 -- | Builder monad with unique-id generation.
 newtype Build a = Build { unBuild :: StateT BuildS Unique a }
@@ -91,6 +93,44 @@ popEnv  = Build $ modify (\s -> case bsEnv s of [] -> s; (_:rs) -> s { bsEnv = r
 -- | Run a computation with a temporary fresh environment.
 withEnv :: Build a -> Build a
 withEnv m = do pushEnv; x <- m; popEnv; pure x
+
+-- | Run a computation with a temporary guard (used to gate calls in branches).
+withGuard :: Port -> Build a -> Build a
+withGuard guard m = do
+  s <- Build get
+  Build $ put s { bsGuard = Just guard }
+  r <- m
+  Build $ modify (\s' -> s' { bsGuard = bsGuard s })
+  pure r
+
+-- | Apply the current guard to a value if one is active.
+guardIfNeeded :: Port -> Build Port
+guardIfNeeded p = do
+  mg <- Build $ gets bsGuard
+  case mg of
+    Nothing -> pure p
+    Just g  -> do
+      sid <- newNode "steer" (NSteer "")
+      connect g (InstPort sid "1")
+      connect p (InstPort sid "0")
+      pure (SteerPort sid "t")
+
+-- | Align a value's exec/tag to a guard port (so steers can match).
+alignExecTo :: Port -> Port -> Build Port
+alignExecTo guard val = do
+  tv <- newNode "tagval" (NTagVal "")
+  connectPlus guard (InstPort tv "0")
+  vt <- newNode "valtag" (NValTag "")
+  connectPlus val (InstPort vt "0")
+  connectPlus (out0 tv) (InstPort vt "1")
+  pure (out0 vt)
+
+-- | Record/lookup the canonical return-value port for a function.
+setRetVal :: Ident -> Port -> Build ()
+setRetVal f p = Build $ modify (\s -> s { bsRetVals = M.insert f p (bsRetVals s) })
+
+lookupRetVal :: Ident -> Build (Maybe Port)
+lookupRetVal f = Build $ gets (M.lookup f . bsRetVals)
 
 -- | Insert a 'Binding' for an identifier into the current environment.
 insertB :: Ident -> Binding -> Build ()
@@ -241,7 +281,25 @@ superNumFromName _ = 0
 
 -- | Emit an integer constant node.
 constI :: Int -> Build Port
-constI k = newNode ("const_" ++ show k) (NConstI "" k) >>= \nid -> pure (out0 nid)
+constI k = do
+  mg <- Build $ gets bsGuard
+  case mg of
+    Nothing -> newNode ("const_" ++ show k) (NConstI "" k) >>= \nid -> pure (out0 nid)
+    Just g  -> constFrom g k
+
+-- | Try to read an integer literal from a port.
+getConstI :: Port -> Build (Maybe Int)
+getConstI p = Build $ gets $ \s ->
+  case M.lookup (pNode p) (dgNodes (bsGraph s)) of
+    Just (NConstI _ k) -> Just k
+    _                  -> Nothing
+
+-- | Build an int constant aligned to a reference port's exec/tag.
+constFrom :: Port -> Int -> Build Port
+constFrom ref k = do
+  subN <- bin2Node "sub" (NSub "") ref ref
+  let z = out0 subN
+  if k == 0 then pure z else addI z k
 
 -- immediates (sem aliases!)
 
@@ -325,6 +383,7 @@ buildProgram p0 =
       p <- withEnv (goExpr body)
       insertB f (BPort p)
       r <- retNodeId f
+      setRetVal f p
       connectPlus p (InstPort r "0")
     buildZero _ = pure ()
 
@@ -370,7 +429,7 @@ ensureBuilt f ps body = do
                 insertB v (BPort a)
               res <- goExpr body
               r <- retNodeId f
-              connectPlus res (InstPort r "0")
+              setRetVal f res
        pure ()
 
 -- variável livre -> NArg
@@ -429,8 +488,11 @@ goExpr = \case
 
   If c t e -> do
     pc <- goExpr c
-    vt <- withEnv (goExpr t)
-    ve <- withEnv (goExpr e)
+    vt0 <- withEnv (withGuard pc (goExpr t))
+    vt <- alignExecTo pc vt0
+    npc <- notP pc
+    ve0 <- withEnv (withGuard npc (goExpr e))
+    ve <- alignExecTo npc ve0
 
     stT <- newNode "steer" (NSteer "")
     connect vt (InstPort stT "0")
@@ -581,7 +643,8 @@ bindFormal fun i formal actual = do
 goApp :: Expr -> [Expr] -> Build Port
 goApp fun args = case fun of
   Var f -> do
-    argv <- mapM goExpr args
+    argv0 <- mapM goExpr args
+    argv <- mapM guardIfNeeded argv0
     anyFloat <- or <$> mapM portIsFloat argv
     when anyFloat (markFloatFun f)
 
@@ -592,8 +655,9 @@ goApp fun args = case fun of
     let tid = funTaskId f
     cg <- newNode f (NCallGroup f)
     let tag = out0 cg
+        cgTag = "cg" ++ show cg
 
-    _ <- forM (zip [0..] argv) $ \(i,a) -> do
+    _callOuts <- forM (zip [0..] argv) $ \(i,a) -> do
       cs <- newNode (f ++ "#" ++ show i) (NCallSnd (f ++ "#" ++ show i) tid)
       connectPlus a   (InstPort cs "0")
       connectPlus tag (InstPort cs "1")
@@ -601,7 +665,7 @@ goApp fun args = case fun of
       case ap of
         InstPort nid _ -> connectPlus (out0 cs) (InstPort nid "0")
         _              -> pure ()
-      pure cs
+      pure (out0 cs)
 
     rs <- newNode (f ++ "#0") (NRetSnd (f ++ "#0") tid)
     connectPlus tag (InstPort rs "1")
@@ -611,24 +675,38 @@ goApp fun args = case fun of
       Just a0 -> connectPlus a0 (InstPort rs "0")
       Nothing -> do z <- constI 0; connectPlus z (InstPort rs "0")
     connectPlus (out0 rs) (InstPort retN "1")
-    pure (out0 retN)
+    mres <- lookupRetVal f
+    case mres of
+      Just res -> do
+        vt <- newNode (f ++ "_valtag") (NValTag "")
+        connectPlus res (InstPort vt "0")
+        connectPlus (out0 rs) (InstPort vt "1")
+        connectPlus (out0 vt) (InstPort retN "0")
+      Nothing -> do
+        z <- constI 0
+        connectPlus z (InstPort retN "0")
+    pure (InstPort retN cgTag)
 
   Lambda ps body -> do
     let fname = "lambda"
         tid   = funTaskId fname
-    argv <- mapM goExpr args
+    argv0 <- mapM goExpr args
+    argv <- mapM guardIfNeeded argv0
     cg <- newNode fname (NCallGroup fname)
     let tag = out0 cg
-    forM_ (zip [0..] argv) $ \(i,a) -> do
+    _callOuts <- forM (zip [0..] argv) $ \(i,a) -> do
       cs <- newNode (fname ++ "#" ++ show i) (NCallSnd (fname ++ "#" ++ show i) tid)
       connectPlus a   (InstPort cs "0")
       connectPlus tag (InstPort cs "1")
+      pure (out0 cs)
     rs <- newNode (fname ++ "#0") (NRetSnd (fname ++ "#0") tid)
     connectPlus tag (InstPort rs "1")
     res <- withEnv $ do
              forM_ (zip3 [0..] ps argv) $ \(i,v,p) -> bindFormal fname i v p
              goExpr body
-    connectPlus res (InstPort rs "0")
+    case listToMaybe argv of
+      Just a0 -> connectPlus a0 (InstPort rs "0")
+      Nothing -> do z <- constI 0; connectPlus z (InstPort rs "0")
     pure res
 
   _ -> do
@@ -657,9 +735,17 @@ bin2 _lbl nd a b = out0 <$> bin2Node "b2" nd a b
 -- | Build a binary operation node, returning its 'NodeId'.
 bin2Node :: String -> DNode -> Port -> Port -> Build NodeId
 bin2Node lbl nd a b = do
+  ma <- getConstI a
+  mb <- getConstI b
+  a' <- case (ma, mb) of
+          (Just k, Nothing) -> constFrom b k
+          _                 -> pure a
+  b' <- case (ma, mb) of
+          (Nothing, Just k) -> constFrom a k
+          _                 -> pure b
   nid <- newNode lbl nd
-  connectPlus a (InstPort nid "0")
-  connectPlus b (InstPort nid "1")
+  connectPlus a' (InstPort nid "0")
+  connectPlus b' (InstPort nid "1")
   pure nid
 
 -- | Logical NOT implemented as equality with zero.
@@ -699,9 +785,10 @@ compileCase scr alts = do
       (pPred, binds) <- patPred pscr p
       ntaken <- notP taken
       guardi <- andP pPred ntaken
-      val <- withEnv $ do
+      val0 <- withEnv $ withGuard guardi $ do
                mapM_ (\(x,v) -> insertB x (BPort v)) binds
                goExpr e
+      val <- alignExecTo guardi val0
       sid <- newNode "steer" (NSteer "")
       connect val    (InstPort sid "0")
       connect guardi (InstPort sid "1")
@@ -713,9 +800,10 @@ compileCase scr alts = do
       (pPred, binds) <- patPred pscr p
       ntaken <- notP taken
       guardi <- andP pPred ntaken
-      val <- withEnv $ do
+      val0 <- withEnv $ withGuard guardi $ do
                mapM_ (\(x,v) -> insertB x (BPort v)) binds
                goExpr e
+      val <- alignExecTo guardi val0
       sid <- newNode "steer" (NSteer "")
       connect val    (InstPort sid "0")
       connect guardi (InstPort sid "1")
