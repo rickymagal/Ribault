@@ -15,10 +15,10 @@
 -- order (sorted by 'NodeId'). Helpers produce canonical names for node
 -- outputs and tags, and format operand lists.
 
-module Synthesis.Codegen (assemble) where
+module Synthesis.Codegen (assemble, assembleWithMap) where
 
 import qualified Data.Map.Strict as M
-import           Data.List       (sortOn, partition)
+import           Data.List       (sortOn, partition, nub)
 import           Data.Char       (isDigit)
 import qualified Data.Text       as T
 
@@ -60,7 +60,7 @@ outName g s sp =
                          _   -> T.pack sp
     Just n ->
       case n of
-        NRetSnd{}   -> dstN s
+        NRetSnd{..} -> argAsFunSlot nName
         NCallSnd{..} -> argAsFunSlot nName
         NRet{..}    -> T.pack nName <> "." <> T.pack sp
         NDiv{}      -> if sp=="0" then dstN s else dstN s <> ".1"
@@ -83,7 +83,63 @@ buildInputs g =
   let step m (s,sp,d,dp) =
         let src = outName g s sp
         in M.insertWith (++) (d,dp) [src] m
+  in M.map nub (foldl step M.empty (dgEdges g))
+
+buildPreds :: DGraph DNode -> M.Map (NodeId,String) [NodeId]
+buildPreds g =
+  let step m (s,_sp,d,dp) = M.insertWith (++) (d,dp) [s] m
   in foldl step M.empty (dgEdges g)
+
+lookupPreds :: M.Map (NodeId,String) [NodeId] -> NodeId -> String -> [NodeId]
+lookupPreds preds nid port = M.findWithDefault [] (nid, port) preds
+
+parseNodeId :: T.Text -> Maybe NodeId
+parseNodeId t =
+  case T.uncons t of
+    Just ('n', rest) | not (T.null rest) ->
+      case reads (T.unpack rest) of
+        [(n,"")] -> Just n
+        _        -> Nothing
+    _ -> Nothing
+
+callgroupForRetSnd :: DGraph DNode -> M.Map (NodeId,String) [NodeId] -> NodeId -> Maybe NodeId
+callgroupForRetSnd g preds rs =
+  case [ s | s <- lookupPreds preds rs "1"
+           , case M.lookup s (dgNodes g) of
+               Just NCallGroup{} -> True
+               _                 -> False
+       ] of
+    (cg:_) -> Just cg
+    _      -> Nothing
+
+callgroupForValTag :: DGraph DNode -> M.Map (NodeId,String) [NodeId] -> NodeId -> Maybe NodeId
+callgroupForValTag g preds vt =
+  case lookupPreds preds vt "1" of
+    (tv:_) ->
+      case lookupPreds preds tv "0" of
+        (rs:_) -> callgroupForRetSnd g preds rs
+        _      -> Nothing
+    _ -> Nothing
+
+sortByCallgroup
+  :: (NodeId -> Maybe NodeId)
+  -> [T.Text]
+  -> [T.Text]
+sortByCallgroup cgOf srcs =
+  let withKey = [ (cg, s)
+                | s <- srcs
+                , Just nid <- [parseNodeId s]
+                , Just cg  <- [cgOf nid]
+                ]
+      without = [ s
+                | s <- srcs
+                , case parseNodeId s of
+                    Nothing  -> True
+                    Just nid -> case cgOf nid of
+                                  Nothing -> True
+                                  Just _  -> False
+                ]
+  in map snd (sortOn fst withKey) ++ without
 
 findCallgroupTag
   :: DGraph DNode
@@ -143,7 +199,7 @@ emitNode g im (nid, dn) =
     NLThanI{..} -> bin1imm "lthani" (showT iImm)
     NGThanI{..} -> bin1imm "gthani" (showT iImm)
     NSteer{}    -> ["steer " <> dstS nid <> ", "
-                           <> fmtOp (gi "1") <> ", " <> fmtOp (gi "0")]
+                           <> fmtOp (gi "0") <> ", " <> fmtOp (gi "1")]
 
     -------------------------------------------------- TALM runtime
     NCallGroup{..} ->
@@ -158,11 +214,13 @@ emitNode g im (nid, dn) =
     NRetSnd{..} ->
       let src0 = fmtOp (gi "0")
           tag  = maybe "0" id (findCallgroupTag g im nid)
-      in  [ "retsnd " <> dstN nid <> ", " <> src0 <> ", " <> tag ]
+      in  [ "retsnd " <> argAsFunSlot nName <> ", " <> src0 <> ", " <> tag ]
 
     NRet{..} ->
-      let src0 = fmtOp (gi "0")
-          src1 = fmtOp (gi "1")
+      let preds = buildPreds g
+          src0s = sortByCallgroup (callgroupForValTag g preds) (gi "0")
+          src0  = fmtOp src0s
+          src1  = fmtOp (gi "1")
       in  [ "ret " <> T.pack nName <> ", " <> src0 <> ", " <> src1 ]
 
     -------------------------------------------------- tag/val
@@ -220,5 +278,26 @@ assemble g =
     inMap = buildInputs g
     (cgs, rest) = partition isCallGroup nodes
     ordered = cgs ++ rest
+    isCallGroup (_, NCallGroup{}) = True
+    isCallGroup _ = False
+
+-- | Assemble and return a mapping from instruction index to node metadata.
+-- The index matches the assembler's instruction IDs (callgroup macros excluded).
+assembleWithMap :: DGraph DNode -> (T.Text, [(Int, NodeId, DNode, T.Text)])
+assembleWithMap g =
+  let nodes = sortOn fst (M.toList (dgNodes g))
+      inMap = buildInputs g
+      (cgs, rest) = partition isCallGroup nodes
+      ordered = cgs ++ rest
+      emitted = concatMap (\(nid, dn) -> map (\l -> (nid, dn, l)) (emitNode g inMap (nid, dn))) ordered
+      asmLines = "const z0, 0" : map (\(_,_,l) -> l) emitted
+      asmText  = T.unlines asmLines
+      isMacroLine l = "callgroup(" `T.isPrefixOf` l
+      instrLines = (0, 0, NConstI "" 0, "const z0, 0") :
+                   [ (i, nid, dn, l)
+                   | (i, (nid, dn, l)) <- zip [1..] (filter (not . isMacroLine . (\(_,_,l)->l)) emitted)
+                   ]
+  in (asmText, instrLines)
+  where
     isCallGroup (_, NCallGroup{}) = True
     isCallGroup _ = False
