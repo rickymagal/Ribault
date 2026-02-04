@@ -22,9 +22,7 @@ import Data.List (dropWhileEnd)
 
 -- | Generate a complete Supers.hs module for a given program and its supers.
 emitSupersModule :: String -> [SuperSpec] -> String
-emitSupersModule baseName specs
-  | null specs = ""  -- no supers -> no file
-  | otherwise  =
+emitSupersModule baseName specs =
       let specs' = filter (\(SuperSpec nm _ _ _ _) -> nm `notElem` ["s0","s1","s2","s3"]) specs
       in unlines $
       [ "{-# LANGUAGE ForeignFunctionInterface #-}"
