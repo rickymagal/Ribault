@@ -67,11 +67,12 @@ data BuildS = BuildS
   , bsFloatFuns  :: !(S.Set Ident) -- ^ Functions observed in float contexts.
   , bsRetVals    :: !(M.Map Ident Port) -- ^ Return value port for each function.
   , bsGuard      :: !(Maybe Port)  -- ^ Optional guard for gating calls in branches.
+  , bsRecIx      :: !(M.Map Ident Int) -- ^ Recursion call-site indices per function.
   }
 
 -- | Initial empty builder state.
 emptyS :: BuildS
-emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty M.empty Nothing
+emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty M.empty Nothing M.empty
 
 -- | Builder monad with unique-id generation.
 newtype Build a = Build { unBuild :: StateT BuildS Unique a }
@@ -156,22 +157,82 @@ guardToken g = do
 -- | Align a value's exec/tag to a guard port (so steers can match).
 alignExecTo :: Port -> Port -> Build Port
 alignExecTo guard val = do
+  mc <- getConstI val
+  case mc of
+    Just k -> constFrom guard k
+    Nothing -> pure val
+
+-- | Retag a value to match a tag source (uses tagval/valtag).
+retagTo :: Port -> Port -> Build Port
+retagTo tagSrc val = do
   tv <- newNode "tagval" (NTagVal "")
-  connectPlus guard (InstPort tv "0")
+  connectPlus tagSrc (InstPort tv "0")
   vt <- newNode "valtag" (NValTag "")
   connectPlus val (InstPort vt "0")
   connectPlus (out0 tv) (InstPort vt "1")
   pure (out0 vt)
 
+-- | Increment tag of a value (inctag).
+incTag :: Port -> Build Port
+incTag p = do
+  nid <- newNode "inctag" (NIncTag "")
+  connectPlus p (InstPort nid "0")
+  pure (out0 nid)
+
+-- | Increment tag by an immediate (inctagi).
+incTagI :: Int -> Port -> Build Port
+incTagI k p = do
+  nid <- newNode ("inctagi_" ++ show k) (NIncTagI "" k)
+  connectPlus p (InstPort nid "0")
+  pure (out0 nid)
+
+-- | Decrement tag by an immediate (inctagi with negative).
+decTagI :: Int -> Port -> Build Port
+decTagI k p = incTagI (-k) p
+
+-- | Radix used to encode recursive tag paths.
+tagRadix :: Int
+tagRadix = 8
+
+-- | Build a unique child tag using parent tag * radix + k.
+mkChildTag :: Int -> Port -> Build Port
+mkChildTag k parent = do
+  tv <- newNode "tagval" (NTagVal "")
+  connectPlus parent (InstPort tv "0")
+  scaled <- mulI (out0 tv) tagRadix
+  bumped <- addI scaled k
+  vt <- newNode "valtag" (NValTag "")
+  connectPlus parent (InstPort vt "0")
+  connectPlus bumped (InstPort vt "1")
+  pure (out0 vt)
+
+-- | Recover parent tag by dividing by the radix.
+mkParentTag :: Port -> Build Port
+mkParentTag child = do
+  tv <- newNode "tagval" (NTagVal "")
+  connectPlus child (InstPort tv "0")
+  divN <- newNode ("divi_" ++ show tagRadix) (NDivI "" tagRadix)
+  connectPlus (out0 tv) (InstPort divN "0")
+  vt <- newNode "valtag" (NValTag "")
+  connectPlus child (InstPort vt "0")
+  connectPlus (out0 divN) (InstPort vt "1")
+  pure (out0 vt)
+
+-- | Allocate a small recursion call-site index for function @f@.
+nextRecIx :: Ident -> Build Int
+nextRecIx f = Build $ do
+  s <- get
+  let i = M.findWithDefault 0 f (bsRecIx s) + 1
+  put s { bsRecIx = M.insert f i (bsRecIx s) }
+  pure i
+
 -- | Align a guard's exec/tag to match a value (so steers can fire).
 alignGuardTo :: Port -> Port -> Build Port
 alignGuardTo val guard = do
-  tv <- newNode "tagval" (NTagVal "")
-  connectPlus val (InstPort tv "0")
-  vt <- newNode "valtag" (NValTag "")
-  connectPlus guard (InstPort vt "0")
-  connectPlus (out0 tv) (InstPort vt "1")
-  pure (out0 vt)
+  mc <- getConstI guard
+  case mc of
+    Just k -> constFrom val k
+    Nothing -> pure guard
 
 -- | Record/lookup the canonical return-value port for a function.
 setRetVal :: Ident -> Port -> Build ()
@@ -262,6 +323,10 @@ naryNode lbl nd ins = do
 out0 :: NodeId -> Port
 out0 nid = InstPort nid "0"
 
+-- | Convenience accessor for the second output port of a node.
+out1 :: NodeId -> Port
+out1 nid = InstPort nid "1"
+
 -- | Write a display name into a 'DNode' (for debugging/graphs).
 setName :: String -> DNode -> DNode
 setName l n = case n of
@@ -295,6 +360,8 @@ setName l n = case n of
   NRet{}      -> n{ nName = l }
   NTagVal{}   -> n{ nName = l }
   NValTag{}   -> n{ nName = l }
+  NIncTag{}   -> n{ nName = l }
+  NIncTagI{}  -> n{ nName = l }
   NCpHToDev{} -> n{ nName = l }
   NCpDevToH{} -> n{ nName = l }
   NCommit{}   -> n{ nName = l }
@@ -365,6 +432,13 @@ subI p k = do
   connect p (InstPort nid "0")
   pure (out0 nid)
 
+-- | Multiply by immediate @k@ (no alias expansion).
+mulI :: Port -> Int -> Build Port
+mulI p k = do
+  nid <- newNode ("muli_" ++ show k) (NMulI "" k)
+  connect p (InstPort nid "0")
+  pure (out0 nid)
+
 -- fmuli helper (sem aliases!)
 
 -- | Multiply by a floating immediate (no alias expansion).
@@ -384,7 +458,7 @@ isNilP xs = callBuiltinSuper builtinListIsNil [xs]
 
 callBuiltinSuper :: Int -> [Port] -> Build Port
 callBuiltinSuper num ins = do
-  ins' <- alignConstInputs ins
+  ins' <- alignExecInputs ins
   let nm = "builtin_" ++ superNameFromNum num
   nid <- naryNode nm NSuper
            { nName     = ""
@@ -415,9 +489,7 @@ alignExecInputs ins = do
     (r:_) -> mapM (alignOne r) (zip ins cs)
   where
     alignOne r (p, Just k)  = do _ <- pure p; constFrom r k
-    alignOne r (p, Nothing)
-      | p == r    = pure p
-      | otherwise = alignExecTo r p
+    alignOne _ (p, Nothing) = pure p
 
 -- | Encode a pair/list cell via builtin list cons.
 pairEnc :: Port -> Port -> Build Port
@@ -532,7 +604,7 @@ portIsFloat p = Build $ gets $ \s -> case M.lookup (pNode p) (dgNodes (bsGraph s
   Just NFSub{}       -> True
   Just NFMul{}       -> True
   Just NFDiv{}       -> True
-  Just (NRetSnd f _) -> S.member f (bsFloatFuns s)
+  Just (NRetSnd f _ _) -> S.member f (bsFloatFuns s)
   _                  -> False
 
 -- | Is the current operation in a floating-point context?
@@ -569,21 +641,20 @@ goExpr = \case
   If c t e -> do
     pc0 <- goExpr c
     pc <- boolify pc0
+    pcTok <- guardToken pc
     vt0 <- withEnv (withGuard pc (goExpr t))
-    vt <- alignExecTo pc vt0
+    vt <- alignExecTo pcTok vt0
     npc <- notP pc
+    npcTok <- guardToken npc
     ve0 <- withEnv (withGuard npc (goExpr e))
-    ve <- alignExecTo pc ve0
-    tTok <- guardToken pc
-    fTok <- guardToken npc
-
+    ve <- alignExecTo npcTok ve0
     stT <- newNode "steer" (NSteer "")
-    connect tTok (InstPort stT "0")
+    connect pc (InstPort stT "0")
     connect vt   (InstPort stT "1")
     let outT = SteerPort stT "t"
 
     stF <- newNode "steer" (NSteer "")
-    connect fTok (InstPort stF "0")
+    connect npc (InstPort stF "0")
     connect ve   (InstPort stF "1")
     let outF = SteerPort stF "t"
 
@@ -739,33 +810,44 @@ goApp fun args = case fun of
 
     let tid = funTaskId f
     cg <- newNode f (NCallGroup f)
-    let tag = out0 cg
     let cgTag = "cg" ++ show cg
-
-    callOuts <- forM (zip [0..] argv) $ \(i,a) -> do
+    recCall <- isActiveFun f
+    recIx <- if recCall then nextRecIx f else pure 0
+    let k = if recCall then (recIx `mod` (tagRadix - 1)) + 1 else 0
+    argv' <- pure argv
+    tagTokParent <- case argv of
+      (a0:_) -> pure a0
+      []     -> constI 0
+    argvTagged <-
+      if recCall
+        then mapM (mkChildTag k) argv'
+        else pure argv'
+    tagTokChild <- case argvTagged of
+      (a0:_) -> pure a0
+      []     -> constI 0
+    callOuts <- forM (zip [0..] argvTagged) $ \(i,a) -> do
       let slot = i + 1
-      cs <- newNode (f ++ "#" ++ show slot) (NCallSnd (f ++ "#" ++ show slot) tid)
+      cs <- newNode (f ++ "#" ++ show slot) (NCallSnd (f ++ "#" ++ show slot) tid cg)
       connectPlus a   (InstPort cs "0")
-      connectPlus tag (InstPort cs "1")
+      connectPlus tagTokChild (InstPort cs "1")
       ap <- argNode f slot
       case ap of
         InstPort nid _ -> connectPlus (out0 cs) (InstPort nid "0")
         _              -> pure ()
       pure (out0 cs)
 
-    rs <- newNode (f ++ "#0") (NRetSnd (f ++ "#0") tid)
-    connectPlus tag (InstPort rs "1")
+    rs <- newNode (f ++ "#0") (NRetSnd (f ++ "#0") tid cg)
+    connectPlus tagTokChild (InstPort rs "1")
 
     retN <- retNodeId f
-    case listToMaybe argv of
-      Just a0 -> connectPlus a0 (InstPort rs "0")
-      Nothing -> do z <- constI 0; connectPlus z (InstPort rs "0")
-    connectPlus (out0 rs) (InstPort retN "1")
+    connectPlus tagTokChild (InstPort rs "0")
+    let rsTag = out0 rs
+    connectPlus rsTag (InstPort retN "1")
     mres <- lookupRetVal f
     case mres of
       Just res -> do
         tv <- newNode (f ++ "_rettag") (NTagVal "")
-        connectPlus (out0 rs) (InstPort tv "0")
+        connectPlus rsTag (InstPort tv "0")
         vt <- newNode (f ++ "_valtag") (NValTag "")
         connectPlus res (InstPort vt "0")
         connectPlus (out0 tv) (InstPort vt "1")
@@ -774,7 +856,9 @@ goApp fun args = case fun of
         z <- constI 0
         connectPlus z (InstPort retN "0")
     let resP = InstPort retN cgTag
-    pure resP
+    if recCall
+      then mkParentTag resP
+      else alignExecTo tagTokParent resP
 
   Lambda ps body -> do
     let fname = "lambda"
@@ -783,21 +867,21 @@ goApp fun args = case fun of
     argv1 <- mapM guardIfNeeded argv0
     argv <- alignExecInputs argv1
     cg <- newNode fname (NCallGroup fname)
-    let tag = out0 cg
+    tagTok <- case argv of
+      (a0:_) -> pure a0
+      []     -> constI 0
     _callOuts <- forM (zip [0..] argv) $ \(i,a) -> do
       let slot = i + 1
-      cs <- newNode (fname ++ "#" ++ show slot) (NCallSnd (fname ++ "#" ++ show slot) tid)
+      cs <- newNode (fname ++ "#" ++ show slot) (NCallSnd (fname ++ "#" ++ show slot) tid cg)
       connectPlus a   (InstPort cs "0")
-      connectPlus tag (InstPort cs "1")
+      connectPlus tagTok (InstPort cs "1")
       pure (out0 cs)
-    rs <- newNode (fname ++ "#0") (NRetSnd (fname ++ "#0") tid)
-    connectPlus tag (InstPort rs "1")
+    rs <- newNode (fname ++ "#0") (NRetSnd (fname ++ "#0") tid cg)
+    connectPlus tagTok (InstPort rs "1")
     res <- withEnv $ do
              forM_ (zip3 [0..] ps argv) $ \(i,v,p) -> bindFormal fname i v p
              goExpr body
-    case listToMaybe argv of
-      Just a0 -> connectPlus a0 (InstPort rs "0")
-      Nothing -> do z <- constI 0; connectPlus z (InstPort rs "0")
+    connectPlus tagTok (InstPort rs "0")
     pure res
 
   _ -> do

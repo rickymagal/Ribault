@@ -1,27 +1,8 @@
--- Fibonacci sequence example (first 10 terms, non-recursive)
-fib0 = 0
-fib1 = 1
-fib2 = fib1 + fib0
-fib3 = fib2 + fib1
-fib4 = fib3 + fib2
-fib5 = fib4 + fib3
-fib6 = fib5 + fib4
-fib7 = fib6 + fib5
-fib8 = fib7 + fib6
-fib9 = fib8 + fib7
-
+-- Recursive Fibonacci (n-th term)
 fib n =
-  if n < 1 then []
-  else if n < 2 then [fib0]
-  else if n < 3 then [fib0, fib1]
-  else if n < 4 then [fib0, fib1, fib2]
-  else if n < 5 then [fib0, fib1, fib2, fib3]
-  else if n < 6 then [fib0, fib1, fib2, fib3, fib4]
-  else if n < 7 then [fib0, fib1, fib2, fib3, fib4, fib5]
-  else if n < 8 then [fib0, fib1, fib2, fib3, fib4, fib5, fib6]
-  else if n < 9 then [fib0, fib1, fib2, fib3, fib4, fib5, fib6, fib7]
-  else if n < 10 then [fib0, fib1, fib2, fib3, fib4, fib5, fib6, fib7, fib8]
-  else [fib0, fib1, fib2, fib3, fib4, fib5, fib6, fib7, fib8, fib9]
+  if n < 2
+  then n
+  else fib (n - 1) + fib (n - 2)
 
 print_final n =
   super single input (n) output (out)
@@ -29,8 +10,11 @@ print_final n =
     out = unsafePerformIO
       (do
         print "Fib:"
-        print n
+        let v = head n
+        print v
         pure [0])
 #ENDSUPER
 
-main = print_final (fib 10)
+wrap x = x : []
+
+main = print_final (wrap (fib 10))

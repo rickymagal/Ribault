@@ -52,7 +52,7 @@ argAsFunSlot nm =
 outName :: DGraph DNode -> NodeId -> String -> T.Text
 outName g s sp =
   case M.lookup s (dgNodes g) of
-    -- steer: t -> .w / f -> .g
+    -- steer: t -> .w / f -> .g (TALM preprocessor maps .g->.0, .w->.1)
     Just NSteer{} ->
       dstS s <> "." <> case sp of
                          "t" -> "w"
@@ -60,7 +60,7 @@ outName g s sp =
                          _   -> T.pack sp
     Just n ->
       case n of
-        NRetSnd{..} -> argAsFunSlot nName
+        NRetSnd{..} -> dstN s
         NCallSnd{..} -> argAsFunSlot nName
         NRet{..}    -> T.pack nName <> "." <> T.pack sp
         NDiv{}      -> if sp=="0" then dstN s else dstN s <> ".1"
@@ -103,14 +103,10 @@ parseNodeId t =
     _ -> Nothing
 
 callgroupForRetSnd :: DGraph DNode -> M.Map (NodeId,String) [NodeId] -> NodeId -> Maybe NodeId
-callgroupForRetSnd g preds rs =
-  case [ s | s <- lookupPreds preds rs "1"
-           , case M.lookup s (dgNodes g) of
-               Just NCallGroup{} -> True
-               _                 -> False
-       ] of
-    (cg:_) -> Just cg
-    _      -> Nothing
+callgroupForRetSnd g _preds rs =
+  case M.lookup rs (dgNodes g) of
+    Just NRetSnd{..} -> Just cgId
+    _                -> Nothing
 
 callgroupForValTag :: DGraph DNode -> M.Map (NodeId,String) [NodeId] -> NodeId -> Maybe NodeId
 callgroupForValTag g preds vt =
@@ -140,19 +136,6 @@ sortByCallgroup cgOf srcs =
                                   Just _  -> False
                 ]
   in map snd (sortOn fst withKey) ++ without
-
-findCallgroupTag
-  :: DGraph DNode
-  -> M.Map (NodeId,String) [T.Text]
-  -> NodeId
-  -> Maybe T.Text
-findCallgroupTag g _im nid =
-  case [ s | (s,_sp,d,dp) <- dgEdges g, d==nid, dp=="1"
-           , case M.lookup s (dgNodes g) of
-               Just NCallGroup{} -> True
-               _                 -> False ] of
-    (cg:_) -> Just (tagName cg)
-    _      -> Nothing
 
 orderedPins :: M.Map (NodeId,String) [T.Text] -> NodeId -> [String]
 orderedPins im k = [ p | (n,p) <- M.keys im, n==k ]
@@ -206,15 +189,16 @@ emitNode g im (nid, dn) =
       [ "callgroup(\"" <> tagName nid <> "\",\"" <> T.pack nName <> "\")" ]
 
     NCallSnd{..} ->
-      let src0    = fmtOp (gi "0")
-          tag     = maybe "0" id (findCallgroupTag g im nid)
+      let src0   = fmtOp (gi "0")
+          tagSrc = fmtOp (gi "1")
       in  [ "callsnd " <> argAsFunSlot nName
-            <> ", " <> src0 <> ", " <> tag ]
+            <> ", " <> src0 <> ", " <> tagSrc <> ", " <> showT taskId ]
 
     NRetSnd{..} ->
-      let src0 = fmtOp (gi "0")
-          tag  = maybe "0" id (findCallgroupTag g im nid)
-      in  [ "retsnd " <> argAsFunSlot nName <> ", " <> src0 <> ", " <> tag ]
+      let src0   = fmtOp (gi "0")
+          tagSrc = fmtOp (gi "1")
+          cgTag  = tagName cgId
+      in  [ "retsnd " <> dstN nid <> ", " <> src0 <> ", " <> tagSrc <> ", " <> cgTag ]
 
     NRet{..} ->
       let preds = buildPreds g
@@ -226,6 +210,8 @@ emitNode g im (nid, dn) =
     -------------------------------------------------- tag/val
     NTagVal{} -> one1 "tagval"
     NValTag{} -> bin2 "valtag"
+    NIncTag{} -> one1 "inctag"
+    NIncTagI{..} -> bin1imm "inctagi" (showT iImm)
 
     -------------------------------------------------- DMA / spec
     NCpHToDev{}  -> ["cphtodev " <> dstN nid <> ", 0"]
