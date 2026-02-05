@@ -845,13 +845,7 @@ goApp fun args = case fun of
     connectPlus rsTag (InstPort retN "1")
     mres <- lookupRetVal f
     case mres of
-      Just res -> do
-        tv <- newNode (f ++ "_rettag") (NTagVal "")
-        connectPlus rsTag (InstPort tv "0")
-        vt <- newNode (f ++ "_valtag") (NValTag "")
-        connectPlus res (InstPort vt "0")
-        connectPlus (out0 tv) (InstPort vt "1")
-        connectPlus (out0 vt) (InstPort retN "0")
+      Just res -> connectPlus res (InstPort retN "0")
       Nothing -> do
         z <- constI 0
         connectPlus z (InstPort retN "0")
