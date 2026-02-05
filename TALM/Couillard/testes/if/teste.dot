@@ -1,0 +1,34 @@
+digraph G{
+node [shape=box, style=rounded];
+	node [label="const #10"] flowInstConst140223256461256;
+node [shape=box, style=rounded];
+	node [label="const #4"] flowInstConst140223256458160;
+node [shape=box, style=rounded];
+	node [label="const #0"] flowInstConst140223256459240;
+node [shape=box, style=rounded];
+	node [label=">"] flowInstBinop140223256458016;
+node [shape=box, style=rounded];
+	node [label="const #1"] flowInstConst140223256457296;
+node [shape=triangle style=solid];
+node [label="T   F"] flowInstSteer140223256460104
+node [shape=box, style=rounded];
+	node [label="const #7"] flowInstConst140223256458304;
+node [shape=triangle style=solid];
+node [label="T   F"] flowInstSteer140223256440984
+node [shape=triangle style=solid];
+node [label="T   F"] flowInstSteer140223256441488
+node [shape=box, style=rounded];
+	node [label="+"] flowInstBinop140223256444368;
+flowInstConst140223256461256 -> flowInstBinop140223256458016 [tailport=s, headport=nw];
+flowInstConst140223256459240 -> flowInstBinop140223256458016 [tailport=s, headport=ne];
+flowInstConst140223256457296 -> flowInstSteer140223256460104 [tailport=s, headport=n];
+flowInstBinop140223256458016 -> flowInstSteer140223256460104 [tailport=s, headport=nw];
+flowInstConst140223256458304 -> flowInstSteer140223256440984 [tailport=s, headport=n];
+flowInstBinop140223256458016 -> flowInstSteer140223256440984 [tailport=s, headport=nw];
+flowInstConst140223256458160 -> flowInstSteer140223256441488 [tailport=s, headport=n];
+flowInstBinop140223256458016 -> flowInstSteer140223256441488 [tailport=s, headport=nw];
+flowInstConst140223256461256 -> flowInstBinop140223256444368 [tailport=s, headport=nw];
+flowInstSteer140223256440984 -> flowInstBinop140223256444368 [tailport=se, headport=nw];
+flowInstSteer140223256460104 -> flowInstBinop140223256444368 [tailport=sw, headport=ne];
+flowInstSteer140223256441488 -> flowInstBinop140223256444368 [tailport=se, headport=ne];
+}

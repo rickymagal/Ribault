@@ -1,0 +1,212 @@
++ TranslationUnit
+    Size: 1
+    + FunctionDefn
+      Type-string: function()->int
+      name: main
+      Type:
+        + FunctionType
+          Parameters::
+            + ParamList
+              has_ellipsis: 0
+                Size: 0
+          Child::
+            + BaseType
+              type_str: int
+      Body:
+        + CompoundStatement
+          has_return_stmt: 1
+          Declaration list:
+            + DeclarationList
+                Size: 5
+                + DeclarationList
+                    Size: 1
+                    + Declaration
+                      Type-string: int
+                      is_initialized: 0
+                      name: a
+                      is_used: 1
+                      Type:
+                        + BaseType
+                          type_str: int
+                + DeclarationList
+                    Size: 1
+                    + Declaration
+                      Type-string: int
+                      is_initialized: 0
+                      name: b
+                      is_used: 1
+                      Type:
+                        + BaseType
+                          type_str: int
+                + DeclarationList
+                    Size: 1
+                    + Declaration
+                      Type-string: int
+                      is_initialized: 0
+                      name: c
+                      is_used: 1
+                      Type:
+                        + BaseType
+                          type_str: int
+                + DeclarationList
+                    Size: 1
+                    + Declaration
+                      Type-string: int
+                      is_initialized: 0
+                      name: d
+                      is_used: 0
+                      Type:
+                        + BaseType
+                          type_str: int
+                + DeclarationList
+                    Size: 1
+                    + Declaration
+                      Type-string: int
+                      is_initialized: 0
+                      name: e
+                      is_used: 0
+                      Type:
+                        + BaseType
+                          type_str: int
+          Statement list:
+            + StatementList
+              has_return_stmt: 1
+                Size: 5
+                + Binop
+                  Type-string: int
+                  has_return_stmt: 0
+                  op: =
+                  Left operand:
+                    + Id
+                      Type-string: int
+                      a: 0
+                      index: -1
+                      name: a
+                      has_addr: 1
+                      s: 0
+                      lineno: 10
+                      output_addr: 1
+                      Type:
+                        + BaseType
+                          type_str: int
+                  Right operand:
+                    + Const
+                      Type-string: int
+                      value: 1
+                      Type:
+                        + BaseType
+                          type_str: int
+                + Binop
+                  Type-string: int
+                  has_return_stmt: 0
+                  op: =
+                  Left operand:
+                    + Id
+                      Type-string: int
+                      a: 0
+                      index: -1
+                      name: b
+                      has_addr: 1
+                      s: 0
+                      lineno: 11
+                      output_addr: 1
+                      Type:
+                        + BaseType
+                          type_str: int
+                  Right operand:
+                    + Const
+                      Type-string: int
+                      value: 2
+                      Type:
+                        + BaseType
+                          type_str: int
+                + Binop
+                  Type-string: int
+                  has_return_stmt: 0
+                  op: =
+                  Left operand:
+                    + Id
+                      Type-string: int
+                      a: 0
+                      index: -1
+                      name: c
+                      has_addr: 1
+                      s: 0
+                      lineno: 15
+                      output_addr: 1
+                      Type:
+                        + BaseType
+                          type_str: int
+                  Right operand:
+                    + Binop
+                      Type-string: int
+                      op: +
+                      Left operand:
+                        + Id
+                          Type-string: int
+                          a: 0
+                          index: -1
+                          name: a
+                          has_addr: 1
+                          s: 0
+                          lineno: 15
+                          output_addr: 0
+                          Type:
+                            + BaseType
+                              type_str: int
+                      Right operand:
+                        + Const
+                          Type-string: int
+                          value: 7
+                          Type:
+                            + BaseType
+                              type_str: int
+                + Binop
+                  Type-string: int
+                  has_return_stmt: 0
+                  op: =
+                  Left operand:
+                    + Id
+                      Type-string: int
+                      a: 0
+                      index: -1
+                      name: a
+                      has_addr: 1
+                      s: 0
+                      lineno: 16
+                      output_addr: 1
+                      Type:
+                        + BaseType
+                          type_str: int
+                  Right operand:
+                    + Binop
+                      Type-string: int
+                      op: +
+                      Left operand:
+                        + Id
+                          Type-string: int
+                          a: 0
+                          index: -1
+                          name: a
+                          has_addr: 1
+                          s: 0
+                          lineno: 16
+                          output_addr: 0
+                          Type:
+                            + BaseType
+                              type_str: int
+                      Right operand:
+                        + Id
+                          Type-string: int
+                          a: 0
+                          index: -1
+                          name: c
+                          has_addr: 1
+                          s: 0
+                          lineno: 16
+                          output_addr: 0
+                          Type:
+                            + BaseType
+                              type_str: int
+                + ReturnStatement
+                  has_return_stmt: 1

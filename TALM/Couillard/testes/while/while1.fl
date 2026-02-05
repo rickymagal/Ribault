@@ -1,0 +1,18 @@
+const flowInstConst136058860, 0
+const flowInstConst136610732, 7
+const flowInstConst136613740, 5
+const flowInstConst136613292, 2
+inctag flowInstIncTag136610284, [flowInstConst136058860, flowInstBinopI136610028]
+inctag flowInstIncTag136611244, [flowInstConst136610732, flowInstSteer136622892.t]
+lthan flowInstBinop136610092, flowInstIncTag136610284, flowInstIncTag136611244 
+steer flowInstSteer136613036, flowInstBinop136610092, flowInstIncTag136610284
+addi flowInstBinopI136610028, flowInstSteer136613036.t, 1 
+inctag flowInstIncTag136603916, [flowInstConst136613740, flowInstBinop136610988]
+steer flowInstSteer136605548, flowInstBinop136610092, flowInstIncTag136603916
+add flowInstBinop136610988, flowInstSteer136605548.t, flowInstBinopI136610028 
+inctag flowInstIncTag136603404, [flowInstConst136613292, flowInstSteer136603660.t]
+steer flowInstSteer136603660, flowInstBinop136610092, flowInstIncTag136603404
+steer flowInstSteer136622892, flowInstBinop136610092, flowInstIncTag136611244
+mul flowInstBinop136610476, flowInstSteer136603660.f, flowInstSteer136605548.f 
+const flowInstConst136610668, 0
+ret mainret, flowInstConst136610668, main[0]
