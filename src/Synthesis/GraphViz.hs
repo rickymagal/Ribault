@@ -106,6 +106,8 @@ opSymbol = \case
   -- Other
   NTagVal{}     -> "tagval"
   NValTag{}     -> "valtag"
+  NIncTag{}     -> "inctag"
+  NIncTagI{..}  -> T.pack ("inctagi " ++ show iImm)
   NCpHToDev{}   -> "cphtodev"
   NCpDevToH{}   -> "cpdevtoh"
   NCommit{}     -> "commit"

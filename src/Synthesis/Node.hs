@@ -57,13 +57,15 @@ data DNode
 
   -- Calls (TALM)
   | NCallGroup { nName :: !String }              -- ^ emits a tag
-  | NCallSnd   { nName :: !String, taskId :: !Int }
-  | NRetSnd    { nName :: !String, taskId :: !Int }
+  | NCallSnd   { nName :: !String, taskId :: !Int, cgId :: !NodeId }
+  | NRetSnd    { nName :: !String, taskId :: !Int, cgId :: !NodeId }
   | NRet       { nName :: !String }
 
   -- Converters tag <-> value
   | NTagVal  { nName :: !String }
   | NValTag  { nName :: !String }
+  | NIncTag  { nName :: !String }
+  | NIncTagI { nName :: !String, iImm :: !Int }
 
   -- DMA / speculation
   | NCpHToDev  { nName :: !String }
