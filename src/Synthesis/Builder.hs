@@ -65,14 +65,16 @@ data BuildS = BuildS
   , bsAliases    :: !AliasMap      -- ^ Extra outputs that mirror a producer port.
   , bsActive     :: !ActiveStack   -- ^ Functions under construction (re-entrancy guard).
   , bsFloatFuns  :: !(S.Set Ident) -- ^ Functions observed in float contexts.
+  , bsListFuns   :: !(S.Set Ident) -- ^ Functions that build/return lists.
   , bsRetVals    :: !(M.Map Ident Port) -- ^ Return value port for each function.
   , bsGuard      :: !(Maybe Port)  -- ^ Optional guard for gating calls in branches.
   , bsRecIx      :: !(M.Map Ident Int) -- ^ Recursion call-site indices per function.
+  , bsCallIx     :: !(M.Map Ident Int) -- ^ Callgroup output indices per function.
   }
 
 -- | Initial empty builder state.
 emptyS :: BuildS
-emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty M.empty Nothing M.empty
+emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty S.empty M.empty Nothing M.empty M.empty
 
 -- | Builder monad with unique-id generation.
 newtype Build a = Build { unBuild :: StateT BuildS Unique a }
@@ -160,7 +162,17 @@ alignExecTo guard val = do
   mc <- getConstI val
   case mc of
     Just k -> constFrom guard k
-    Nothing -> pure val
+    Nothing -> do
+      listActive <- isListActive
+      if listActive then retagToExecOnly guard val else retagTo guard val
+
+-- | Align exec tags ignoring tag matching (exec-only).
+alignExecToExecOnly :: Port -> Port -> Build Port
+alignExecToExecOnly guard val = do
+  mc <- getConstI val
+  case mc of
+    Just k -> constFrom guard k
+    Nothing -> retagToExecOnly guard val
 
 -- | Retag a value to match a tag source (uses tagval/valtag).
 retagTo :: Port -> Port -> Build Port
@@ -170,6 +182,30 @@ retagTo tagSrc val = do
   vt <- newNode "valtag" (NValTag "")
   connectPlus val (InstPort vt "0")
   connectPlus (out0 tv) (InstPort vt "1")
+  pure (out0 vt)
+
+-- | Retag a value to match a tag source using exec-only matching.
+-- Encodes the tag as a negative marker so TALM ignores tag matching.
+retagToExecOnly :: Port -> Port -> Build Port
+retagToExecOnly tagSrc val = do
+  tv <- newNode "tagval" (NTagVal "")
+  connectPlus tagSrc (InstPort tv "0")
+  one <- constFrom tagSrc 1
+  tv1 <- addI (out0 tv) 1
+  z <- constFrom tagSrc 0
+  neg <- bin2 "sub" (NSub "") z tv1
+  vt <- newNode "valtag" (NValTag "")
+  connectPlus val (InstPort vt "0")
+  connectPlus neg (InstPort vt "1")
+  pure (out0 vt)
+
+-- | Retag a value to a constant tag k using exec-only matching.
+retagToConstTagExecOnly :: Int -> Port -> Build Port
+retagToConstTagExecOnly k val = do
+  negK <- constFrom val (-(k + 1))
+  vt <- newNode "valtag" (NValTag "")
+  connectPlus val (InstPort vt "0")
+  connectPlus negK (InstPort vt "1")
   pure (out0 vt)
 
 -- | Increment tag of a value (inctag).
@@ -218,6 +254,21 @@ mkParentTag child = do
   connectPlus (out0 divN) (InstPort vt "1")
   pure (out0 vt)
 
+-- | Recover parent tag using exec-only retagging (keeps values even on tag mismatch).
+mkParentTagExecOnly :: Port -> Build Port
+mkParentTagExecOnly child = do
+  tv <- newNode "tagval" (NTagVal "")
+  connectPlus child (InstPort tv "0")
+  divN <- newNode ("divi_" ++ show tagRadix) (NDivI "" tagRadix)
+  connectPlus (out0 tv) (InstPort divN "0")
+  z <- constFrom child 0
+  div1 <- addI (out0 divN) 1
+  neg <- bin2 "sub" (NSub "") z div1
+  vt <- newNode "valtag" (NValTag "")
+  connectPlus child (InstPort vt "0")
+  connectPlus neg (InstPort vt "1")
+  pure (out0 vt)
+
 -- | Allocate a small recursion call-site index for function @f@.
 nextRecIx :: Ident -> Build Int
 nextRecIx f = Build $ do
@@ -226,13 +277,23 @@ nextRecIx f = Build $ do
   put s { bsRecIx = M.insert f i (bsRecIx s) }
   pure i
 
+-- | Allocate a callgroup output index for function @f@ (0-based).
+nextCallIx :: Ident -> Build Int
+nextCallIx f = Build $ do
+  s <- get
+  let i = M.findWithDefault 0 f (bsCallIx s)
+  put s { bsCallIx = M.insert f (i + 1) (bsCallIx s) }
+  pure i
+
 -- | Align a guard's exec/tag to match a value (so steers can fire).
 alignGuardTo :: Port -> Port -> Build Port
 alignGuardTo val guard = do
   mc <- getConstI guard
   case mc of
     Just k -> constFrom val k
-    Nothing -> pure guard
+    Nothing -> do
+      listActive <- isListActive
+      if listActive then retagToExecOnly val guard else retagTo val guard
 
 -- | Record/lookup the canonical return-value port for a function.
 setRetVal :: Ident -> Port -> Build ()
@@ -264,10 +325,24 @@ markFloatFun f = Build $ modify (\s -> s { bsFloatFuns = S.insert f (bsFloatFuns
 isFloatFun :: Ident -> Build Bool
 isFloatFun f = Build $ gets (\s -> S.member f (bsFloatFuns s))
 
+-- | Mark a function as building/returning lists.
+markListFun :: Ident -> Build ()
+markListFun f = Build $ modify (\s -> s { bsListFuns = S.insert f (bsListFuns s) })
+
+-- | Check whether a function is marked as list-producing.
+isListFun :: Ident -> Build Bool
+isListFun f = Build $ gets (\s -> S.member f (bsListFuns s))
+
 -- | True if the top of the active stack is a float-marked function.
 isFloatActive :: Build Bool
 isFloatActive = Build $ gets $ \s -> case bsActive s of
   (f:_) -> S.member f (bsFloatFuns s)
+  _     -> False
+
+-- | True if the top of the active stack is a list-marked function.
+isListActive :: Build Bool
+isListActive = Build $ gets $ \s -> case bsActive s of
+  (f:_) -> S.member f (bsListFuns s)
   _     -> False
 
 -- helper: está construindo 'f' agora?
@@ -281,6 +356,24 @@ isActiveFun f = Build $ gets (\s -> f `elem` bsActive s)
 -- | Emit a raw 'Edge' into the graph.
 emit :: Edge -> Build ()
 emit e = Build $ modify (\s -> s { bsGraph = addEdge e (bsGraph s) })
+
+-- | Conservative check for list/tuple construction in an expression.
+exprHasList :: Expr -> Bool
+exprHasList = \case
+  Cons _ _       -> True
+  List _         -> True
+  Tuple _        -> True
+  Lambda _ e     -> exprHasList e
+  If c t e       -> exprHasList c || exprHasList t || exprHasList e
+  Case scr alts  -> exprHasList scr || any (exprHasList . snd) alts
+  Let ds b       -> any declHasList ds || exprHasList b
+  App f x        -> exprHasList f || exprHasList x
+  BinOp _ l r    -> exprHasList l || exprHasList r
+  UnOp _ e       -> exprHasList e
+  _              -> False
+
+declHasList :: Decl -> Bool
+declHasList (FunDecl _ _ body) = exprHasList body
 
 -- | Connect two 'Port's by emitting an edge.
 connect :: Port -> Port -> Build ()
@@ -412,18 +505,23 @@ getConstI p = Build $ gets $ \s ->
 -- | Build an int constant aligned to a reference port's exec/tag.
 constFrom :: Port -> Int -> Build Port
 constFrom ref k = do
-  subN <- bin2Node "sub" (NSub "") ref ref
-  let z = out0 subN
-  if k == 0 then pure z else addI z k
+  if pNode ref == (-1)
+    then newNode ("const_" ++ show k) (NConstI "" k) >>= \nid -> pure (out0 nid)
+    else do
+      subN <- bin2Node "sub" (NSub "") ref ref
+      let z = out0 subN
+      if k == 0 then pure z else addI z k
 
 -- immediates (sem aliases!)
 
 -- | Add immediate @k@ to input (no alias expansion).
 addI :: Port -> Int -> Build Port
-addI p k = do
-  nid <- newNode ("addi_" ++ show k) (NAddI "" k)
-  connect p (InstPort nid "0")
-  pure (out0 nid)
+addI p k
+  | k == 0 = retagTo p p
+  | otherwise = do
+      nid <- newNode ("addi_" ++ show k) (NAddI "" k)
+      connect p (InstPort nid "0")
+      pure (out0 nid)
 
 -- | Subtract immediate @k@ from input (no alias expansion).
 subI :: Port -> Int -> Build Port
@@ -494,9 +592,20 @@ alignExecInputs ins = do
 -- | Encode a pair/list cell via builtin list cons.
 pairEnc :: Port -> Port -> Build Port
 pairEnc a b = do
+  -- Using cons implies list construction in the current function.
+  act <- Build $ gets bsActive
+  case act of
+    (f:_) -> markListFun f
+    _     -> pure ()
   ins <- alignExecInputs [a, b]
   case ins of
-    [a', b'] -> callBuiltinSuper builtinListCons [a', b']
+    [a', b'] -> do
+      ma <- getConstI a'
+      mb <- getConstI b'
+      b'' <- if ma == Nothing && mb == Nothing
+               then retagToExecOnly a' b'
+               else pure b'
+      callBuiltinSuper builtinListCons [a', b'']
     _        -> callBuiltinSuper builtinListCons [a, b]
 
 -- | Decode first component from encoded pair.
@@ -572,6 +681,7 @@ ensureBuilt f ps body = do
   if done || active
      then pure ()
      else do
+       when (exprHasList body) (markListFun f)
        retStub <- newNode (f ++ "_retstub") (NAddI "" 0)
        setRetVal f (out0 retStub)
        _ <- withActive f $ withNoGuard $ withEnv $ do
@@ -810,21 +920,22 @@ goApp fun args = case fun of
 
     let tid = funTaskId f
     cg <- newNode f (NCallGroup f)
+    cgIx <- nextCallIx f
     let cgTag = "cg" ++ show cg
     recCall <- isActiveFun f
-    recIx <- if recCall then nextRecIx f else pure 0
-    let k = if recCall then (recIx `mod` (tagRadix - 1)) + 1 else 0
+    listCall <- isListFun f
+    callIx <- nextRecIx f
+    let k = if recCall then (callIx `mod` (tagRadix - 1)) + 1 else callIx
     argv' <- pure argv
     tagTokParent <- case argv of
       (a0:_) -> pure a0
       []     -> constI 0
-    argvTagged <-
+    tagTokChild <-
       if recCall
-        then mapM (mkChildTag k) argv'
-        else pure argv'
-    tagTokChild <- case argvTagged of
-      (a0:_) -> pure a0
-      []     -> constI 0
+        then mkChildTag k tagTokParent
+        else retagToConstTagExecOnly k tagTokParent
+    argvTagged <-
+      mapM (retagToExecOnly tagTokChild) argv'
     callOuts <- forM (zip [0..] argvTagged) $ \(i,a) -> do
       let slot = i + 1
       cs <- newNode (f ++ "#" ++ show slot) (NCallSnd (f ++ "#" ++ show slot) tid cg)
@@ -844,15 +955,21 @@ goApp fun args = case fun of
     let rsTag = out0 rs
     connectPlus rsTag (InstPort retN "1")
     mres <- lookupRetVal f
-    case mres of
-      Just res -> connectPlus res (InstPort retN "0")
+    resOut <- case mres of
+      Just res -> do
+        -- Retag return value; list-returning functions use exec-only to avoid drops.
+        r <- if listCall then retagToExecOnly rsTag res else retagTo rsTag res
+        connectPlus r (InstPort retN "0")
+        if listCall
+          then retagToExecOnly tagTokParent r
+          else if recCall then mkParentTag r else retagToExecOnly tagTokParent r
       Nothing -> do
-        z <- constI 0
+        z <- constFrom rsTag 0
         connectPlus z (InstPort retN "0")
-    let resP = InstPort retN cgTag
-    if recCall
-      then mkParentTag resP
-      else alignExecTo tagTokParent resP
+        if listCall
+          then retagToExecOnly tagTokParent z
+          else if recCall then mkParentTag z else retagToExecOnly tagTokParent z
+    pure resOut
 
   Lambda ps body -> do
     let fname = "lambda"
@@ -986,9 +1103,9 @@ compileCase scr alts = do
       (pPred, binds, guardi) <- withNoGuard $ do
         (pp0, bs) <- patPred pscr p
         pp <- boolify pp0
-        pp' <- alignExecTo taken pp
+        pp' <- alignExecToExecOnly taken pp
         nt  <- notP taken
-        nt' <- alignExecTo pp' nt
+        nt' <- alignExecToExecOnly pp' nt
         g   <- andP pp' nt'
         pure (pp', bs, g)
       val0 <- withEnv $ withGuard guardi $ do
@@ -1007,9 +1124,9 @@ compileCase scr alts = do
       (pPred, binds, guardi, taken') <- withNoGuard $ do
         (pp0, bs) <- patPred pscr p
         pp <- boolify pp0
-        pp' <- alignExecTo taken pp
+        pp' <- alignExecToExecOnly taken pp
         nt  <- notP taken
-        nt' <- alignExecTo pp' nt
+        nt' <- alignExecToExecOnly pp' nt
         g   <- andP pp' nt'
         tk  <- orP taken pp'
         pure (pp', bs, g, tk)

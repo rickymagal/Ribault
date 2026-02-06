@@ -94,6 +94,55 @@ static int use_supers_mutex = 0;
 static int use_supers_worker = 0;
 static int use_supers_worker_main = 0;
 static pthread_mutex_t supers_mutex = PTHREAD_MUTEX_INITIALIZER;
+static inline int is_list_super_op(int opcode) {
+	int idx = opcode - OP_SUPER1;
+	return (idx >= 0 && idx <= 3);
+}
+
+static inline int valtag_is_execonly_oper1(const oper_t *op) {
+	return (op && op->value.i < 0);
+}
+
+opmatch_t *create_opmatch(int tag, int exec, thread_args *pe_attr);
+
+static int valtag_execonly_bucket(instr_t *instr, int exec) {
+	for (opmatch_t *m = instr->opmatch; m != NULL; m = m->next) {
+		if (m->tag == 0 && m->exec == exec && m->op[1] && m->op[1]->value.i < 0) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+// For exec-only valtag: move any pending operand0 into tag=0 bucket for this exec.
+static void valtag_promote_execonly_op0(instr_t *instr, int exec, thread_args *pe_attr) {
+	opmatch_t **matchptr = &(instr->opmatch);
+	opmatch_t *m0 = NULL, *m1 = NULL;
+
+	for (opmatch_t *m = *matchptr; m != NULL; m = m->next) {
+		if (m->exec != exec) continue;
+		if (m->tag == 0) m1 = m;
+		if (m->tag != 0 && m->op[0] != NULL && m0 == NULL) m0 = m;
+	}
+	if (!m0 || !m0->op[0]) return;
+
+	if (!m1) {
+		opmatch_t **pp = matchptr;
+		while (*pp != NULL && ((0 > (*pp)->tag) || ((0 == (*pp)->tag) && (exec != (*pp)->exec)))) {
+			pp = &((*pp)->next);
+		}
+		m1 = create_opmatch(0, exec, pe_attr);
+		m1->next = *pp;
+		*pp = m1;
+	}
+	if (!m1->op[0]) {
+		m0->op[0]->tag = 0;
+		m1->op[0] = m0->op[0];
+		m1->count++;
+		m0->op[0] = NULL;
+		m0->count--;
+	}
+}
 static int use_df_list_builtin = 0;
 static size_t df_list_block_size = 4096;
 
@@ -107,6 +156,7 @@ static __thread size_t df_list_block_used = 0;
 static __thread int debug_match_target_id = -1;
 static __thread int debug_match_target_op = -1;
 static __thread int debug_trace_port = -1;
+opmatch_t *create_opmatch(int tag, int exec, thread_args *pe_attr);
 static int debug_trace_id(int id) {
 	const char *env = getenv("DF_DEBUG_TRACE_ID");
 	char buf[32];
@@ -140,6 +190,7 @@ int64_t df_list_cons(int64_t head, int64_t tail) {
 	cell->tail = tail;
 	return (int64_t)(uintptr_t)cell;
 }
+
 
 int64_t df_list_head(int64_t handle) {
 	if (handle == 0) return 0;
@@ -1313,11 +1364,37 @@ void treat_msgs(thread_args *attr, int isblocking) {
 				rcvtoken->oper.next = NULL;
 				int tag_mode = (ignore_tag_match ? 0 : -1);
 				int exec_mode = (ignore_exec_match ? 0 : -1);
+				if (is_list_super_op(rcvtoken->dst->opcode) && !ignore_tag_match) {
+					tag_mode = 0; // list ops ignore tag matching, keep exec
+				}
+				if (rcvtoken->dst->opcode == OP_VALTOTAG && !ignore_tag_match) {
+					if (rcvtoken->dstn == 1 && valtag_is_execonly_oper1(&rcvtoken->oper)) {
+						tag_mode = 0;
+					} else if (rcvtoken->dstn == 0 && valtag_execonly_bucket(rcvtoken->dst, rcvtoken->oper.exec)) {
+						tag_mode = 0;
+					}
+				}
 				bypass_oper(&((rcvtoken->dst)->opmatch), rcvtoken->dstn, &rcvtoken->oper, attr,
 				            tag_mode, exec_mode);
+				if (rcvtoken->dst->opcode == OP_VALTOTAG &&
+				    rcvtoken->dstn == 1 && valtag_is_execonly_oper1(&rcvtoken->oper)) {
+					valtag_promote_execonly_op0(rcvtoken->dst, rcvtoken->oper.exec, attr);
+				}
+				int tag_exec = (ignore_tag_match ? 0 : (rcvtoken->oper).tag);
+				int exec_exec = (ignore_exec_match ? 0 : (rcvtoken->oper).exec);
+				if (is_list_super_op(rcvtoken->dst->opcode) && !ignore_tag_match) {
+					tag_exec = 0;
+				}
+				if (rcvtoken->dst->opcode == OP_VALTOTAG && !ignore_tag_match) {
+					if (rcvtoken->dstn == 1 && valtag_is_execonly_oper1(&rcvtoken->oper)) {
+						tag_exec = 0;
+					} else if (rcvtoken->dstn == 0 && valtag_execonly_bucket(rcvtoken->dst, rcvtoken->oper.exec)) {
+						tag_exec = 0;
+					}
+				}
 				if ((disp = can_exec(rcvtoken->dst,
-				                     (ignore_tag_match ? 0 : (rcvtoken->oper).tag),
-				                     (ignore_exec_match ? 0 : (rcvtoken->oper).exec),
+				                     tag_exec,
+				                     exec_exec,
 				                     attr)))
 					readyq_enqueue(attr, (qelem)disp);
 				// token ownership transferred; release happens when operand is cleaned
@@ -1826,7 +1903,11 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 		break;
 
 		case OP_VALTOTAG:
-			result[0].tag = oper[1]->value.i;
+			if (oper[1]->value.i < 0) {
+				result[0].tag = -oper[1]->value.i - 1;
+			} else {
+				result[0].tag = oper[1]->value.i;
+			}
 			result[0].value = oper[0]->value;
 			result[0].exec = oper[1]->exec;
 			#ifdef DEBUG_EXECUTION
@@ -1962,6 +2043,19 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 							result[0].value.i = (int)result[0].value.li;
 							break;
 					}
+					if (super_idx == 0 && oper[1]) {
+						// For cons, prefer tail tag/exec when tail is non-nil.
+						if (oper[1]->value.li != 0) {
+							result[0].tag = oper[1]->tag;
+							result[0].exec = oper[1]->exec;
+						} else if (oper[0]) {
+							result[0].tag = oper[0]->tag;
+							result[0].exec = oper[0]->exec;
+						}
+					} else if (oper[0]) {
+						result[0].tag = oper[0]->tag;
+						result[0].exec = oper[0]->exec;
+					}
 					if (debug_list) {
 						fprintf(stderr, "[list] id=%d op=%d out=%lld\n",
 						        instr->id, super_idx, (long long)result[0].value.li);
@@ -2047,6 +2141,38 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 							fprintf(stderr, "[sup ] direct nspec done super%d\n", opcode - OP_SUPER1);
 						}
 					}
+				{
+					int super_idx2 = instr->opcode - OP_SUPER1;
+					if (super_idx2 >= 0 && super_idx2 <= 3) {
+						// List supers: keep tags aligned with the list structure.
+						if (super_idx2 == 0 && instr->n_src > 1 && oper[1]) {
+							if (oper[1]->value.li != 0) {
+								result[0].tag = oper[1]->tag;
+								result[0].exec = oper[1]->exec;
+							} else if (oper[0]) {
+								result[0].tag = oper[0]->tag;
+								result[0].exec = oper[0]->exec;
+							}
+						} else if (oper[0]) {
+							result[0].tag = oper[0]->tag;
+							result[0].exec = oper[0]->exec;
+						}
+					} else {
+						oper_t *src = NULL;
+						for (i = 0; i < instr->n_src; i++) {
+							if (oper[i]) {
+								src = oper[i];
+								break;
+							}
+						}
+						if (src) {
+							for (i = 0; i < instr->n_dst; i++) {
+								result[i].tag = src->tag;
+								result[i].exec = src->exec;
+							}
+						}
+					}
+				}
 
 			}
 
@@ -2470,14 +2596,41 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 						debug_match_target_op = target->opcode;
 						match_exec_override = (ignore_exec_match ? 0 : -1);
 						int tag_mode = (ignore_tag_match ? 0 : -1);
+						int exec_mode = (ignore_exec_match ? 0 : -1);
+						if (is_list_super_op(target->opcode) && !ignore_tag_match) {
+							tag_mode = 0; // list ops ignore tag matching, keep exec
+						}
+						if (target->opcode == OP_VALTOTAG && !ignore_tag_match) {
+							if (inputn == 1 && valtag_is_execonly_oper1(opcopy)) {
+								tag_mode = 0;
+							} else if (inputn == 0 && valtag_execonly_bucket(target, opcopy->exec)) {
+								tag_mode = 0;
+							}
+						}
 						bypass_oper(&(target->opmatch), inputn, opcopy, pe_attr,
-						            tag_mode, match_exec_override);
+						            tag_mode, exec_mode);
+						if (target->opcode == OP_VALTOTAG &&
+						    inputn == 1 && valtag_is_execonly_oper1(opcopy)) {
+							valtag_promote_execonly_op0(target, opcopy->exec, pe_attr);
+						}
 						debug_match_target_id = -1;
 						debug_match_target_op = -1;
 					}
+					int tag_exec = (ignore_tag_match ? 0 : result[i].tag);
+					int exec_exec = (ignore_exec_match ? 0 : result[i].exec);
+					if (is_list_super_op(target->opcode) && !ignore_tag_match) {
+						tag_exec = 0;
+					}
+					if (target->opcode == OP_VALTOTAG && !ignore_tag_match) {
+						if (inputn == 1 && valtag_is_execonly_oper1(&result[i])) {
+							tag_exec = 0;
+						} else if (inputn == 0 && valtag_execonly_bucket(target, result[i].exec)) {
+							tag_exec = 0;
+						}
+					}
 					if ((dispatch = can_exec(target,
-					                         (ignore_tag_match ? 0 : result[i].tag),
-					                         (ignore_exec_match ? 0 : result[i].exec),
+					                         tag_exec,
+					                         exec_exec,
 					                         pe_attr))) {
 						readyq_enqueue(pe_attr, (qelem)dispatch);
 						}
