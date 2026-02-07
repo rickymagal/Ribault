@@ -1364,9 +1364,6 @@ void treat_msgs(thread_args *attr, int isblocking) {
 				rcvtoken->oper.next = NULL;
 				int tag_mode = (ignore_tag_match ? 0 : -1);
 				int exec_mode = (ignore_exec_match ? 0 : -1);
-				if (is_list_super_op(rcvtoken->dst->opcode) && !ignore_tag_match) {
-					tag_mode = 0; // list ops ignore tag matching, keep exec
-				}
 				if (rcvtoken->dst->opcode == OP_VALTOTAG && !ignore_tag_match) {
 					if (rcvtoken->dstn == 1 && valtag_is_execonly_oper1(&rcvtoken->oper)) {
 						tag_mode = 0;
@@ -1382,9 +1379,6 @@ void treat_msgs(thread_args *attr, int isblocking) {
 				}
 				int tag_exec = (ignore_tag_match ? 0 : (rcvtoken->oper).tag);
 				int exec_exec = (ignore_exec_match ? 0 : (rcvtoken->oper).exec);
-				if (is_list_super_op(rcvtoken->dst->opcode) && !ignore_tag_match) {
-					tag_exec = 0;
-				}
 				if (rcvtoken->dst->opcode == OP_VALTOTAG && !ignore_tag_match) {
 					if (rcvtoken->dstn == 1 && valtag_is_execonly_oper1(&rcvtoken->oper)) {
 						tag_exec = 0;
@@ -2597,9 +2591,6 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 						match_exec_override = (ignore_exec_match ? 0 : -1);
 						int tag_mode = (ignore_tag_match ? 0 : -1);
 						int exec_mode = (ignore_exec_match ? 0 : -1);
-						if (is_list_super_op(target->opcode) && !ignore_tag_match) {
-							tag_mode = 0; // list ops ignore tag matching, keep exec
-						}
 						if (target->opcode == OP_VALTOTAG && !ignore_tag_match) {
 							if (inputn == 1 && valtag_is_execonly_oper1(opcopy)) {
 								tag_mode = 0;
@@ -2618,9 +2609,6 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 					}
 					int tag_exec = (ignore_tag_match ? 0 : result[i].tag);
 					int exec_exec = (ignore_exec_match ? 0 : result[i].exec);
-					if (is_list_super_op(target->opcode) && !ignore_tag_match) {
-						tag_exec = 0;
-					}
 					if (target->opcode == OP_VALTOTAG && !ignore_tag_match) {
 						if (inputn == 1 && valtag_is_execonly_oper1(&result[i])) {
 							tag_exec = 0;

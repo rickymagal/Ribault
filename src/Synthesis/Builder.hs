@@ -162,9 +162,7 @@ alignExecTo guard val = do
   mc <- getConstI val
   case mc of
     Just k -> constFrom guard k
-    Nothing -> do
-      listActive <- isListActive
-      if listActive then retagToExecOnly guard val else retagTo guard val
+    Nothing -> retagTo guard val
 
 -- | Align exec tags ignoring tag matching (exec-only).
 alignExecToExecOnly :: Port -> Port -> Build Port
@@ -291,9 +289,7 @@ alignGuardTo val guard = do
   mc <- getConstI guard
   case mc of
     Just k -> constFrom val k
-    Nothing -> do
-      listActive <- isListActive
-      if listActive then retagToExecOnly val guard else retagTo val guard
+    Nothing -> retagTo val guard
 
 -- | Record/lookup the canonical return-value port for a function.
 setRetVal :: Ident -> Port -> Build ()
@@ -603,7 +599,7 @@ pairEnc a b = do
       ma <- getConstI a'
       mb <- getConstI b'
       b'' <- if ma == Nothing && mb == Nothing
-               then retagToExecOnly a' b'
+               then retagTo a' b'
                else pure b'
       callBuiltinSuper builtinListCons [a', b'']
     _        -> callBuiltinSuper builtinListCons [a, b]
@@ -957,18 +953,13 @@ goApp fun args = case fun of
     mres <- lookupRetVal f
     resOut <- case mres of
       Just res -> do
-        -- Retag return value; list-returning functions use exec-only to avoid drops.
-        r <- if listCall then retagToExecOnly rsTag res else retagTo rsTag res
+        r <- retagTo rsTag res
         connectPlus r (InstPort retN "0")
-        if listCall
-          then retagToExecOnly tagTokParent r
-          else if recCall then mkParentTag r else retagToExecOnly tagTokParent r
+        if recCall then mkParentTag r else retagToExecOnly tagTokParent r
       Nothing -> do
         z <- constFrom rsTag 0
         connectPlus z (InstPort retN "0")
-        if listCall
-          then retagToExecOnly tagTokParent z
-          else if recCall then mkParentTag z else retagToExecOnly tagTokParent z
+        if recCall then mkParentTag z else retagToExecOnly tagTokParent z
     pure resOut
 
   Lambda ps body -> do
