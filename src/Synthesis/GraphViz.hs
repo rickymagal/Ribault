@@ -67,19 +67,13 @@ toCleanDot g =
                      [ nid | (nid, NAddI{}) <- nodes
                            , let srcs = M.findWithDefault [] nid inEdges
                            , any (`S.member` zeroSubs) srcs ]
-      -- Semantic steers: Builder tags if-else steers with "if_t"/"if_f".
-      -- Keep only "if_t" steers (visible in clean graph).
-      semanticSteers = S.fromList [ nid | (nid, NSteer{nName="if_t"}) <- nodes ]
       -- Forward adjacency (node IDs only) for checking constFrom targets
       fwdAll   = M.fromListWith (++) [ (s, [d]) | (s,_,d,_) <- dgEdges g ]
       nodeMap  = dgNodes g
       -- Base kept set (without constFrom constants)
       keptBase = S.fromList [ nid | (nid, dn) <- nodes
                                   , not (isInfra dn)
-                                  , not (S.member nid zeroSubs)
-                                  , case dn of
-                                      NSteer{} -> S.member nid semanticSteers
-                                      _        -> True ]
+                                  , not (S.member nid zeroSubs) ]
       -- Only keep constFrom constants that directly feed a keptBase node
       -- (e.g., const 1 → NSub, const 2 → NLThan). Exclude guardToken constants.
       semanticConsts = S.fromList
@@ -92,18 +86,23 @@ toCleanDot g =
                    [ (s, [(sp, d, dp)]) | (s, sp, d, dp) <- edges
                                         , not (S.member s kept) ]
       cleanEdges = nub $ concatMap (resolveEdge kept fwdAdj) edges
-      -- Remove self-loops; deduplicate by (src,dst) keeping T/F labels
+      -- Remove self-loops, edges INTO progConsts (constFrom artifact); dedup
       deduped    = M.toList $ M.fromListWith pickLabel
-                     [ ((s, d), sp) | (s, sp, d, _dp) <- cleanEdges, s /= d ]
+                     [ ((s, d), sp) | (s, sp, d, _dp) <- cleanEdges, s /= d
+                                    , not (S.member d semanticConsts) ]
       finalEdges0 = [ (s, sp, d) | ((s, d), sp) <- deduped ]
-      -- For semantic steers, mirror each T edge as an F edge
-      withFEdges  = finalEdges0 ++
-                    [ (s, "f", d) | (s, sp, d) <- finalEdges0
-                                  , S.member s semanticSteers
-                                  , sp == "T" || sp == "t" ]
-      -- Transitive reduction: remove a→c if a path a→…→c of length ≥2 exists.
-      -- Preserves T/F labeled edges (steer outputs) unconditionally.
-      finalEdges = transitiveReduce withFEdges
+      -- Label edges from comparison nodes: T → NRet (return), F → everything else
+      labeled = map labelCond finalEdges0
+      labelCond (s, sp, d)
+        | isConditional (lkNode s) , isRetNode (lkNode d) = (s, "T", d)
+        | isConditional (lkNode s)                        = (s, "F", d)
+        | otherwise                                       = (s, sp, d)
+      lkNode nid = M.findWithDefault (NConstI "" 0) nid nodeMap
+      isRetNode NRet{} = True
+      isRetNode _      = False
+      -- Transitive reduction: remove a→c if ∃ b with a→b and b→c.
+      -- Preserves T/F labeled edges unconditionally.
+      finalEdges = transitiveReduce labeled
       -- Only keep nodes that participate in at least one edge
       edgeNodes  = S.fromList $ concatMap (\(s,_,d) -> [s,d]) finalEdges
       cleanNodes = sortOn fst [ (nid, dn) | (nid, dn) <- nodes
@@ -126,6 +125,7 @@ isInfra = \case
   NBand{}         -> True
   NCommit{}       -> True
   NStopSpec{}     -> True
+  NSteer{}        -> True          -- steers removed; T/F goes on comparison node
   NIncTag{}       -> True
   NIncTagI{}      -> True
   -- Tag manipulation immediates (small positives are tag offsets)
@@ -140,6 +140,12 @@ isInfra = \case
   -- List builtin supers (s0=cons, s1=head, s2=tail, s3=isNil)
   NSuper{superNum=sn} -> sn <= 3
   _               -> False
+
+-- | Is this a user-level conditional (comparison) node?
+isConditional :: DNode -> Bool
+isConditional NLThan{}  = True
+isConditional NLThanI{} = True
+isConditional _         = False
 
 
 
