@@ -1,5 +1,5 @@
 -- ===============================================================
---  MatrixMul.hsk  –  matrix multiplication (Int, pure dataflow)
+--  MatrixMul.hsk  –  matrix multiplication (Float, pure dataflow)
 -- ===============================================================
 
 -- 1. list utilities ------------------------------------------------
@@ -38,10 +38,10 @@ transpose xss = case xss of
 -- 3. dot product ---------------------------------------------------
 
 dot xs ys = case xs of
-  []        -> 0
+  []        -> 0.0
 
   (x:xs1)   -> case ys of
-    []        -> 0
+    []        -> 0.0
 
     (y:ys1)   ->
       (x * y) + dot xs1 ys1
@@ -73,7 +73,7 @@ print_final xs =
 #BEGINSUPER
     out = unsafePerformIO
       (do
-        let rows = map toList xs
+        let rows = map toListF xs
         print "MatrixMul:"
         print rows
         pure [0])
@@ -82,7 +82,7 @@ print_final xs =
 -- 7. main ----------------------------------------------------------
 
 main =
-  let a = [[1, 2], [3, 4]] in
-  let b = [[5, 6], [7, 8]] in
+  let a = [[1.5, 2.25], [3.75, 4.5]] in
+  let b = [[0.5, 1.25], [2.5, 3.5]] in
   let colsT = transpose b in
   print_final (mmult a colsT)
