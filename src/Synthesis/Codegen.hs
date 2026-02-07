@@ -162,7 +162,7 @@ emitNode g im (nid, dn) =
     NDiv{}  -> ["div "  <> dstN nid <> ", " <> fmtOp (gi "0") <> ", " <> fmtOp (gi "1")]
     NFAdd{} -> bin2 "fadd"
     NFSub{} -> bin2 "fsub"
-    NFMul{} -> bin2 "fmult"
+    NFMul{} -> bin2 "fmul"
     NFDiv{} -> bin2 "fdiv"
     NDAdd{} -> bin2 "dadd"
     NBand{} -> bin2 "band"

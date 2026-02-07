@@ -29,6 +29,7 @@ import           Control.Monad          (forM, forM_, zipWithM_, when)
 import           Control.Monad.State    (StateT, get, put, runStateT, gets, modify)
 import           Control.Monad.Trans    (lift)
 import           Data.Maybe             (listToMaybe)
+import           GHC.Float              (castFloatToWord32)
 import qualified Data.Map              as M
 import qualified Data.Set              as S
 
@@ -371,6 +372,21 @@ exprHasList = \case
 declHasList :: Decl -> Bool
 declHasList (FunDecl _ _ body) = exprHasList body
 
+exprHasFloat :: Expr -> Bool
+exprHasFloat = \case
+  Lit (LFloat _) -> True
+  Lambda _ e     -> exprHasFloat e
+  If c t e       -> exprHasFloat c || exprHasFloat t || exprHasFloat e
+  Case scr alts  -> exprHasFloat scr || any (exprHasFloat . snd) alts
+  Let ds b       -> any declHasFloat ds || exprHasFloat b
+  App f x        -> exprHasFloat f || exprHasFloat x
+  BinOp _ l r    -> exprHasFloat l || exprHasFloat r
+  UnOp _ e       -> exprHasFloat e
+  _              -> False
+
+declHasFloat :: Decl -> Bool
+declHasFloat (FunDecl _ _ body) = exprHasFloat body
+
 -- | Connect two 'Port's by emitting an edge.
 connect :: Port -> Port -> Build ()
 connect a b = emit (a --> b)
@@ -496,6 +512,7 @@ getConstI :: Port -> Build (Maybe Int)
 getConstI p = Build $ gets $ \s ->
   case M.lookup (pNode p) (dgNodes (bsGraph s)) of
     Just (NConstI _ k) -> Just k
+    Just (NConstF _ f) -> Just (fromIntegral (castFloatToWord32 f))
     _                  -> Nothing
 
 -- | Build an int constant aligned to a reference port's exec/tag.
@@ -678,6 +695,7 @@ ensureBuilt f ps body = do
      then pure ()
      else do
        when (exprHasList body) (markListFun f)
+       when (exprHasFloat body) (markFloatFun f)
        retStub <- newNode (f ++ "_retstub") (NAddI "" 0)
        setRetVal f (out0 retStub)
        _ <- withActive f $ withNoGuard $ withEnv $ do
@@ -790,7 +808,7 @@ goExpr = \case
       Sub | fctx      -> do ny <- fmulI pr (-1.0)     -- fsub = fadd(x, y*-1)
                             bin2 "fadd" (NFAdd "") pl ny
           | otherwise -> bin2 "sub"  (NSub  "")  pl pr
-      Mul | fctx      -> bin2 "mul"  (NMul  "")  pl pr  -- sem fmult no ASM
+      Mul | fctx      -> bin2 "fmul" (NFMul "")  pl pr
           | otherwise -> bin2 "mul"  (NMul  "")  pl pr
       Div | fctx      -> bin2 "div"  (NDiv  "")  pl pr  -- sem fdiv no ASM
           | otherwise -> bin2 "div"  (NDiv  "")  pl pr
