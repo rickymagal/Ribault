@@ -41,14 +41,23 @@ import Syntax            (Program)
 -- Back-end: Builder → DOT
 ----------------------------------------------------------------------
 import qualified Synthesis.Builder  as DF  -- buildProgram :: Program -> DFG
-import qualified Synthesis.GraphViz as GV  -- toDot        :: DFG     -> Text
+import qualified Synthesis.GraphViz as GV  -- toDot / toCleanDot :: DFG -> Text
 
 ----------------------------------------------------------------------
 -- | Main entry point. See module header for behavior and usage.
 ----------------------------------------------------------------------
 main :: IO ()
 main = do
-  src <- getInput
+  args <- getArgs
+  let (full, files) = case args of
+        ("--full":rest) -> (True,  rest)
+        other           -> (False, other)
+  let render = if full then GV.toDot else GV.toCleanDot
+
+  src <- case files of
+    [file] -> readFile file
+    []     -> getContents
+    _      -> hPutStrLn stderr "Usage: lambdaflow-df [--full] [file]" >> exitFailure
 
   tokens <- case scanAll src of
     Left err -> hPutStrLn stderr ("Lexical error: " ++ err) >> exitFailure
@@ -58,16 +67,5 @@ main = do
       ast = parse tokens
 
   case checkAll ast of
-    []   -> TLIO.putStr . GV.toDot $ DF.buildProgram ast
+    []   -> TLIO.putStr . render $ DF.buildProgram ast
     errs -> mapM_ (hPutStrLn stderr . show) errs >> exitFailure
-
-----------------------------------------------------------------------
--- Input utility: file or STDIN
-----------------------------------------------------------------------
-getInput :: IO String
-getInput = do
-  args <- getArgs
-  case args of
-    [file] -> readFile file
-    []     -> getContents
-    _      -> hPutStrLn stderr "Usage: lambdaflow-df [file]" >> exitFailure
