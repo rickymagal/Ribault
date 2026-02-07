@@ -186,6 +186,70 @@ mergeSortD d lst = case lst of
 main = mergeSort0 __VEC__;
 """
 
+COARSE_SUPER_TMPL = """-- Coarse-grained merge sort: split, merge, and leaf sort are ALL supers.
+-- The DF graph only contains the fork/join recursion skeleton.
+-- REQUIRES: DF_LIST_BUILTIN=0 (supers use StablePtr encoding).
+
+p = __P__;
+
+-- init_super: builds the test vector inside Haskell (avoids O(N) DF cons ops).
+-- Input is a 1-element list [N]; the super generates [N, N-1, ..., 1].
+init_super inp =
+  super single input (inp) output (result)
+#BEGINSUPER
+    result = let n = head inp in [n, n-1 .. 1]
+#ENDSUPER;
+
+-- split_super: list -> [leftHandle, rightHandle]
+split_super lst =
+  super single input (lst) output (result)
+#BEGINSUPER
+    result =
+      let
+        sp []         = ([], [])
+        sp [x]        = ([x], [])
+        sp (x:y:rest) = let (xs, ys) = sp rest in (x:xs, y:ys)
+        (l, r) = sp lst
+      in [fromList l, fromList r]
+#ENDSUPER;
+
+-- merge_super: [leftHandle, rightHandle] -> merged list
+merge_super pair =
+  super single input (pair) output (result)
+#BEGINSUPER
+    result =
+      let
+        l  = toList (head pair)
+        r  = toList (head (tail pair))
+        mg [] ys        = ys
+        mg xs []        = xs
+        mg (x:xt) (y:yt)
+          | x <= y     = x : mg xt (y:yt)
+          | otherwise  = y : mg (x:xt) yt
+      in mg l r
+#ENDSUPER;
+
+-- ms_super: list -> sorted list (leaf sort, sequential)
+ms_super lst =
+  super single input (lst) output (sorted)
+#BEGINSUPER
+__SUPER_BODY__
+#ENDSUPER;
+
+-- Pure fork/join skeleton: no DF list ops, only super calls.
+mergeSortD d lst =
+    if d <= 0
+    then ms_super lst
+    else
+      case split_super lst of
+        (lh : rest) -> case rest of
+          (rh : _) ->
+            merge_super (mergeSortD (d - 1) lh : mergeSortD (d - 1) rh : []);;
+;
+
+main = mergeSortD __DEPTH__ (init_super [__N__]);
+"""
+
 SEQ_TMPL = """-- Merge Sort in the subset of the compiled functional language
 
 -- Merge two sorted lists into a single sorted list
@@ -218,6 +282,13 @@ main = mergeSort __VEC__;
 """
 
 
+def compute_depth(n: int, cutoff: int) -> int:
+    """Compute recursion depth: how many times we halve n before it drops to cutoff."""
+    if n <= cutoff:
+        return 0
+    return 1 + compute_depth(n // 2, cutoff)
+
+
 def make_vec(n: int, kind: str) -> str:
     if kind == "range":
         return "[" + ",".join(str(i) for i in range(n, 0, -1)) + "]"
@@ -233,6 +304,18 @@ def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str) -
     vec = make_vec(n, vec_kind)
     if mode == "seq":
         src = SEQ_TMPL.replace("__VEC__", vec)
+    elif mode == "coarse":
+        depth = compute_depth(n, cutoff)
+        super_par = os.getenv("MS_SUPER_PAR", "0")
+        super_body = SUPER_BODY_PAR if super_par and super_par != "0" else SUPER_BODY_SEQ
+        src = (
+            COARSE_SUPER_TMPL.replace("__P__", str(p))
+            .replace("__DEPTH__", str(depth))
+            .replace("__N__", str(n))
+            .replace("__SUPER_BODY__", super_body)
+        )
+        if src.count("#BEGINSUPER") != 4:
+            raise SystemExit("expected exactly four SUPER blocks (coarse)")
     else:
         leaf_mode = os.getenv("MS_LEAF", "super").lower()
         if leaf_mode == "asm":
@@ -266,7 +349,7 @@ def main() -> None:
     ap.add_argument("--P", type=int, required=True)
     ap.add_argument("--vec", default="range", choices=["range", "rand"])
     ap.add_argument("--cutoff", type=int, default=256)
-    ap.add_argument("--mode", default="super", choices=["super", "seq"])
+    ap.add_argument("--mode", default="super", choices=["super", "seq", "coarse"])
     args = ap.parse_args()
     emit_hsk(args.out, args.N, args.P, args.cutoff, args.vec, args.mode)
 
