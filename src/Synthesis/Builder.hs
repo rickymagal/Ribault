@@ -1109,9 +1109,9 @@ compileCase scr alts = do
       (pPred, binds, guardi) <- withNoGuard $ do
         (pp0, bs) <- patPred pscr p
         pp <- boolify pp0
-        pp' <- alignExecToExecOnly taken pp
+        pp' <- alignExecTo taken pp
         nt  <- notP taken
-        nt' <- alignExecToExecOnly pp' nt
+        nt' <- alignExecTo pp' nt
         g   <- andP pp' nt'
         pure (pp', bs, g)
       val0 <- withEnv $ withGuard guardi $ do
@@ -1130,9 +1130,9 @@ compileCase scr alts = do
       (pPred, binds, guardi, taken') <- withNoGuard $ do
         (pp0, bs) <- patPred pscr p
         pp <- boolify pp0
-        pp' <- alignExecToExecOnly taken pp
+        pp' <- alignExecTo taken pp
         nt  <- notP taken
-        nt' <- alignExecToExecOnly pp' nt
+        nt' <- alignExecTo pp' nt
         g   <- andP pp' nt'
         tk  <- orP taken pp'
         pure (pp', bs, g, tk)
