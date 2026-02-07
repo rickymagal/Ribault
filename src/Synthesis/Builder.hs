@@ -772,12 +772,12 @@ goExpr = \case
     npcTok <- guardToken npc
     ve0 <- withEnv (withGuard npc (goExpr e))
     ve <- alignExecTo npcTok ve0
-    stT <- newNode "steer" (NSteer "")
+    stT <- newNode "if_t" (NSteer "")
     connect pc (InstPort stT "0")
     connect vt   (InstPort stT "1")
     let outT = SteerPort stT "t"
 
-    stF <- newNode "steer" (NSteer "")
+    stF <- newNode "if_f" (NSteer "")
     connect npc (InstPort stF "0")
     connect ve   (InstPort stF "1")
     let outF = SteerPort stF "t"

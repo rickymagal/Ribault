@@ -62,28 +62,57 @@ toCleanDot g =
                          , let srcs = M.findWithDefault [] nid inEdges
                          , not (null srcs)
                          , S.size (S.fromList srcs) == 1 ]
-      -- Nodes feeding exclusively into infrastructure are also infrastructure.
-      -- For now, mark by type + zeroing sub detection.
-      kept     = S.fromList [ nid | (nid, dn) <- nodes
+      -- Detect constFrom pattern: NAddI fed by a zeroing sub = program constant
+      progConsts = S.fromList
+                     [ nid | (nid, NAddI{}) <- nodes
+                           , let srcs = M.findWithDefault [] nid inEdges
+                           , any (`S.member` zeroSubs) srcs ]
+      -- Semantic steers: Builder tags if-else steers with "if_t"/"if_f".
+      -- Keep only "if_t" steers (visible in clean graph).
+      semanticSteers = S.fromList [ nid | (nid, NSteer{nName="if_t"}) <- nodes ]
+      -- Forward adjacency (node IDs only) for checking constFrom targets
+      fwdAll   = M.fromListWith (++) [ (s, [d]) | (s,_,d,_) <- dgEdges g ]
+      nodeMap  = dgNodes g
+      -- Base kept set (without constFrom constants)
+      keptBase = S.fromList [ nid | (nid, dn) <- nodes
                                   , not (isInfra dn)
-                                  , not (S.member nid zeroSubs) ]
-      -- Build forward adjacency for removed nodes
+                                  , not (S.member nid zeroSubs)
+                                  , case dn of
+                                      NSteer{} -> S.member nid semanticSteers
+                                      _        -> True ]
+      -- Only keep constFrom constants that directly feed a keptBase node
+      -- (e.g., const 1 → NSub, const 2 → NLThan). Exclude guardToken constants.
+      semanticConsts = S.fromList
+                         [ nid | nid <- S.toList progConsts
+                               , let succs = M.findWithDefault [] nid fwdAll
+                               , any (`S.member` keptBase) succs ]
+      kept     = S.union keptBase semanticConsts
+      -- Build final bypass edges
       fwdAdj   = M.fromListWith (++)
                    [ (s, [(sp, d, dp)]) | (s, sp, d, dp) <- edges
                                         , not (S.member s kept) ]
-      -- Bypass removed nodes
       cleanEdges = nub $ concatMap (resolveEdge kept fwdAdj) edges
-      -- Remove self-loops and duplicates
-      finalEdges = nub [ (s, sp, d, dp) | (s, sp, d, dp) <- cleanEdges, s /= d ]
+      -- Remove self-loops; deduplicate by (src,dst) keeping T/F labels
+      deduped    = M.toList $ M.fromListWith pickLabel
+                     [ ((s, d), sp) | (s, sp, d, _dp) <- cleanEdges, s /= d ]
+      finalEdges0 = [ (s, sp, d) | ((s, d), sp) <- deduped ]
+      -- For semantic steers, mirror each T edge as an F edge
+      finalEdges  = finalEdges0 ++
+                    [ (s, "f", d) | (s, sp, d) <- finalEdges0
+                                  , S.member s semanticSteers
+                                  , sp == "T" || sp == "t" ]
+      -- Only keep nodes that participate in at least one edge
+      edgeNodes  = S.fromList $ concatMap (\(s,_,d) -> [s,d]) finalEdges
       cleanNodes = sortOn fst [ (nid, dn) | (nid, dn) <- nodes
-                                           , S.member nid kept ]
+                                           , S.member nid kept
+                                           , S.member nid edgeNodes ]
   in TL.fromStrict . T.unlines $
        [ "digraph G {"
        , "  rankdir=TB;"
        , "  node [fontsize=12];"
        ]
-       ++ map ppCleanNode cleanNodes
-       ++ map ppCleanEdge (sortOn (\(s,_,d,_) -> (d,s)) finalEdges)
+       ++ map (ppCleanNode progConsts) cleanNodes
+       ++ map ppCleanEdge (sortOn (\(s,_,d) -> (d,s)) finalEdges)
        ++ [ "}" ]
 
 -- | Infrastructure nodes to filter out.
@@ -101,9 +130,15 @@ isInfra = \case
   NSubI{iImm=k}  -> k >= 0 && k <= 7
   NMulI{iImm=k}  -> k == 8       -- tag radix
   NDivI{iImm=k}  -> k == 8       -- tag radix
-  NEqual{}        -> True         -- case/list dispatch
-  NGThan{}        -> True         -- list length guard
+  NEqual{}         -> True         -- case/list dispatch
+  NGThan{}         -> True         -- list length guard
+  NGThanI{}        -> True
+  NConstI{cInt=k}   -> k == 0 || k == 1  -- comparison constants
+  -- List builtin supers (s0=cons, s1=head, s2=tail, s3=isNil)
+  NSuper{superNum=sn} -> sn <= 3
   _               -> False
+
+
 
 -- | Resolve a single edge: if both endpoints are kept, pass through.
 -- If source is kept but dest is removed, BFS through removed nodes.
@@ -140,12 +175,21 @@ bfsToKept kept fwdAdj start = go S.empty [start]
       | otherwise       = (found, d : more)
 
 -- | Render a node with shape based on its type.
-ppCleanNode :: (NodeId, DNode) -> Text
-ppCleanNode (nid, dn) =
-  T.concat [ "  n", T.pack (show nid)
-           , " [label=\"", opSymbol dn, "\""
-           , ", ", nodeAttrs dn
-           , "];" ]
+-- progConsts NAddI nodes are relabeled as "const K".
+ppCleanNode :: S.Set NodeId -> (NodeId, DNode) -> Text
+ppCleanNode progConsts (nid, dn) =
+  let label = if S.member nid progConsts
+              then case dn of
+                     NAddI{iImm=k} -> T.pack ("const " ++ show k)
+                     _             -> opSymbol dn
+              else opSymbol dn
+      attrs = if S.member nid progConsts
+              then "shape=box, style=rounded"
+              else nodeAttrs dn
+  in T.concat [ "  n", T.pack (show nid)
+              , " [label=\"", label, "\""
+              , ", ", attrs
+              , "];" ]
 
 -- | GraphViz attributes (shape, style) per node type.
 nodeAttrs :: DNode -> Text
@@ -162,9 +206,17 @@ nodeAttrs = \case
   NRet{}        -> "shape=box, style=rounded"
   _             -> "shape=oval"
 
+-- | When deduplicating edges, prefer T/F labels over blank.
+pickLabel :: Text -> Text -> Text
+pickLabel a b
+  | isSteerLabel a = a
+  | isSteerLabel b = b
+  | otherwise      = a
+  where isSteerLabel x = x == "t" || x == "T" || x == "f" || x == "F"
+
 -- | Render a clean edge — label only steer T/F outputs.
-ppCleanEdge :: (NodeId, Text, NodeId, Text) -> Text
-ppCleanEdge (s, sp, d, _dp) =
+ppCleanEdge :: (NodeId, Text, NodeId) -> Text
+ppCleanEdge (s, sp, d) =
   let lbl | sp == "t" || sp == "T" = " [label=\"T\", fontsize=10]"
           | sp == "f" || sp == "F" = " [label=\"F\", fontsize=10]"
           | otherwise              = ""
