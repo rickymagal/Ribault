@@ -921,17 +921,14 @@ goApp fun args = case fun of
     recCall <- isActiveFun f
     listCall <- isListFun f
     callIx <- nextRecIx f
-    let k = if recCall then (callIx `mod` (tagRadix - 1)) + 1 else callIx
+    let k = (callIx `mod` (tagRadix - 1)) + 1
     argv' <- pure argv
     tagTokParent <- case argv of
       (a0:_) -> pure a0
       []     -> constI 0
-    tagTokChild <-
-      if recCall
-        then mkChildTag k tagTokParent
-        else retagToConstTagExecOnly k tagTokParent
+    tagTokChild <- mkChildTag k tagTokParent
     argvTagged <-
-      mapM (retagToExecOnly tagTokChild) argv'
+      mapM (mkChildTag k) argv'
     callOuts <- forM (zip [0..] argvTagged) $ \(i,a) -> do
       let slot = i + 1
       cs <- newNode (f ++ "#" ++ show slot) (NCallSnd (f ++ "#" ++ show slot) tid cg)
@@ -955,11 +952,11 @@ goApp fun args = case fun of
       Just res -> do
         r <- retagTo rsTag res
         connectPlus r (InstPort retN "0")
-        if recCall then mkParentTag r else retagToExecOnly tagTokParent r
+        mkParentTag r
       Nothing -> do
         z <- constFrom rsTag 0
         connectPlus z (InstPort retN "0")
-        if recCall then mkParentTag z else retagToExecOnly tagTokParent z
+        mkParentTag z
     pure resOut
 
   Lambda ps body -> do
