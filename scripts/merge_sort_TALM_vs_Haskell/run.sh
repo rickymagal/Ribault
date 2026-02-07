@@ -107,11 +107,19 @@ echo "[talm] using codegen: $CODEGEN"
 if [[ "${MS_LEAF:-}" == "asm" ]]; then
   USE_SUPERS=0
 fi
+if [[ "${MS_LEAF:-}" == "coarse" ]]; then
+  DF_LIST_BUILTIN=0
+  export DF_LIST_BUILTIN
+fi
 
 # Fixed supers directory
 if [[ "$USE_SUPERS" -eq 1 ]]; then
   if [[ -z "${SUPERS_FIXED}" ]]; then
-    CAND="${CODEGEN_ROOT}/test/supers/21_merge_sort_super"
+    if [[ "${MS_LEAF:-}" == "coarse" ]]; then
+      CAND="${CODEGEN_ROOT}/test/supers/ms_coarse_super"
+    else
+      CAND="${CODEGEN_ROOT}/test/supers/21_merge_sort_super"
+    fi
     [[ -f "$CAND/libsupers.so" ]] && SUPERS_FIXED="$CAND" || SUPERS_FIXED=""
   fi
   [[ -n "$SUPERS_FIXED" ]] || { echo "[ERR ] SUPERS_FIXED not set and default not found"; exit 1; }
@@ -129,6 +137,9 @@ echo "[hsk ] using generator: $GEN_PY"
 
 if [[ -z "${MS_LEAF:-}" && "${DF_LIST_BUILTIN}" != "0" ]]; then
   export MS_LEAF="asm"
+elif [[ "${MS_LEAF:-}" == "coarse" ]]; then
+  DF_LIST_BUILTIN=0
+  export DF_LIST_BUILTIN
 fi
 
 rm -rf "$OUTROOT"
@@ -154,6 +165,8 @@ gen_hsk() {
   local mode="super"
   if [[ "$SEQ_P1" -eq 1 && "$P" -eq 1 ]]; then
     mode="seq"
+  elif [[ "${MS_LEAF:-}" == "coarse" ]]; then
+    mode="coarse"
   fi
   local cutoff="$CUTOFF"
   local scaled=0
@@ -403,7 +416,8 @@ print_pla_load() {
 stage_supers_fixed() {
   local src="$1" case_dir="$2"
   local dst="$case_dir/supers/pkg"
-  local cache="${OUTROOT}/_supers_pkg_cache"
+  local cache
+  cache="$(make_abs "${OUTROOT}/_supers_pkg_cache")"
   local use_cache="${SUPERS_PKG_CACHE:-1}"
 
   if [[ "${SUPERS_REBUILD:-0}" == "1" ]]; then
