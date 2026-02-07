@@ -97,10 +97,13 @@ toCleanDot g =
                      [ ((s, d), sp) | (s, sp, d, _dp) <- cleanEdges, s /= d ]
       finalEdges0 = [ (s, sp, d) | ((s, d), sp) <- deduped ]
       -- For semantic steers, mirror each T edge as an F edge
-      finalEdges  = finalEdges0 ++
+      withFEdges  = finalEdges0 ++
                     [ (s, "f", d) | (s, sp, d) <- finalEdges0
                                   , S.member s semanticSteers
                                   , sp == "T" || sp == "t" ]
+      -- Transitive reduction: remove a→c if a path a→…→c of length ≥2 exists.
+      -- Preserves T/F labeled edges (steer outputs) unconditionally.
+      finalEdges = transitiveReduce withFEdges
       -- Only keep nodes that participate in at least one edge
       edgeNodes  = S.fromList $ concatMap (\(s,_,d) -> [s,d]) finalEdges
       cleanNodes = sortOn fst [ (nid, dn) | (nid, dn) <- nodes
@@ -173,6 +176,22 @@ bfsToKept kept fwdAdj start = go S.empty [start]
     classify (_sp, d, dp) (found, more)
       | S.member d kept = ((d, dp) : found, more)
       | otherwise       = (found, d : more)
+
+-- | Remove redundant edges: drop a→c if ∃ b such that a→b and b→c both exist.
+-- Preserves T/F labeled edges (steer outputs) unconditionally.
+transitiveReduce :: [(NodeId, Text, NodeId)] -> [(NodeId, Text, NodeId)]
+transitiveReduce edges =
+  let adj = M.fromListWith S.union
+              [ (s, S.singleton d) | (s, _, d) <- edges ]
+      isSteerLbl x = x == "t" || x == "T" || x == "f" || x == "F"
+      -- Edge a→c is redundant if ∃ b with a→b and b→c
+      isRedundant (s, sp, d)
+        | isSteerLbl sp = False
+        | otherwise     =
+            let siblings = S.delete d (M.findWithDefault S.empty s adj)
+            in  any (\b -> S.member d (M.findWithDefault S.empty b adj))
+                    (S.toList siblings)
+  in filter (not . isRedundant) edges
 
 -- | Render a node with shape based on its type.
 -- progConsts NAddI nodes are relabeled as "const K".
