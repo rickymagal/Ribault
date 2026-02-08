@@ -70,10 +70,23 @@ toCleanDot g =
       -- Forward adjacency (node IDs only) for checking constFrom targets
       fwdAll   = M.fromListWith (++) [ (s, [d]) | (s,_,d,_) <- dgEdges g ]
       nodeMap  = dgNodes g
-      -- Base kept set (without constFrom constants)
+      -- Detect infra-adds: NAdd where ALL inputs come from infra,
+      -- conditional, or zeroing-sub nodes.  Covers MUX joins
+      -- (add steered_true + steered_false) and constFrom variants
+      -- (zeroing-sub + valtag).  Remove so they don't show as unary ops.
+      infraOrCond = S.fromList [ nid | (nid, dn) <- nodes
+                                     , isInfra dn || isConditional dn ]
+      allInfra    = S.union infraOrCond zeroSubs
+      joinAdds = S.fromList
+                   [ nid | (nid, NAdd{}) <- nodes
+                         , let srcs = M.findWithDefault [] nid inEdges
+                         , not (null srcs)
+                         , all (`S.member` allInfra) srcs ]
+      -- Base kept set (without constFrom constants or join-adds)
       keptBase = S.fromList [ nid | (nid, dn) <- nodes
                                   , not (isInfra dn)
-                                  , not (S.member nid zeroSubs) ]
+                                  , not (S.member nid zeroSubs)
+                                  , not (S.member nid joinAdds) ]
       -- Only keep constFrom constants that directly feed a keptBase node
       -- (e.g., const 1 → NSub, const 2 → NLThan). Exclude guardToken constants.
       semanticConsts = S.fromList
@@ -102,7 +115,11 @@ toCleanDot g =
       isRetNode _      = False
       -- Transitive reduction: remove a→c if ∃ b with a→b and b→c.
       -- Preserves T/F labeled edges unconditionally.
-      finalEdges = transitiveReduce labeled
+      reduced = transitiveReduce labeled
+      -- Chain return nodes: if non-ret X feeds both ret_inner and ret_outer,
+      -- remove X→ret_outer and add ret_inner→ret_outer.
+      chained    = chainReturns nodeMap reduced
+      finalEdges = transitiveReduce chained
       -- Only keep nodes that participate in at least one edge
       edgeNodes  = S.fromList $ concatMap (\(s,_,d) -> [s,d]) finalEdges
       cleanNodes = sortOn fst [ (nid, dn) | (nid, dn) <- nodes
@@ -198,6 +215,53 @@ transitiveReduce edges =
             in  any (\b -> S.member d (M.findWithDefault S.empty b adj))
                     (S.toList siblings)
   in filter (not . isRedundant) edges
+
+-- | Chain return nodes: use retsnd edges to determine call hierarchy.
+-- If retsnd_f feeds into ret_g (where f ≠ g), then f is called from g,
+-- so add edge: ret_f → ret_g.  Then remove edges from non-ret sources
+-- that skip intermediate rets in the chain.
+chainReturns :: M.Map NodeId DNode -> [(NodeId, Text, NodeId)] -> [(NodeId, Text, NodeId)]
+chainReturns nodeMap edges =
+  let isRet nid = case M.lookup nid nodeMap of
+                    Just NRet{} -> True
+                    _           -> False
+      retName nid = case M.lookup nid nodeMap of
+                      Just NRet{nName=n} -> n
+                      _                  -> ""
+      -- Map function name → ret node ID
+      retByName = M.fromList [ (nName dn, nid) | (nid, dn@NRet{}) <- M.toList nodeMap ]
+      -- Detect call hierarchy from retsnd→ret edges.
+      -- retsnd f#k → ret g  (where f ≠ g)  means g calls f.
+      -- So we should add: ret f → ret g.
+      retSndCallee nid = case M.lookup nid nodeMap of
+                           Just NRetSnd{nName=n} -> takeWhile (/= '#') n
+                           _                     -> ""
+      -- Collect (ret_f, ret_g) pairs from retsnd→ret edges
+      callChains = S.fromList
+                     [ (retF, d)
+                     | (s, _, d) <- edges
+                     , isRet d
+                     , let callee = retSndCallee s
+                     , not (null callee)
+                     , callee /= retName d
+                     , Just retF <- [M.lookup callee retByName] ]
+      -- Chain edges from the call hierarchy
+      chainEdges = [ (f, "", g) | (f, g) <- S.toList callChains ]
+      -- Build reverse map: for each ret, which rets chain INTO it?
+      retPredecessors = M.fromListWith S.union
+                          [ (g, S.singleton f) | (f, g) <- S.toList callChains ]
+      -- Remove edges from non-ret sources to ret nodes that have
+      -- a predecessor ret in the chain (the source should feed the inner ret,
+      -- and the chain connects inner→outer).
+      edgesToRemove = S.fromList
+                        [ (s, d)
+                        | (s, _, d) <- edges
+                        , isRet d, not (isRet s)
+                        , let preds = M.findWithDefault S.empty d retPredecessors
+                        , not (S.null preds) ]
+      filtered = [ (s, sp, d) | (s, sp, d) <- edges
+                               , not (S.member (s, d) edgesToRemove) ]
+  in nub (filtered ++ chainEdges)
 
 -- | Render a node with shape based on its type.
 -- progConsts NAddI nodes are relabeled as "const K".
