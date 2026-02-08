@@ -1,12 +1,12 @@
-# TALM Language Guide
+# Ribault Language Guide
 
 This guide explains how to write programs, what supers are, and how to
-build/run a program with TALM. It reflects the current parser/lexer in
+build/run a program with Ribault. It reflects the current parser/lexer in
 `src/Analysis/Parser.y` and `src/Analysis/Lexer.x`.
 
 ## 1) Program structure (layout-based)
 
-TALM now follows Haskell-style **layout (indentation) rules**. **Do not** use
+Ribault follows Haskell-style **layout (indentation) rules**. **Do not** use
 semicolon terminators. Blocks are formed by indentation, and a new declaration
 starts when indentation returns to the previous level.
 
@@ -26,7 +26,8 @@ main = sum [1,2,3]
 - Let: `let x = ...; y = ... in expr` **(use layout; no semicolons)**
 - Case: `case expr of pat -> expr; ...` **(use layout; no semicolons)**
 - Lists: `[1,2,3]`, `x:xs`
-- Tuples: `(a,b)`, `(a,b,c)`
+- Tuples: **pairs only** `(a,b)`. Larger tuples are parsed but not represented
+  correctly (compiler keeps only the first element).
 - Function application: `f x y`
 - Lambda: `\x -> expr` or `\(x,y) -> expr`
 
@@ -95,8 +96,18 @@ print_f xs =
         print (toListF xs)
         pure [0])
 #ENDSUPER
+```
 
-## 4) Layout rules (quick reference)
+## 4) Tuples vs lists (important)
+
+Practical difference in this compiler:
+- **Lists** are fully supported (`[]`, `(:)`, list patterns, recursion).
+- **Tuples** are only reliable as **pairs** `(a,b)`.
+  - Larger tuples `(a,b,c,...)` are parsed but **not** represented correctly;
+    the compiler keeps only the first element.
+  - Tuple patterns only work for pairs.
+
+## 5) Layout rules (quick reference)
 
 Use indentation to delimit blocks (like Haskell):
 
@@ -119,9 +130,8 @@ Rules of thumb:
 - All alternatives under a `case` must align at the same indentation.
 - All bindings in a `let` must align at the same indentation.
 - A block ends when indentation returns to the previous level.
-```
 
-## 5) Building artifacts
+## 6) Building artifacts
 
 There are four main artifacts:
 - `.fl`   (flow assembly)
@@ -149,7 +159,7 @@ program.pla
 libsupers.so
 ```
 
-## 6) Running a program in TALM
+## 7) Running a program in TALM
 
 ```
 /path/to/TALM/interp/interp <P> program.flb program.pla libsupers.so
@@ -160,7 +170,7 @@ Example:
 TALM/interp/interp 1 program.flb program.pla libsupers.so
 ```
 
-## 7) Generating from a new program (not in test/)
+## 8) Generating from a new program (not in test/)
 
 1) Write your `program.hsk`
 2) Run the toolchain above (codegen + assembler + supersgen + build_supers)
@@ -168,7 +178,7 @@ TALM/interp/interp 1 program.flb program.pla libsupers.so
 
 You do not need to place the program under `test/` for this flow.
 
-## 8) Notes and pitfalls
+## 9) Notes and pitfalls
 
 - The lexer treats everything between `#BEGINSUPER` and `#ENDSUPER` as raw
   Haskell code.

@@ -1,4 +1,4 @@
-# TALM Language Syntax (EBNF)
+# Ribault Language Syntax (EBNF)
 
 This document is a formal description of the surface syntax accepted by the
 parser in `src/Analysis/Parser.y` and lexer in `src/Analysis/Lexer.x`.
@@ -130,6 +130,9 @@ pattern_list = pattern , { "," , pattern } ;
 tuple_pattern = "(" , pattern , pattern_tuple_tail , ")" ;
 pattern_tuple_tail = "," , pattern , { "," , pattern } ;
 ```
+
+Note: only **pair tuples** `(a,b)` are represented correctly at runtime.
+Larger tuples are parsed but not supported by the compiler backend.
 
 ## Precedence and associativity (informal)
 
