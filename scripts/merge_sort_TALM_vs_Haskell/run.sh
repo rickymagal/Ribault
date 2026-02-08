@@ -570,7 +570,16 @@ run_interp_time_rc() {
   fi
 
   t1=$(date +%s%N)
-  LC_ALL=C awk -v A="$t0" -v B="$t1" -v R="$rc" 'BEGIN{ printf "%.6f %d", (B-A)/1e9, R }'
+  # Prefer internal EXEC_TIME_S from interpreter (no startup overhead)
+  local exec_t=""
+  if [[ -f "$errlog" ]]; then
+    exec_t=$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$errlog" 2>/dev/null || true)
+  fi
+  if [[ -n "$exec_t" ]]; then
+    LC_ALL=C awk -v T="$exec_t" -v R="$rc" 'BEGIN{ printf "%.6f %d", T, R }'
+  else
+    LC_ALL=C awk -v A="$t0" -v B="$t1" -v R="$rc" 'BEGIN{ printf "%.6f %d", (B-A)/1e9, R }'
+  fi
 }
 
 # ----------------- main -----------------

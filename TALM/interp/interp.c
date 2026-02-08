@@ -1119,9 +1119,11 @@ int main(int argc, char **argv) {
 		
 	n_av_procs = (n_procs<NUMBER_OF_CORES) ? n_procs : NUMBER_OF_CORES;
 	fprintf(stderr, "Procs %d\n", n_av_procs);
+	struct timespec _ts_start, _ts_end;
+	clock_gettime(CLOCK_MONOTONIC, &_ts_start);
 	for (i = 0; i < n_threads; i++) {
 		//printf("Criando thread: %d\n", i);fflush(stdout);
-		pthread_create(threads+i, NULL, pe_main, (void *)(t_args+i)); 
+		pthread_create(threads+i, NULL, pe_main, (void *)(t_args+i));
 	}
 	if (use_supers_worker_main) {
 		supers_server_loop();
@@ -1130,6 +1132,12 @@ int main(int argc, char **argv) {
 		pthread_join(threads[i], NULL);
 		free(t_args[i].ready_queue.elem);
 		pthread_mutex_destroy(&t_args[i].ready_mutex);
+	}
+	clock_gettime(CLOCK_MONOTONIC, &_ts_end);
+	{
+		double _elapsed = (_ts_end.tv_sec - _ts_start.tv_sec)
+		                + (_ts_end.tv_nsec - _ts_start.tv_nsec) / 1e9;
+		fprintf(stderr, "EXEC_TIME_S %.9f\n", _elapsed);
 	}
 	if (sched_prof) {
 		uint64_t total_execs = 0;
