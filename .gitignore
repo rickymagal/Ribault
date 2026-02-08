@@ -8,11 +8,34 @@ __pycache__/
 *.hi
 *.obj
 *.flb
+# pla files (except asm examples)
 *.pla
+!TALM/asm/examples/*.pla
+*.log
 ghc-deps/
 build/
+
+# make clean targets
 codegen
 supersgen
 synthesis
 analysis
+src/Analysis/Lexer.hs
+src/Analysis/Parser.hs
+Supers.hs
+supers_rts_init.o
+perf.data
+test/df-output/
+test/ast-output/
+test/talm/
 TALM/interp/interp
+
+# generated build artifacts
+test/supers/*/supers_wrappers.c
+test/supers/*/supers_aliases.c
+test/supers/*/libsupers.so
+
+# virtual environments
+.venv/
+.ribault-venv/
+.ghcup-cache/
