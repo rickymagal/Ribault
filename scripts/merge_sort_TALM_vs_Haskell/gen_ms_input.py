@@ -282,10 +282,9 @@ main = mergeSort __VEC__;
 """
 
 
-ARRAY_SUPER_TMPL = """-- Array-based parallel merge sort (C supers, no Haskell).
--- DF graph = recursive binary splitting skeleton.
--- Supers operate on raw C arrays via pointers (zero encoding overhead).
--- Work stealing distributes independent recursive calls across PEs.
+ARRAY_SUPER_TMPL = """-- Array-based parallel merge sort v2b (C supers).
+-- sort_leaf takes [ptr, size] list; outputs arr_alloc'd ptr.
+-- merge_pair takes [lptr, rptr]; both arr_alloc'd, so ptr[-1] = size.
 
 p = __P__;
 
@@ -295,16 +294,16 @@ init_super inp =
     result = inp
 #ENDSUPER;
 
-sort_leaf pair =
+sort_leaf info =
+  super single input (info) output (result)
+#BEGINSUPER
+    result = info
+#ENDSUPER;
+
+merge_pair pair =
   super single input (pair) output (result)
 #BEGINSUPER
     result = pair
-#ENDSUPER;
-
-merge_pair quad =
-  super single input (quad) output (result)
-#BEGINSUPER
-    result = quad
 #ENDSUPER;
 
 msort ptr size nparts =
@@ -316,12 +315,20 @@ msort ptr size nparts =
         rptr  = ptr + lsize * 8
         lnp   = nparts / 2
         rnp   = nparts - lnp
-    in merge_pair (msort ptr lsize lnp : lsize : msort rptr rsize rnp : rsize : [])
+    in merge_pair (msort ptr lsize lnp : msort rptr rsize rnp : [])
 ;;
 ;
 
-main = msort (init_super [__N__]) __N__ __P__;
+main = msort (init_super [__N__]) __N__ __NPARTS__;
 """
+
+
+def compute_nparts(n: int, p: int, min_grain: int = 50000) -> int:
+    """Adaptive nparts: only split when each leaf has enough work."""
+    nparts = p
+    while nparts > 1 and n // nparts < min_grain:
+        nparts //= 2
+    return max(1, nparts)
 
 
 def compute_depth(n: int, cutoff: int) -> int:
@@ -347,9 +354,11 @@ def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str) -
     if mode == "seq":
         src = SEQ_TMPL.replace("__VEC__", vec)
     elif mode == "array":
+        nparts = compute_nparts(n, p)
         src = (
             ARRAY_SUPER_TMPL.replace("__P__", str(p))
             .replace("__N__", str(n))
+            .replace("__NPARTS__", str(nparts))
         )
     elif mode == "coarse":
         depth = compute_depth(n, cutoff)
