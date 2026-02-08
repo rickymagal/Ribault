@@ -31,12 +31,15 @@ whitespace  = " " | "\t" | "\r" | "\n" ;
 ```
 program     = decl_list ;
 
-decl_list   = decl , decl_rest ;
-decl_rest   = [ ";" ] | ";" , decl , decl_rest ;
+decl_list   = decl , { decl } ;
 
 decl        = ident , params , "=" , expr ;
 params      = { ident } ;
 ```
+
+Note: the real parser uses **layout (indentation)** instead of semicolons.
+The EBNF above omits layout rules; a new declaration starts when indentation
+returns to the previous level.
 
 ## Expressions
 
@@ -56,7 +59,7 @@ if_expr     = "if" , expr , "then" , expr , "else" , expr ;
 
 case_expr   = "case" , expr , "of" , alts ;
 alts        = alt_list ;
-alt_list    = alt , ";" , [ alt_list ] ;
+alt_list    = alt , { alt } ;
 alt         = pattern , "->" , expr ;
 
 let_expr    = "let" , decl_list , "in" , expr ;

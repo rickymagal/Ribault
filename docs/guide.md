@@ -4,27 +4,27 @@ This guide explains how to write programs, what supers are, and how to
 build/run a program with TALM. It reflects the current parser/lexer in
 `src/Analysis/Parser.y` and `src/Analysis/Lexer.x`.
 
-## 1) Program structure
+## 1) Program structure (layout-based)
 
-A program is a list of function declarations separated by semicolons.
-The last declaration can omit a trailing semicolon.
+TALM now follows Haskell-style **layout (indentation) rules**. **Do not** use
+semicolon terminators. Blocks are formed by indentation, and a new declaration
+starts when indentation returns to the previous level.
 
 Example:
 ```
 sum xs = case xs of
-  []     -> 0;
-  (h:ts) -> h + sum ts;
-;
+  []     -> 0
+  (h:ts) -> h + sum ts
 
-main = sum [1,2,3];
+main = sum [1,2,3]
 ```
 
 ## 2) Expressions you can use
 
 - Literals: `123`, `3.14`, `'a'`, `"str"`, `True`, `False`
 - If: `if cond then e1 else e2`
-- Let: `let x = ...; y = ... in expr`
-- Case: `case expr of pat -> expr; ...`
+- Let: `let x = ...; y = ... in expr` **(use layout; no semicolons)**
+- Case: `case expr of pat -> expr; ...` **(use layout; no semicolons)**
 - Lists: `[1,2,3]`, `x:xs`
 - Tuples: `(a,b)`, `(a,b,c)`
 - Function application: `f x y`
@@ -53,7 +53,7 @@ name x =
   super single input (x) output (out)
 #BEGINSUPER
     out = ...
-#ENDSUPER;
+#ENDSUPER
 ```
 
 Kinds:
@@ -82,7 +82,7 @@ print_final xs =
       (do
         print (toList xs)
         pure [0])
-#ENDSUPER;
+#ENDSUPER
 ```
 
 Example (float list):
@@ -94,10 +94,34 @@ print_f xs =
       (do
         print (toListF xs)
         pure [0])
-#ENDSUPER;
+#ENDSUPER
+
+## 4) Layout rules (quick reference)
+
+Use indentation to delimit blocks (like Haskell):
+
+```
+f x =
+  let
+    a = x + 1
+    b = x + 2
+  in a + b
 ```
 
-## 4) Building artifacts
+```
+g xs = case xs of
+  []     -> 0
+  (h:ts) -> h + g ts
+```
+
+Rules of thumb:
+- Indent the **body** of `let`, `case`, `if`, and function definitions.
+- All alternatives under a `case` must align at the same indentation.
+- All bindings in a `let` must align at the same indentation.
+- A block ends when indentation returns to the previous level.
+```
+
+## 5) Building artifacts
 
 There are four main artifacts:
 - `.fl`   (flow assembly)
@@ -125,7 +149,7 @@ program.pla
 libsupers.so
 ```
 
-## 5) Running a program in TALM
+## 6) Running a program in TALM
 
 ```
 /path/to/TALM/interp/interp <P> program.flb program.pla libsupers.so
@@ -136,7 +160,7 @@ Example:
 TALM/interp/interp 1 program.flb program.pla libsupers.so
 ```
 
-## 6) Generating from a new program (not in test/)
+## 7) Generating from a new program (not in test/)
 
 1) Write your `program.hsk`
 2) Run the toolchain above (codegen + assembler + supersgen + build_supers)
@@ -144,11 +168,12 @@ TALM/interp/interp 1 program.flb program.pla libsupers.so
 
 You do not need to place the program under `test/` for this flow.
 
-## 7) Notes and pitfalls
+## 8) Notes and pitfalls
 
 - The lexer treats everything between `#BEGINSUPER` and `#ENDSUPER` as raw
   Haskell code.
+- Layout is mandatory; semicolons are no longer used to terminate declarations
+  or alternatives.
 - If you want float correctness in lists, use `toFloat/fromFloat` or
   `toListF/fromListF`.
 - If you do not call supers, you can omit `libsupers.so` in `interp`.
-
