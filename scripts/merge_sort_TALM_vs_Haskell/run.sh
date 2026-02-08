@@ -107,15 +107,12 @@ echo "[talm] using codegen: $CODEGEN"
 if [[ "${MS_LEAF:-}" == "asm" ]]; then
   USE_SUPERS=0
 fi
-if [[ "${MS_LEAF:-}" == "coarse" ]]; then
-  DF_LIST_BUILTIN=0
-  export DF_LIST_BUILTIN
-fi
-
 # Fixed supers directory
 if [[ "$USE_SUPERS" -eq 1 ]]; then
   if [[ -z "${SUPERS_FIXED}" ]]; then
-    if [[ "${MS_LEAF:-}" == "coarse" ]]; then
+    if [[ "${MS_LEAF:-}" == "array" ]]; then
+      CAND="${CODEGEN_ROOT}/test/supers/ms_array_super"
+    elif [[ "${MS_LEAF:-}" == "coarse" ]]; then
       CAND="${CODEGEN_ROOT}/test/supers/ms_coarse_super"
     else
       CAND="${CODEGEN_ROOT}/test/supers/21_merge_sort_super"
@@ -137,9 +134,6 @@ echo "[hsk ] using generator: $GEN_PY"
 
 if [[ -z "${MS_LEAF:-}" && "${DF_LIST_BUILTIN}" != "0" ]]; then
   export MS_LEAF="asm"
-elif [[ "${MS_LEAF:-}" == "coarse" ]]; then
-  DF_LIST_BUILTIN=0
-  export DF_LIST_BUILTIN
 fi
 
 rm -rf "$OUTROOT"
@@ -165,6 +159,8 @@ gen_hsk() {
   local mode="super"
   if [[ "$SEQ_P1" -eq 1 && "$P" -eq 1 ]]; then
     mode="seq"
+  elif [[ "${MS_LEAF:-}" == "array" ]]; then
+    mode="array"
   elif [[ "${MS_LEAF:-}" == "coarse" ]]; then
     mode="coarse"
   fi

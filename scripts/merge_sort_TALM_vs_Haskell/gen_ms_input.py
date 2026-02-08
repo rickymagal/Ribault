@@ -188,7 +188,7 @@ main = mergeSort0 __VEC__;
 
 COARSE_SUPER_TMPL = """-- Coarse-grained merge sort: split, merge, and leaf sort are ALL supers.
 -- The DF graph only contains the fork/join recursion skeleton.
--- REQUIRES: DF_LIST_BUILTIN=0 (supers use StablePtr encoding).
+-- REQUIRES: DF_LIST_BUILTIN=1 (supers use C-list encoding via cfromList/ctoList).
 
 p = __P__;
 
@@ -210,7 +210,7 @@ split_super lst =
         sp [x]        = ([x], [])
         sp (x:y:rest) = let (xs, ys) = sp rest in (x:xs, y:ys)
         (l, r) = sp lst
-      in [fromList l, fromList r]
+      in [cfromList l, cfromList r]
 #ENDSUPER;
 
 -- merge_super: [leftHandle, rightHandle] -> merged list
@@ -219,8 +219,8 @@ merge_super pair =
 #BEGINSUPER
     result =
       let
-        l  = toList (head pair)
-        r  = toList (head (tail pair))
+        l  = ctoList (head pair)
+        r  = ctoList (head (tail pair))
         mg [] ys        = ys
         mg xs []        = xs
         mg (x:xt) (y:yt)
@@ -282,6 +282,48 @@ main = mergeSort __VEC__;
 """
 
 
+ARRAY_SUPER_TMPL = """-- Array-based parallel merge sort (C supers, no Haskell).
+-- DF graph = recursive binary splitting skeleton.
+-- Supers operate on raw C arrays via pointers (zero encoding overhead).
+-- Work stealing distributes independent recursive calls across PEs.
+
+p = __P__;
+
+init_super inp =
+  super single input (inp) output (result)
+#BEGINSUPER
+    result = inp
+#ENDSUPER;
+
+sort_leaf pair =
+  super single input (pair) output (result)
+#BEGINSUPER
+    result = pair
+#ENDSUPER;
+
+merge_pair quad =
+  super single input (quad) output (result)
+#BEGINSUPER
+    result = quad
+#ENDSUPER;
+
+msort ptr size nparts =
+  if nparts <= 1
+  then sort_leaf (ptr : size : [])
+  else
+    let lsize = size / 2
+        rsize = size - lsize
+        rptr  = ptr + lsize * 8
+        lnp   = nparts / 2
+        rnp   = nparts - lnp
+    in merge_pair (msort ptr lsize lnp : lsize : msort rptr rsize rnp : rsize : [])
+;;
+;
+
+main = msort (init_super [__N__]) __N__ __P__;
+"""
+
+
 def compute_depth(n: int, cutoff: int) -> int:
     """Compute recursion depth: how many times we halve n before it drops to cutoff."""
     if n <= cutoff:
@@ -304,6 +346,11 @@ def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str) -
     vec = make_vec(n, vec_kind)
     if mode == "seq":
         src = SEQ_TMPL.replace("__VEC__", vec)
+    elif mode == "array":
+        src = (
+            ARRAY_SUPER_TMPL.replace("__P__", str(p))
+            .replace("__N__", str(n))
+        )
     elif mode == "coarse":
         depth = compute_depth(n, cutoff)
         super_par = os.getenv("MS_SUPER_PAR", "0")
@@ -349,7 +396,7 @@ def main() -> None:
     ap.add_argument("--P", type=int, required=True)
     ap.add_argument("--vec", default="range", choices=["range", "rand"])
     ap.add_argument("--cutoff", type=int, default=256)
-    ap.add_argument("--mode", default="super", choices=["super", "seq", "coarse"])
+    ap.add_argument("--mode", default="super", choices=["super", "seq", "coarse", "array"])
     args = ap.parse_args()
     emit_hsk(args.out, args.N, args.P, args.cutoff, args.vec, args.mode)
 
