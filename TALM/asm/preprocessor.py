@@ -52,13 +52,13 @@ class PreProc:
                 Otherwise, we have to initialize the counter, i.e. put it in self.functions"""
                 # Optional: flatten callgroup ids to 0 for all callgroups (debug/correctness mode).
                 if os.getenv("CALLGROUP_FLAT") == "1":
-                        self.replaces += [(groupname, "0")]
+                        self.replaces += [(r"\b" + re.escape(groupname) + r"\b", "0")]
                         return
-                if funcname not in self.functioncalls: 
+                if funcname not in self.functioncalls:
                         self.functioncalls[funcname] = -1
 
                 self.functioncalls[funcname] += 1
-                self.replaces += [(groupname, str(self.functioncalls[funcname]))]
+                self.replaces += [(r"\b" + re.escape(groupname) + r"\b", str(self.functioncalls[funcname]))]
 
 
                 #print self.replaces

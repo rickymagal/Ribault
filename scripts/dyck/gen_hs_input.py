@@ -1,97 +1,81 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""Generate an index-based Dyck path .hs for the GHC parallel baseline.
+
+Mirrors the TALM version exactly: checkRec operates on (start, count)
+integer indices; each leaf generates Dyck elements on-the-fly.
+"""
 
 import argparse, os
 
-TMPL = r"""-- Auto-generated Dyck (GHC parallel baseline)
+SHIFT = 16777216  # must match gen_dyck_input.py
+
+TMPL = r"""-- Auto-generated Dyck (GHC parallel baseline, index-based)
+-- N=__N__  P=__P__  IMB=__IMB__  DELTA=__DELTA__
+
 import Control.DeepSeq (NFData(..), force)
 import Control.Parallel.Strategies (parTuple2, rdeepseq, using)
+import Data.Int (Int64)
 
 -- Parameters (compile-time)
-n0     :: Int
+n0, p0, imb0, delta0, totalLen0, threshold0 :: Int64
 n0     = __N__
-p0     :: Int
 p0     = __P__
-imb0   :: Int
 imb0   = __IMB__
-delta0 :: Int
 delta0 = __DELTA__
+totalLen0 = n0 + abs delta0
+threshold0 = totalLen0 `div` p0
 
--- Utilities
-repeatDyck :: Int -> [Int] -> [Int]
-repeatDyck m acc = if m == 0 then acc else repeatDyck (m - 1) (1 : (-1) : acc)
+-- Generate element at index i of the Dyck sequence
+gen :: Int64 -> Int64
+gen i
+  | i < n0    = if mod i 2 == 0 then 1 else -1
+  | otherwise = if delta0 > 0 then 1 else -1
 
-generateDyck :: Int -> Int -> [Int]
-generateDyck len d =
-  let base = repeatDyck (len `div` 2) [] in
-  if d == 0 then base
-  else if d > 0 then base ++ replicate d 1
-  else base ++ replicate (abs d) (-1)
-
-append :: [a] -> [a] -> [a]
-append [] ys     = ys
-append (h:t) ys  = h : append t ys
-
-len :: [a] -> Int
-len []     = 0
-len (_:xs) = 1 + len xs
-
-takeN :: Int -> [a] -> [a]
-takeN k _  | k <= 0 = []
-takeN _ []          = []
-takeN k (y:ys)      = y : takeN (k-1) ys
-
-dropN :: Int -> [a] -> [a]
-dropN k xs | k <= 0 = xs
-dropN _ []          = []
-dropN k (_:ys)      = dropN (k-1) ys
-
-splitAtN :: Int -> [a] -> ([a],[a])
-splitAtN k xs = (takeN k xs, dropN k xs)
-
--- analyseChunk (sum, min-prefix)
-analyseChunk :: [Int] -> (Int, Int)
-analyseChunk = go 0 0
+-- Analyse a range [start .. start+count-1]
+analyseRange :: Int64 -> Int64 -> (Int64, Int64)
+analyseRange start count = go 0 0 start
   where
-    go s mn []     = (s, mn)
-    go s mn (x:xs) = let s1  = s + x
-                         mn1 = if s1 < mn then s1 else mn
-                     in go s1 mn1 xs
+    endIdx = start + count
+    go !s !mn i
+      | i >= endIdx = (s, mn)
+      | otherwise   =
+          let x   = gen i
+              s1  = s + x
+              mn1 = if s1 < mn then s1 else mn
+          in go s1 mn1 (i + 1)
 
-chunkPair :: [Int] -> (Int, Int)
-chunkPair = analyseChunk
+-- Integer split with clamping
+splitK :: Int64 -> Int64
+splitK count
+  | count <= 1 = 1
+  | kRaw < 1   = 1
+  | kRaw >= count = count - 1
+  | otherwise  = kRaw
+  where kRaw = (count * (100 + imb0)) `div` 200
 
--- Work-skewed split with clamping: 1 <= k <= n-1
-splitImb :: [a] -> ([a],[a])
-splitImb xs =
-  let n    = len xs
-      kRaw = (n * (100 + imb0)) `div` 200
-      k    = if n <= 1 then 1 else max 1 (min (n-1) kRaw)
-  in splitAtN k xs
-
-threshold :: Int
-threshold = n0 `div` p0
-
-checkRec :: [Int] -> (Int, Int)
-checkRec lst
-  | len lst <= threshold = chunkPair lst
+-- Recursive parallel validation
+checkRec :: Int64 -> Int64 -> (Int64, Int64)
+checkRec start count
+  | count <= threshold0 = analyseRange start count
   | otherwise =
-      let (lft, rgt) = splitImb lst
-          -- parallel evaluation of both halves
-          (lr, rr) = (checkRec lft, checkRec rgt) `using` parTuple2 rdeepseq rdeepseq
-          (s1,m1) = lr
-          (s2,m2) = rr
+      let k = splitK count
+          (lr, rr) = (checkRec start k, checkRec (start + k) (count - k))
+                     `using` parTuple2 rdeepseq rdeepseq
+          (s1, m1) = lr
+          (s2, m2) = rr
       in ( s1 + s2
          , let v = s1 + m2 in if m1 < v then m1 else v )
 
-validateDyck :: [Int] -> Bool
-validateDyck xs = let (tot, mn) = checkRec xs in (tot == 0) && (mn >= 0)
+validateDyck :: Bool
+validateDyck =
+  let (tot, mn) = checkRec 0 totalLen0
+  in (tot == 0) && (mn >= 0)
 
 main :: IO ()
 main = do
-  let inputSeq = generateDyck n0 delta0
-  let ok = validateDyck inputSeq
-  ok `seq` putStrLn (if ok then "OK" else "BAD")
+  let ok = validateDyck
+  ok `seq` putStrLn (if ok then "1" else "0")
 """
 
 def emit_hs(out, N, P, IMB, DELTA, vec_kind):

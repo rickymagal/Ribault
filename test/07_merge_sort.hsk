@@ -36,8 +36,8 @@ print_final xs =
     out = unsafePerformIO
       (do
         print "MergeSort:"
-        print xs
-        pure [0])
+        print (toList xs)
+        pure (fromList [0]))
 #ENDSUPER
 
 -- Main expression for testing

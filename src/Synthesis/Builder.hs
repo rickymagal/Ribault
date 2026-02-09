@@ -38,7 +38,7 @@ import           Syntax
 import           Types                  (DGraph(..), Edge, NodeId, emptyGraph, addNode, addEdge)
 import           Port                   (Port(..), (-->))
 import           Unique                 (Unique, evalUnique, freshId)
-import           Node                   (DNode(..))
+import           Node                   (DNode(..), out1Port)
 
 -- Grafo final
 
@@ -226,8 +226,10 @@ decTagI :: Int -> Port -> Build Port
 decTagI k p = incTagI (-k) p
 
 -- | Radix used to encode recursive tag paths.
+-- Must be > (max number of distinct call sites to the same function) + 1.
+-- Each nesting level uses log2(tagRadix) bits of the 63-bit tag space.
 tagRadix :: Int
-tagRadix = 8
+tagRadix = 16
 
 -- | Build a unique child tag using parent tag * radix + k.
 mkChildTag :: Int -> Port -> Build Port
@@ -311,6 +313,18 @@ lookupB x = Build $ gets $ \s ->
   let go []     = Nothing
       go (e:rs) = maybe (go rs) Just (M.lookup x e)
   in go (bsEnv s)
+
+-- | Update a binding at the scope where it was originally defined.
+-- Unlike 'insertB' (which inserts into the innermost scope), this finds
+-- the scope that already contains the identifier and updates it there.
+-- This prevents duplicate evaluation of thunks across scope boundaries.
+updateB :: Ident -> Binding -> Build ()
+updateB x b = Build $ modify $ \s -> s { bsEnv = go (bsEnv s) }
+  where
+    go []     = []
+    go (e:rs)
+      | M.member x e = M.insert x b e : rs
+      | otherwise     = e : go rs
 
 -- marcação de função float ---------------------------------------------
 
@@ -750,7 +764,7 @@ goExpr = \case
       Just (BLam ps body) ->
         if null ps
           then do p <- withEnv (goExpr body)
-                  insertB x (BPort p)
+                  updateB x (BPort p)
                   pure p
           else freeVar x
       Nothing -> freeVar x
@@ -814,8 +828,7 @@ goExpr = \case
           | otherwise -> bin2 "div"  (NDiv  "")  pl pr
       Mod -> do
         qN <- bin2Node "div" (NDiv "") pl pr
-        mN <- bin2Node "mul" (NMul "") (out0 qN) pr
-        bin2 "sub" (NSub "") pl (out0 mN)
+        pure (out1Port qN)
       Eq  -> bin2 "equal" (NEqual "") pl pr
       Lt  -> bin2 "lthan" (NLThan "") pl pr
       Gt  -> bin2 "gthan" (NGThan "") pl pr

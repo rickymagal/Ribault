@@ -10,11 +10,8 @@ print_final n =
     out = unsafePerformIO
       (do
         print "Fib:"
-        let v = head n
-        print v
-        pure [0])
+        print n
+        pure 0)
 #ENDSUPER
 
-wrap x = x : []
-
-main = print_final (wrap (fib 10))
+main = print_final (fib 10)

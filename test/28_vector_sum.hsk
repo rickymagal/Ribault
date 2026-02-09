@@ -11,8 +11,8 @@ print_final xs =
 #BEGINSUPER
     out = unsafePerformIO
       (do
-        print xs
-        pure [0])
+        print (toList xs)
+        pure (fromList [0]))
 #ENDSUPER
 
 main = print_final (sumVec [1,2,3,4] [10,20,30,40])

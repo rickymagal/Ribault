@@ -73,10 +73,10 @@ print_final xs =
 #BEGINSUPER
     out = unsafePerformIO
       (do
-        let rows = map toListF xs
+        let rows = map toListF (toList xs)
         print "MatrixMul:"
         print rows
-        pure [0])
+        pure (fromList [0]))
 #ENDSUPER
 
 -- 7. main ----------------------------------------------------------

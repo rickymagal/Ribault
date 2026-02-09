@@ -2,13 +2,13 @@
 set -euo pipefail
 
 # ============= Dyck (SUPER) sweep =====================
-# Varia N (start..max step), P, IMB e DELTA
-# Fluxo: .hsk -> .fl -> .flb/.pla (RR/CHUNK), copia supers, roda interp,
-# grava CSV e plota média/desvio-padrão.
+# Fixed N, varies IMB (work imbalance) and P.
+# Uses EXEC_TIME_S from interpreter output.
+# Checks correctness: delta=0 → expects "1", else "0".
 # ======================================================
 
-START_N=0; STEP=0; N_MAX=0; REPS=1
-PROCS_CSV=""; IMB_CSV=""; DELTA_CSV=""
+N=0; REPS=1
+PROCS_CSV=""; IMB_CSV=""; DELTA_CSV="0"
 INTERP=""; ASM_ROOT=""; CODEGEN_ROOT=""
 OUTROOT=""; VEC_MODE="range"; PLOTS="yes"; TAG="dyck_super"
 PY2="${PY2:-python2}"
@@ -19,8 +19,8 @@ PLACE_MODE="${PLACE_MODE:-rr}"
 SUPERS_FIXED="${SUPERS_FIXED:-}"
 
 usage(){
-  echo "uso: $0 --start-N A --step B --n-max C --reps R --procs \"1,2,...\" --imb \"1,25,...\" --delta \"0,2,-2\" \\"
-  echo "          --interp PATH --asm-root PATH --codegen PATH --outroot PATH [--vec range|rand] [--plots yes|no] [--tag nome]"
+  echo "uso: $0 --N SIZE --reps R --procs \"1,2,...\" --imb \"0,10,20,...\" [--delta \"0,2,-2\"] \\"
+  echo "          --interp PATH --asm-root PATH --codegen PATH --outroot PATH [--plots yes|no] [--tag nome]"
   echo "env: PLACE_MODE=rr|chunk  SUPERS_FIXED=/abs/path/test/supers/24_dyck  LOG_ERR=1"
   exit 2
 }
@@ -28,9 +28,7 @@ usage(){
 # ----------------- parse -----------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --start-N) START_N="$2"; shift 2;;
-    --step)    STEP="$2"; shift 2;;
-    --n-max)   N_MAX="$2"; shift 2;;
+    --N)       N="$2"; shift 2;;
     --reps)    REPS="$2"; shift 2;;
     --procs)   PROCS_CSV="$2"; shift 2;;
     --imb)     IMB_CSV="$2"; shift 2;;
@@ -46,9 +44,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$START_N$STEP$N_MAX$REPS$PROCS_CSV$IMB_CSV$DELTA_CSV$INTERP$ASM_ROOT$CODEGEN_ROOT$OUTROOT" ]] || usage
+[[ "$N" -gt 0 && -n "$REPS$PROCS_CSV$IMB_CSV$INTERP$ASM_ROOT$CODEGEN_ROOT$OUTROOT" ]] || usage
 
-echo "[env ] PY3=${PY3} ; PY2=${PY2}"
+echo "[env ] PY3=${PY3} ; PY2=${PY2} ; N=${N}"
 
 [[ -x "$INTERP" ]] || { echo "[ERRO] interp não executável: $INTERP"; exit 1; }
 [[ -f "$ASM_ROOT/assembler.py" ]] || { echo "[ERRO] ASM_ROOT inválido: $ASM_ROOT"; exit 1; }
@@ -171,19 +169,15 @@ stage_supers_fixed() {
   echo "$dst_abs/libsupers.so"
 }
 
-run_interp_time_rc() {
-  local P="$1" flb_abs="$2" pla_abs="$3" lib="${4:-}" case_dir="$5"
+# Run interpreter, extract EXEC_TIME_S and check correctness
+run_interp() {
+  local P="$1" flb_abs="$2" pla_abs="$3" lib="${4:-}" case_dir="$5" expected="$6"
   local logs="$case_dir/logs"; mkdir -p "$logs"
   local outlog="$logs/run.out" errlog="$logs/run.err"
 
   >&2 echo "[run  ] interp: P=${P}"
-  >&2 echo "[run  ] flb=${flb_abs}"
-  >&2 echo "[run  ] pla=${pla_abs}"
-  [[ -n "$lib" ]] && >&2 echo "[run  ] lib=${lib}"
 
-  local t0 t1 pid rc=0
-  t0=$(date +%s%N)
-
+  local rc=0
   if [[ -n "$lib" ]]; then
     local libdir; libdir="$(dirname "$lib")"
     local ghcdeps="$libdir/ghc-deps"
@@ -191,61 +185,80 @@ run_interp_time_rc() {
   else
     "$INTERP" "$P" "$flb_abs" "$pla_abs" >"$outlog" 2>"$errlog" &
   fi
-  pid=$!
-  echo "$pid" >"$logs/pid"
-  >&2 echo "[run  ] pid=${pid}"
-
+  local pid=$!
   if ! wait "$pid"; then rc=$?; fi
-  t1=$(date +%s%N)
-  awk -v A="$t0" -v B="$t1" -v R="$rc" 'BEGIN{ printf "%.6f %d", (B-A)/1e9, R }'
+
+  # Extract EXEC_TIME_S from output
+  local secs="NaN"
+  if [[ -f "$outlog" ]]; then
+    local et; et="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$outlog" 2>/dev/null || true)"
+    [[ -n "$et" ]] && secs="$et"
+  fi
+
+  # Correctness check
+  if [[ -f "$outlog" && "$rc" -eq 0 ]]; then
+    local result; result="$(grep -oP '^\d+$' "$outlog" | head -1 || true)"
+    if [[ -n "$result" && "$result" != "$expected" ]]; then
+      >&2 echo "[WARN ] WRONG ANSWER: got '$result', expected '$expected'"
+      rc=99
+    elif [[ -z "$result" ]]; then
+      >&2 echo "[WARN ] No result found in output"
+      rc=98
+    fi
+  fi
+
+  printf "%s %d" "$secs" "$rc"
+}
+
+# Expected result: delta=0 → 1 (valid), else 0 (invalid)
+expected_result() {
+  local delta="$1"
+  if [[ "$delta" -eq 0 ]]; then echo "1"; else echo "0"; fi
 }
 
 # ----------------- main -----------------
 for P in "${PROCS[@]}"; do
   for IMB in "${IMBS[@]}"; do
     for DELTA in "${DELTAS[@]}"; do
-      N="$START_N"
-      while [[ "$N" -le "$N_MAX" ]]; do
-        CASE_DIR="$OUTROOT/super/N_${N}/P_${P}/imb_${IMB}/delta_${DELTA}"
-        mkdir -p "$CASE_DIR"
-        HSK="$CASE_DIR/dyck_super_N${N}_P${P}_imb${IMB}_delta${DELTA}.hsk"
-        FL="$CASE_DIR/dyck_super_N${N}_P${P}_imb${IMB}_delta${DELTA}.fl"
-        PREFIX="$CASE_DIR/dyck_super_N${N}_P${P}_imb${IMB}_delta${DELTA}"
+      EXPECTED="$(expected_result "$DELTA")"
+      CASE_DIR="$OUTROOT/super/N_${N}/P_${P}/imb_${IMB}/delta_${DELTA}"
+      mkdir -p "$CASE_DIR"
+      HSK="$CASE_DIR/dyck_N${N}_P${P}_imb${IMB}_delta${DELTA}.hsk"
+      FL="$CASE_DIR/dyck_N${N}_P${P}_imb${IMB}_delta${DELTA}.fl"
+      PREFIX="$CASE_DIR/dyck_N${N}_P${P}_imb${IMB}_delta${DELTA}"
 
-        gen_hsk "$N" "$P" "$IMB" "$DELTA" "$HSK"
-        build_fl "$HSK" "$FL"
+      gen_hsk "$N" "$P" "$IMB" "$DELTA" "$HSK"
+      build_fl "$HSK" "$FL"
 
-        FL_ABS="$(abspath "$FL")"
-        PREFIX_ABS="$(abspath "$PREFIX")"
+      FL_ABS="$(abspath "$FL")"
+      PREFIX_ABS="$(abspath "$PREFIX")"
 
-        assemble_baseline "$FL_ABS" "$PREFIX_ABS"
-        rewrite_pla_manual "$PREFIX_ABS" "$P" "$PLACE_MODE"
-        print_pla_load "${PREFIX_ABS}.pla" "$P"
+      assemble_baseline "$FL_ABS" "$PREFIX_ABS"
+      rewrite_pla_manual "$PREFIX_ABS" "$P" "$PLACE_MODE"
+      print_pla_load "${PREFIX_ABS}.pla" "$P"
 
-        LIBSUP=""
-        if [[ -n "$SUPERS_FIXED" ]]; then
-          LIBSUP="$(stage_supers_fixed "$SUPERS_FIXED" "$CASE_DIR")"
+      LIBSUP=""
+      if [[ -n "$SUPERS_FIXED" ]]; then
+        LIBSUP="$(stage_supers_fixed "$SUPERS_FIXED" "$CASE_DIR")"
+      fi
+
+      for ((rep=1; rep<=REPS; rep++)); do
+        set +e
+        out="$(run_interp "$P" "${PREFIX_ABS}.flb" "${PREFIX_ABS}.pla" "$LIBSUP" "$CASE_DIR" "$EXPECTED")"
+        st=$?
+        set -e
+        secs="NaN"; rc=999
+        if [[ $st -eq 0 ]]; then
+          read -r secs rc <<< "$out" || { secs="NaN"; rc=998; }
         fi
 
-        for ((rep=1; rep<=REPS; rep++)); do
-          set +e
-          out="$(run_interp_time_rc "$P" "${PREFIX_ABS}.flb" "${PREFIX_ABS}.pla" "$LIBSUP" "$CASE_DIR")"
-          st=$?
-          set -e
-          secs="NaN"; rc=999
-          if [[ $st -eq 0 ]]; then
-            read -r secs rc <<< "$out" || { secs="NaN"; rc=998; }
-          fi
+        echo "variant=super, N=${N}, P=${P}, imb=${IMB}, delta=${DELTA}, rep=${rep}, secs=${secs}, rc=${rc}"
+        echo "super,${N},${P},${IMB},${DELTA},${rep},${secs},${rc}" >> "$METRICS_CSV"
 
-          echo "variant=super, N=${N}, P=${P}, imb=${IMB}, delta=${DELTA}, rep=${rep}, secs=${secs}, rc=${rc}"
-          echo "super,${N},${P},${IMB},${DELTA},${rep},${secs},${rc}" >> "$METRICS_CSV"
-
-          if [[ "${LOG_ERR:-0}" -eq 1 && "$rc" -ne 0 ]]; then
-            echo "[err ] $CASE_DIR/logs/run.err"
-            sed -n '1,120p' "$CASE_DIR/logs/run.err" || true
-          fi
-        done
-        N=$((N + STEP))
+        if [[ "${LOG_ERR:-0}" -eq 1 && "$rc" -ne 0 ]]; then
+          echo "[err ] $CASE_DIR/logs/run.err"
+          sed -n '1,120p' "$CASE_DIR/logs/run.err" || true
+        fi
       done
     done
   done

@@ -4,7 +4,7 @@
 init_vec dummy =
   super single input (dummy) output (xs)
 #BEGINSUPER
-    xs = [0 .. 99]
+    xs = fromList [0 .. 99]
 #ENDSUPER
 
 -- super 2: parallel, builds encoded (a,b) pairs where b = a + 1
@@ -13,7 +13,7 @@ fill_pairs xs =
 #BEGINSUPER
     -- xs :: [Int64]
     -- each element becomes encPair a (a+1)
-    pairs = map (\x -> encPair x (x + 1)) xs
+    pairs = fromList (map (\x -> encPair x (x + 1)) (toList xs))
 #ENDSUPER
 
 -- super 3: parallel, computes c[i] = a[i] + b[i]
@@ -21,7 +21,7 @@ fill_pairs xs =
 add_pairs pairs =
   super parallel input (pairs) output (cs)
 #BEGINSUPER
-    cs = map (\p -> fstDec p + sndDec p) pairs
+    cs = fromList (map (\p -> fstDec p + sndDec p) (toList pairs))
 #ENDSUPER
 
 -- super 4: single, just returns the final vector (printing is done outside supers)

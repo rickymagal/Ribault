@@ -37,6 +37,8 @@ ms_super lst =
 #BEGINSUPER
     sorted =
       let
+        hlist = toList lst
+
         forceList []     = ()
         forceList (_:xs) = forceList xs
 
@@ -60,7 +62,7 @@ ms_super lst =
               r' = ms r
           in forceList l' `par` (forceList r' `pseq` mergeLocal l' r')
       in
-        ms lst
+        fromList (ms hlist)
 #ENDSUPER
 
 mergeSort0 lst =

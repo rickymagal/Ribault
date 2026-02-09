@@ -39,9 +39,9 @@ print_final cs =
 #BEGINSUPER
     out = unsafePerformIO
       (do
-        let s = (map (toEnum . fromIntegral) cs) :: String
+        let s = (map (toEnum . fromIntegral) (toList cs)) :: String
         print s
-        pure [0])
+        pure (fromList [0]))
 #ENDSUPER
 
 main = print_final hello_codes

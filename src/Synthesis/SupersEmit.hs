@@ -209,12 +209,11 @@ emitOne (SuperSpec nm _kind inp out bodyRaw) =
        , "-- - executes the stored body (declarations + definition of '" ++ out ++ "')"
        , "-- - encodes '" ++ out ++ "' back to Int64"
        , nm ++ "_impl :: Int64 -> Int64"
-       , nm ++ "_impl x ="
+       , nm ++ "_impl " ++ inp ++ " ="
        , "  let"
-       , "    " ++ inp ++ " = ctoList x"
        ]
        ++ indent 4 bodyCore
-       ++ [ "  in cfromList " ++ out ]
+       ++ [ "  in " ++ out ]
 
 ----------------------------------------------------------------
 -- Formatting helpers
