@@ -227,9 +227,13 @@ decTagI k p = incTagI (-k) p
 
 -- | Radix used to encode recursive tag paths.
 -- Must be > (max number of distinct call sites to the same function) + 1.
--- Each nesting level uses log2(tagRadix) bits of the 63-bit tag space.
+-- Each nesting level multiplies the tag by this radix, so it must fit
+-- in 32-bit signed int for the deepest recursion expected.
+-- Radix 9 supports up to 8 unique call sites and allows depth ~19
+-- before overflowing signed 32-bit (9^19 ~ 1.35e18 < 2^31 is wrong,
+-- but 9^9 ~ 387M fits comfortably; practical limit ~depth 9-10).
 tagRadix :: Int
-tagRadix = 16
+tagRadix = 9
 
 -- | Build a unique child tag using parent tag * radix + k.
 mkChildTag :: Int -> Port -> Build Port
