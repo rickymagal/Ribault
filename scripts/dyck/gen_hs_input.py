@@ -10,7 +10,8 @@ import argparse, os
 
 SHIFT = 16777216  # must match gen_dyck_input.py
 
-TMPL = r"""-- Auto-generated Dyck (GHC parallel baseline, index-based)
+TMPL = r"""{-# LANGUAGE BangPatterns #-}
+-- Auto-generated Dyck (GHC parallel baseline, index-based)
 -- N=__N__  P=__P__  IMB=__IMB__  DELTA=__DELTA__
 
 import Control.DeepSeq (NFData(..), force)

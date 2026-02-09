@@ -188,12 +188,14 @@ run_interp() {
   local pid=$!
   if ! wait "$pid"; then rc=$?; fi
 
-  # Extract EXEC_TIME_S from output
+  # Extract EXEC_TIME_S (interp prints it to stderr)
   local secs="NaN"
-  if [[ -f "$outlog" ]]; then
-    local et; et="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$outlog" 2>/dev/null || true)"
-    [[ -n "$et" ]] && secs="$et"
-  fi
+  for f in "$errlog" "$outlog"; do
+    if [[ -f "$f" ]]; then
+      local et; et="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$f" 2>/dev/null || true)"
+      [[ -n "$et" ]] && { secs="$et"; break; }
+    fi
+  done
 
   # Correctness check
   if [[ -f "$outlog" && "$rc" -eq 0 ]]; then

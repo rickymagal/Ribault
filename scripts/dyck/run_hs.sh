@@ -74,7 +74,7 @@ run_bin() {
   t0=$(date +%s%N)
   result="$("$bin" +RTS -N"$P" -RTS 2>/dev/null)" || rc=$?
   t1=$(date +%s%N)
-  local secs; secs="$(awk -v A="$t0" -v B="$t1" 'BEGIN{ printf "%.6f", (B-A)/1e9 }')"
+  local secs; secs="$(LC_NUMERIC=C awk -v A="$t0" -v B="$t1" 'BEGIN{ printf "%.6f", (B-A)/1e9 }')"
 
   # Correctness check
   if [[ "$rc" -eq 0 ]]; then
