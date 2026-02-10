@@ -1,0 +1,3 @@
+[sup ] worker=0 worker_main=0
+Procs 2
+EXEC_TIME_S 0.001835584

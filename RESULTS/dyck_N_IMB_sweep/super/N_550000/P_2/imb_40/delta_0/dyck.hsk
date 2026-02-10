@@ -1,0 +1,80 @@
+-- dyck_path.hsk  (index-based, unrolled tree, auto-generated)
+-- N=550000  P=2  IMB=40  DELTA=0
+-- 2 leaves, no recursion
+
+-- SUPER: analyse elements [start .. start+count-1] of the Dyck sequence
+-- Input:  sc = start * SHIFT + count  (packed literal)
+-- Output: packed result = (tot + OFFSET) * RANGE + (mn + OFFSET)
+analyseRange sc =
+  super single input (sc) output (res)
+#BEGINSUPER
+    res =
+      let
+        sh     = 550001
+        start  = sc `div` sh
+        cnt    = sc `mod` sh
+        endIdx = start + cnt
+        ntot   = 550000
+        d      = 0
+        off    = 550000
+        rng    = 1100001
+        gen i  = if i < ntot
+                 then (if mod i 2 == 0 then 1 else -1)
+                 else (if d > 0 then 1 else -1)
+        go s mn i
+          | i >= endIdx = (s + off) * rng + (mn + off)
+          | otherwise   =
+              let x   = gen i
+                  s1  = s + x
+                  mn1 = if s1 < mn then s1 else mn
+              in s1 `seq` mn1 `seq` go s1 mn1 (i + 1)
+      in go 0 0 start
+#ENDSUPER
+
+-- SUPER: compute min of two packed values
+-- Input: packed = (a + MINOFF) * MINSH + (b + MINOFF)
+-- Output: min(a, b)
+myMin packed =
+  super single input (packed) output (m)
+#BEGINSUPER
+    m = let minsh = 1650001
+            minoff = 1100000
+            a = packed `div` minsh - minoff
+            b = packed `mod` minsh - minoff
+        in if a < b then a else b
+#ENDSUPER
+
+-- SUPER: unpack final result, check validity, print
+checkAndPrint packed =
+  super single input (packed) output (out)
+#BEGINSUPER
+    out =
+      let off = 550000
+          rng = 1100001
+          tot = packed `div` rng - off
+          mn  = packed `mod` rng - off
+          r   = if tot == 0 then (if mn >= 0 then 1 else 0) else 0
+      in unsafePerformIO (do print r; pure 0)
+#ENDSUPER
+
+-- Main: 2 parallel leaf SUPERs + merge tree
+main =
+  let a0 = analyseRange 385000
+  in let sc1 = 385000 * 550001 + 165000
+  in let a1 = analyseRange sc1
+  in let s_0 = a0 / 1100001 - 550000
+  in let m_0 = a0 % 1100001 - 550000
+  in let s_1 = a1 / 1100001 - 550000
+  in let m_1 = a1 % 1100001 - 550000
+  in let ms0 = s_0 + s_1
+  in let vv0 = s_0 + m_1
+  in let lo0 = m_0 + 1100000
+  in let ls0 = lo0 * 1650001
+  in let vo0 = vv0 + 1100000
+  in let mp0 = ls0 + vo0
+  in let mm0 = myMin mp0
+  in let sf_off = ms0 + 550000
+  in let sf_sc = sf_off * 1100001
+  in let mf_off = mm0 + 550000
+  in let final_packed = sf_sc + mf_off
+  in checkAndPrint final_packed

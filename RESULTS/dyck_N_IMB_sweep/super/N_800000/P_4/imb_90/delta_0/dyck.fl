@@ -1,0 +1,286 @@
+const z0, 0
+callgroup("cg5","analyseRange")
+callgroup("cg36","analyseRange")
+callgroup("cg68","analyseRange")
+callgroup("cg99","analyseRange")
+callgroup("cg167","myMin")
+callgroup("cg221","myMin")
+callgroup("cg243","myMin")
+callgroup("cg268","checkAndPrint")
+const n0, 722000
+addi n1, n3, 0
+addi n2, analyseRange[1], 0
+super n3, 6, 1, n2
+ret analyseRange, [n17, n48, n80, n111], [n15, n46, n78, n109]
+tagval n6, n0
+muli n7, n6, 9
+addi n8, n7, 2
+valtag n9, n0, n8
+tagval n10, n0
+muli n11, n10, 9
+addi n12, n11, 2
+valtag n13, n0, n12
+callsnd analyseRange[1], n13, n9, 0
+retsnd n15, n9, n9, cg5
+tagval n16, n15
+valtag n17, n1, n16
+tagval n18, n17
+divi n19, n18, 9
+valtag n20, n17, n19
+const n21, 1600001
+sub n22, n20, n20
+addi n23, n22, 1600001
+div n24, n20, n23
+const n25, 800000
+sub n26, n24, n24
+addi n27, n26, 800000
+sub n28, n24, n27
+const n29, 722000
+const n30, 800001
+mul n31, n29, n30
+const n32, 38000
+sub n33, n31, n31
+addi n34, n33, 38000
+add n35, n31, n34
+tagval n37, n35
+muli n38, n37, 9
+addi n39, n38, 3
+valtag n40, n35, n39
+tagval n41, n35
+muli n42, n41, 9
+addi n43, n42, 3
+valtag n44, n35, n43
+callsnd analyseRange[1], n44, n40, 0
+retsnd n46, n40, n40, cg36
+tagval n47, n46
+valtag n48, n1, n47
+tagval n49, n48
+divi n50, n49, 9
+valtag n51, n48, n50
+const n52, 1600001
+sub n53, n51, n51
+addi n54, n53, 1600001
+div n55, n51, n54
+const n56, 800000
+sub n57, n55, n55
+addi n58, n57, 800000
+sub n59, n55, n58
+add n60, n28, n59
+const n61, 760000
+const n62, 800001
+mul n63, n61, n62
+const n64, 38000
+sub n65, n63, n63
+addi n66, n65, 38000
+add n67, n63, n66
+tagval n69, n67
+muli n70, n69, 9
+addi n71, n70, 4
+valtag n72, n67, n71
+tagval n73, n67
+muli n74, n73, 9
+addi n75, n74, 4
+valtag n76, n67, n75
+callsnd analyseRange[1], n76, n72, 0
+retsnd n78, n72, n72, cg68
+tagval n79, n78
+valtag n80, n1, n79
+tagval n81, n80
+divi n82, n81, 9
+valtag n83, n80, n82
+const n84, 1600001
+sub n85, n83, n83
+addi n86, n85, 1600001
+div n87, n83, n86
+const n88, 800000
+sub n89, n87, n87
+addi n90, n89, 800000
+sub n91, n87, n90
+const n92, 798000
+const n93, 800001
+mul n94, n92, n93
+const n95, 2000
+sub n96, n94, n94
+addi n97, n96, 2000
+add n98, n94, n97
+tagval n100, n98
+muli n101, n100, 9
+addi n102, n101, 5
+valtag n103, n98, n102
+tagval n104, n98
+muli n105, n104, 9
+addi n106, n105, 5
+valtag n107, n98, n106
+callsnd analyseRange[1], n107, n103, 0
+retsnd n109, n103, n103, cg99
+tagval n110, n109
+valtag n111, n1, n110
+tagval n112, n111
+divi n113, n112, 9
+valtag n114, n111, n113
+const n115, 1600001
+sub n116, n114, n114
+addi n117, n116, 1600001
+div n118, n114, n117
+const n119, 800000
+sub n120, n118, n118
+addi n121, n120, 800000
+sub n122, n118, n121
+add n123, n91, n122
+add n124, n60, n123
+const n125, 800000
+sub n126, n124, n124
+addi n127, n126, 800000
+add n128, n124, n127
+const n129, 1600001
+sub n130, n128, n128
+addi n131, n130, 1600001
+mul n132, n128, n131
+const n133, 1600001
+sub n134, n20, n20
+addi n135, n134, 1600001
+div n136, n20, n135
+const n137, 800000
+sub n138, n136.1, n136.1
+addi n139, n138, 800000
+sub n140, n136.1, n139
+const n141, 1600000
+sub n142, n140, n140
+addi n143, n142, 1600000
+add n144, n140, n143
+const n145, 2400001
+sub n146, n144, n144
+addi n147, n146, 2400001
+mul n148, n144, n147
+const n149, 1600001
+sub n150, n51, n51
+addi n151, n150, 1600001
+div n152, n51, n151
+const n153, 800000
+sub n154, n152.1, n152.1
+addi n155, n154, 800000
+sub n156, n152.1, n155
+add n157, n28, n156
+const n158, 1600000
+sub n159, n157, n157
+addi n160, n159, 1600000
+add n161, n157, n160
+add n162, n148, n161
+addi n163, n165, 0
+addi n164, myMin[1], 0
+super n165, 5, 1, n164
+ret myMin, [n179, n233, n255], [n177, n231, n253]
+tagval n168, n162
+muli n169, n168, 9
+addi n170, n169, 2
+valtag n171, n162, n170
+tagval n172, n162
+muli n173, n172, 9
+addi n174, n173, 2
+valtag n175, n162, n174
+callsnd myMin[1], n175, n171, 0
+retsnd n177, n171, n171, cg167
+tagval n178, n177
+valtag n179, n163, n178
+tagval n180, n179
+divi n181, n180, 9
+valtag n182, n179, n181
+const n183, 1600000
+sub n184, n182, n182
+addi n185, n184, 1600000
+add n186, n182, n185
+const n187, 2400001
+sub n188, n186, n186
+addi n189, n188, 2400001
+mul n190, n186, n189
+const n191, 1600001
+sub n192, n83, n83
+addi n193, n192, 1600001
+div n194, n83, n193
+const n195, 800000
+sub n196, n194.1, n194.1
+addi n197, n196, 800000
+sub n198, n194.1, n197
+const n199, 1600000
+sub n200, n198, n198
+addi n201, n200, 1600000
+add n202, n198, n201
+const n203, 2400001
+sub n204, n202, n202
+addi n205, n204, 2400001
+mul n206, n202, n205
+const n207, 1600001
+sub n208, n114, n114
+addi n209, n208, 1600001
+div n210, n114, n209
+const n211, 800000
+sub n212, n210.1, n210.1
+addi n213, n212, 800000
+sub n214, n210.1, n213
+add n215, n91, n214
+const n216, 1600000
+sub n217, n215, n215
+addi n218, n217, 1600000
+add n219, n215, n218
+add n220, n206, n219
+tagval n222, n220
+muli n223, n222, 9
+addi n224, n223, 3
+valtag n225, n220, n224
+tagval n226, n220
+muli n227, n226, 9
+addi n228, n227, 3
+valtag n229, n220, n228
+callsnd myMin[1], n229, n225, 0
+retsnd n231, n225, n225, cg221
+tagval n232, n231
+valtag n233, n163, n232
+tagval n234, n233
+divi n235, n234, 9
+valtag n236, n233, n235
+add n237, n60, n236
+const n238, 1600000
+sub n239, n237, n237
+addi n240, n239, 1600000
+add n241, n237, n240
+add n242, n190, n241
+tagval n244, n242
+muli n245, n244, 9
+addi n246, n245, 4
+valtag n247, n242, n246
+tagval n248, n242
+muli n249, n248, 9
+addi n250, n249, 4
+valtag n251, n242, n250
+callsnd myMin[1], n251, n247, 0
+retsnd n253, n247, n247, cg243
+tagval n254, n253
+valtag n255, n163, n254
+tagval n256, n255
+divi n257, n256, 9
+valtag n258, n255, n257
+const n259, 800000
+sub n260, n258, n258
+addi n261, n260, 800000
+add n262, n258, n261
+add n263, n132, n262
+addi n264, n266, 0
+addi n265, checkAndPrint[1], 0
+super n266, 4, 1, n265
+ret checkAndPrint, n280, n278
+tagval n269, n263
+muli n270, n269, 9
+addi n271, n270, 2
+valtag n272, n263, n271
+tagval n273, n263
+muli n274, n273, 9
+addi n275, n274, 2
+valtag n276, n263, n275
+callsnd checkAndPrint[1], n276, n272, 0
+retsnd n278, n272, n272, cg268
+tagval n279, n278
+valtag n280, n264, n279
+tagval n281, n280
+divi n282, n281, 9
+valtag n283, n280, n282
+ret main, n283, z0
