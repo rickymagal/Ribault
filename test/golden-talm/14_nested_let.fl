@@ -1,9 +1,0 @@
-const z0, 0
-const n0, 2
-const n1, 1
-ret x, n1, z0
-callgroup("cg13","x")
-callsnd x[0], n0, cg13
-retsnd x[0], z0, cg13
-mul n6, x[0], x[0]
-ret main, n6, z0
