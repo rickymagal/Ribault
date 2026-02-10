@@ -5,6 +5,10 @@
 Reads one or more CSV files (with 'variant' column: super, ghc).
 Produces per-variant plots (runtime, speedup, efficiency) and,
 when both variants are present, comparison plots.
+
+Supports multi-N data:
+  - Single N: plots with IMB on X-axis (same as before).
+  - Multiple N: per-N subdir plots + summary plots (runtime vs N, heatmap).
 """
 
 import argparse, csv, os, math
@@ -17,9 +21,10 @@ import matplotlib.pyplot as plt
 # ── data loading ──────────────────────────────────────────────
 
 def read_metrics(*paths):
-    """Read CSV files.  Returns data[variant][delta][P][IMB] = [secs...], fixed_N."""
-    data = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
-    fixed_N = None
+    """Read CSV files.  Returns data[variant][delta][N][P][IMB] = [secs...], sorted Ns."""
+    data = defaultdict(lambda: defaultdict(lambda: defaultdict(
+               lambda: defaultdict(lambda: defaultdict(list)))))
+    Ns = set()
     for path in paths:
         with open(path, newline="") as f:
             for row in csv.DictReader(f):
@@ -35,10 +40,9 @@ def read_metrics(*paths):
                     continue
                 if rc != 0 or not math.isfinite(sec):
                     continue
-                if fixed_N is None:
-                    fixed_N = N
-                data[variant][delta][P][imb].append(sec)
-    return data, fixed_N
+                Ns.add(N)
+                data[variant][delta][N][P][imb].append(sec)
+    return data, sorted(Ns)
 
 # ── helpers ───────────────────────────────────────────────────
 
@@ -68,12 +72,26 @@ def best_runtime(byP):
     return all_imbs, best, best_Ps
 
 def _save(outdir, base):
+    os.makedirs(outdir, exist_ok=True)
     plt.savefig(os.path.join(outdir, base + ".png"), dpi=180)
     plt.savefig(os.path.join(outdir, base + ".pdf"))
     plt.close()
     print(f"[plot] saved {base}.png/.pdf")
 
-# ── single-variant plots ─────────────────────────────────────
+def _select_imbs(byN):
+    """Select representative IMB values from available data."""
+    all_imbs = sorted({imb for N in byN for P in byN[N] for imb in byN[N][P]})
+    if not all_imbs:
+        return []
+    targets = [0, 25, 50, 75, 100]
+    selected = []
+    for t in targets:
+        closest = min(all_imbs, key=lambda x: abs(x - t))
+        if closest not in selected:
+            selected.append(closest)
+    return selected
+
+# ── per-N plots (IMB on X-axis) ─────────────────────────────
 
 def plot_runtime(byP, outdir, tag, N, delta):
     plt.figure(figsize=(10, 6))
@@ -81,7 +99,7 @@ def plot_runtime(byP, outdir, tag, N, delta):
         xs, mu, sd = series_stats(byP[P])
         if xs:
             plt.errorbar(xs, mu, yerr=sd, marker="o", capsize=3, label=f"P={P}")
-    t = f"Runtime vs IMB (N={N})"
+    t = f"Runtime vs IMB (N={N:,})"
     if delta: t += f", delta={delta}"
     plt.title(t); plt.xlabel("IMB"); plt.ylabel("Runtime (s)")
     plt.grid(True, ls=":", lw=.8); plt.legend(title="Processors"); plt.tight_layout()
@@ -99,7 +117,7 @@ def plot_speedup(byP, outdir, tag, N, delta):
             if imb in bmap and t > 0:
                 si.append(imb); sv.append(bmap[imb] / t)
         if si: plt.plot(si, sv, marker="o", label=f"P={P}")
-    t = f"Speedup vs IMB (N={N})"
+    t = f"Speedup vs IMB (N={N:,})"
     if delta: t += f", delta={delta}"
     plt.title(t); plt.xlabel("IMB"); plt.ylabel(f"Speedup vs P={bP}")
     plt.grid(True, ls=":", lw=.8); plt.legend(title="Processors"); plt.tight_layout()
@@ -117,13 +135,13 @@ def plot_efficiency(byP, outdir, tag, N, delta):
             if imb in bmap and t > 0:
                 ei.append(imb); ev.append((bmap[imb] / t) / P)
         if ei: plt.plot(ei, ev, marker="o", label=f"P={P}")
-    t = f"Efficiency vs IMB (N={N})"
+    t = f"Efficiency vs IMB (N={N:,})"
     if delta: t += f", delta={delta}"
     plt.title(t); plt.xlabel("IMB"); plt.ylabel("Efficiency")
     plt.grid(True, ls=":", lw=.8); plt.legend(title="Processors"); plt.tight_layout()
     _save(outdir, f"efficiency_{tag}_delta{delta}")
 
-# ── comparison plots ──────────────────────────────────────────
+# ── comparison plots (per-N) ────────────────────────────────
 
 def plot_compare_runtime(data, outdir, tag, N, delta):
     """All TALM P-curves vs all GHC P-curves, each with a unique color."""
@@ -144,7 +162,7 @@ def plot_compare_runtime(data, outdir, tag, N, delta):
                          ls='--', marker='o', ms=5, capsize=3, lw=1.8,
                          label=f'GHC P={P}')
             ci += 1
-    plt.title(f"TALM vs GHC \u2013 Runtime (N={N})")
+    plt.title(f"TALM vs GHC \u2013 Runtime (N={N:,})")
     plt.xlabel("Work Imbalance (IMB)"); plt.ylabel("Runtime (s)")
     plt.grid(True, ls=":", lw=.8); plt.legend(fontsize=8, ncol=2); plt.tight_layout()
     _save(outdir, f"compare_runtime_{tag}_delta{delta}")
@@ -171,7 +189,7 @@ def plot_compare_speedup(data, outdir, tag, N, delta):
                 plt.plot(si, sv, ls, color=colors[ci % len(colors)],
                          marker='o', ms=5, lw=1.8, label=f'{vlbl} P={P}')
             ci += 1
-    plt.title(f"TALM vs GHC \u2013 Speedup (N={N})")
+    plt.title(f"TALM vs GHC \u2013 Speedup (N={N:,})")
     plt.xlabel("IMB"); plt.ylabel("Speedup vs own P=1")
     plt.grid(True, ls=":", lw=.8); plt.legend(fontsize=8, ncol=2); plt.tight_layout()
     _save(outdir, f"compare_speedup_{tag}_delta{delta}")
@@ -190,10 +208,145 @@ def plot_compare_best(data, outdir, tag, N, delta):
             plt.annotate(f'P={p}', (x, y), textcoords="offset points",
                          xytext=(0, 10), ha='center', fontsize=7,
                          color='black' if variant == 'super' else 'red')
-    plt.title(f"Best TALM vs Best GHC \u2013 Runtime (N={N})")
+    plt.title(f"Best TALM vs Best GHC \u2013 Runtime (N={N:,})")
     plt.xlabel("Work Imbalance (IMB)"); plt.ylabel("Runtime (s)")
     plt.grid(True, ls=":", lw=.8); plt.legend(fontsize=11); plt.tight_layout()
     _save(outdir, f"compare_best_{tag}_delta{delta}")
+
+# ── summary plots (N on X-axis, multi-N only) ───────────────
+
+def plot_runtime_vs_N(byN, outdir, tag, Ns, delta, selected_imbs=None):
+    """For each selected IMB: runtime vs N with curves for P."""
+    if selected_imbs is None:
+        selected_imbs = _select_imbs(byN)
+    Ps = sorted({P for N in byN for P in byN[N]})
+    for imb in selected_imbs:
+        plt.figure(figsize=(10, 6))
+        for P in Ps:
+            ns, mus, sds = [], [], []
+            for N in Ns:
+                if N in byN and P in byN[N] and imb in byN[N][P] and byN[N][P][imb]:
+                    ns.append(N)
+                    vals = byN[N][P][imb]
+                    mus.append(stats.mean(vals))
+                    sds.append(stats.stdev(vals) if len(vals) >= 2 else 0.0)
+            if ns:
+                plt.errorbar(ns, mus, yerr=sds, marker='o', capsize=3, label=f'P={P}')
+        t = f"Runtime vs N (IMB={imb})"
+        if delta: t += f", delta={delta}"
+        plt.title(t); plt.xlabel("N"); plt.ylabel("Runtime (s)")
+        plt.grid(True, ls=":", lw=.8); plt.legend(title="Processors"); plt.tight_layout()
+        _save(outdir, f"runtime_vs_N_{tag}_imb{imb}_delta{delta}")
+
+def plot_speedup_vs_N(byN, outdir, tag, Ns, delta, selected_imbs=None):
+    """For each selected IMB: speedup vs N with curves for P."""
+    if selected_imbs is None:
+        selected_imbs = _select_imbs(byN)
+    Ps = sorted({P for N in byN for P in byN[N]})
+    if not Ps:
+        return
+    base_P = Ps[0]
+    for imb in selected_imbs:
+        plt.figure(figsize=(10, 6))
+        base_map = {}
+        for N in Ns:
+            if N in byN and base_P in byN[N] and imb in byN[N][base_P] and byN[N][base_P][imb]:
+                base_map[N] = stats.mean(byN[N][base_P][imb])
+        for P in Ps:
+            ns, sus = [], []
+            for N in Ns:
+                if N in byN and P in byN[N] and imb in byN[N][P] and byN[N][P][imb]:
+                    if N in base_map and base_map[N] > 0:
+                        mu = stats.mean(byN[N][P][imb])
+                        if mu > 0:
+                            ns.append(N)
+                            sus.append(base_map[N] / mu)
+            if ns:
+                plt.plot(ns, sus, marker='o', label=f'P={P}')
+        t = f"Speedup vs N (IMB={imb})"
+        if delta: t += f", delta={delta}"
+        plt.title(t); plt.xlabel("N"); plt.ylabel(f"Speedup vs P={base_P}")
+        plt.grid(True, ls=":", lw=.8); plt.legend(title="Processors"); plt.tight_layout()
+        _save(outdir, f"speedup_vs_N_{tag}_imb{imb}_delta{delta}")
+
+def plot_heatmap_best(byN, outdir, tag, Ns, delta):
+    """Heatmap of best runtime across P, indexed by (N, IMB)."""
+    all_imbs = sorted({imb for N in byN for P in byN[N] for imb in byN[N][P]})
+    if not all_imbs or not Ns:
+        return
+    grid = []
+    for N in Ns:
+        row = []
+        for imb in all_imbs:
+            best_val = float('inf')
+            for P in byN.get(N, {}):
+                if imb in byN[N][P] and byN[N][P][imb]:
+                    mu = stats.mean(byN[N][P][imb])
+                    if mu < best_val:
+                        best_val = mu
+            row.append(best_val if best_val < float('inf') else float('nan'))
+        grid.append(row)
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    im = ax.imshow(grid, aspect='auto', origin='lower', cmap='viridis')
+    fig.colorbar(im, ax=ax, label='Best Runtime (s)')
+    # X ticks (IMB)
+    step_x = max(1, len(all_imbs) // 20)
+    ax.set_xticks(range(0, len(all_imbs), step_x))
+    ax.set_xticklabels([str(all_imbs[i]) for i in range(0, len(all_imbs), step_x)], fontsize=8)
+    # Y ticks (N)
+    ax.set_yticks(range(len(Ns)))
+    ax.set_yticklabels([f"{N // 1000}k" for N in Ns], fontsize=8)
+    ax.set_xlabel('IMB'); ax.set_ylabel('N')
+    t = f"Best Runtime Heatmap"
+    if delta: t += f" (delta={delta})"
+    ax.set_title(t)
+    plt.tight_layout()
+    _save(outdir, f"heatmap_best_{tag}_delta{delta}")
+
+def plot_heatmap_speedup(byN, outdir, tag, Ns, delta):
+    """Heatmap of best speedup (vs P=1) across P, indexed by (N, IMB)."""
+    all_imbs = sorted({imb for N in byN for P in byN[N] for imb in byN[N][P]})
+    Ps = sorted({P for N in byN for P in byN[N]})
+    if not all_imbs or not Ns or not Ps:
+        return
+    base_P = Ps[0]
+
+    grid = []
+    for N in Ns:
+        row = []
+        base_val = None
+        for imb in all_imbs:
+            if N in byN and base_P in byN[N] and imb in byN[N][base_P] and byN[N][base_P][imb]:
+                base_val_imb = stats.mean(byN[N][base_P][imb])
+            else:
+                base_val_imb = None
+            best_su = 1.0
+            if base_val_imb and base_val_imb > 0:
+                for P in Ps:
+                    if N in byN and P in byN[N] and imb in byN[N][P] and byN[N][P][imb]:
+                        mu = stats.mean(byN[N][P][imb])
+                        if mu > 0:
+                            su = base_val_imb / mu
+                            if su > best_su:
+                                best_su = su
+            row.append(best_su)
+        grid.append(row)
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    im = ax.imshow(grid, aspect='auto', origin='lower', cmap='RdYlGn')
+    fig.colorbar(im, ax=ax, label=f'Best Speedup vs P={base_P}')
+    step_x = max(1, len(all_imbs) // 20)
+    ax.set_xticks(range(0, len(all_imbs), step_x))
+    ax.set_xticklabels([str(all_imbs[i]) for i in range(0, len(all_imbs), step_x)], fontsize=8)
+    ax.set_yticks(range(len(Ns)))
+    ax.set_yticklabels([f"{N // 1000}k" for N in Ns], fontsize=8)
+    ax.set_xlabel('IMB'); ax.set_ylabel('N')
+    t = f"Best Speedup Heatmap"
+    if delta: t += f" (delta={delta})"
+    ax.set_title(t)
+    plt.tight_layout()
+    _save(outdir, f"heatmap_speedup_{tag}_delta{delta}")
 
 # ── main ──────────────────────────────────────────────────────
 
@@ -206,28 +359,58 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.outdir, exist_ok=True)
 
-    data, N = read_metrics(*args.metrics)
+    data, Ns = read_metrics(*args.metrics)
     if not data:
         print("[plot] no data to plot"); return
 
     variants = sorted(data.keys())
+    multi_N = len(Ns) > 1
 
-    # Per-variant plots
+    # Per-variant, per-N plots
     for v in variants:
         vtag = f"{args.tag}_{v}"
-        for delta, byP in sorted(data[v].items()):
-            if byP:
-                plot_runtime(byP, args.outdir, vtag, N, delta)
-                plot_speedup(byP, args.outdir, vtag, N, delta)
-                plot_efficiency(byP, args.outdir, vtag, N, delta)
+        for delta in sorted(data[v]):
+            byN = data[v][delta]
+            for N in Ns:
+                if N not in byN:
+                    continue
+                byP = byN[N]
+                if not byP:
+                    continue
+                if multi_N:
+                    subdir = os.path.join(args.outdir, f"N_{N}")
+                else:
+                    subdir = args.outdir
+                plot_runtime(byP, subdir, vtag, N, delta)
+                plot_speedup(byP, subdir, vtag, N, delta)
+                plot_efficiency(byP, subdir, vtag, N, delta)
+
+            # Summary plots (multi-N only)
+            if multi_N:
+                plot_runtime_vs_N(byN, args.outdir, vtag, Ns, delta)
+                plot_speedup_vs_N(byN, args.outdir, vtag, Ns, delta)
+                plot_heatmap_best(byN, args.outdir, vtag, Ns, delta)
+                plot_heatmap_speedup(byN, args.outdir, vtag, Ns, delta)
 
     # Comparison plots (when both variants present)
     if len(variants) >= 2:
         all_deltas = sorted({d for v in variants for d in data[v]})
         for delta in all_deltas:
-            plot_compare_runtime(data, args.outdir, args.tag, N, delta)
-            plot_compare_speedup(data, args.outdir, args.tag, N, delta)
-            plot_compare_best(data, args.outdir, args.tag, N, delta)
+            for N in Ns:
+                # Build per-N flat view: cmp[variant][delta][P][IMB]
+                cmp = {}
+                for v in variants:
+                    if v in data and delta in data[v] and N in data[v][delta]:
+                        cmp[v] = {delta: data[v][delta][N]}
+                if len(cmp) < 2:
+                    continue
+                if multi_N:
+                    subdir = os.path.join(args.outdir, f"N_{N}")
+                else:
+                    subdir = args.outdir
+                plot_compare_runtime(cmp, subdir, args.tag, N, delta)
+                plot_compare_speedup(cmp, subdir, args.tag, N, delta)
+                plot_compare_best(cmp, subdir, args.tag, N, delta)
 
 if __name__ == "__main__":
     main()

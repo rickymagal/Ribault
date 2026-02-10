@@ -28,7 +28,9 @@ SUPERS_FORCE_PAR="${SUPERS_FORCE_PAR:-1}"
 export SUPERS_FORCE_PAR
 DF_LIST_BUILTIN="${DF_LIST_BUILTIN:-1}"
 export DF_LIST_BUILTIN
-CUTOFF="${CUTOFF:-256}"
+MS_LEAF="${MS_LEAF:-array}"
+export MS_LEAF
+CUTOFF="${CUTOFF:-4096}"
 CUTOFF_MODE="${CUTOFF_MODE:-fixed}" # fixed | scaled | perP | balanced | balanced2 | grain | leafgrain | leafsmooth | fixedleaves | msgrain
 CUTOFF_MIN="${CUTOFF_MIN:-256}"
 CUTOFF_MAX="${CUTOFF_MAX:-4096}"
@@ -104,15 +106,21 @@ else
 fi
 echo "[talm] using codegen: $CODEGEN"
 
-if [[ "${MS_LEAF:-}" == "asm" ]]; then
+if [[ "$MS_LEAF" == "asm" ]]; then
   USE_SUPERS=0
-fi
-# Fixed supers directory
-if [[ "$USE_SUPERS" -eq 1 ]]; then
+  SUPERS_FIXED=""
+  echo "[sup ] supers disabled (MS_LEAF=asm)"
+elif [[ "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" ]]; then
+  USE_SUPERS=1
+  SUPERS_FIXED=""
+  echo "[sup ] will build supers per-N (verify_sorted depends on N)"
+else
+  # array, coarse: use fixed supers
+  USE_SUPERS=1
   if [[ -z "${SUPERS_FIXED}" ]]; then
-    if [[ "${MS_LEAF:-}" == "array" ]]; then
+    if [[ "$MS_LEAF" == "array" ]]; then
       CAND="${CODEGEN_ROOT}/test/supers/ms_array_super"
-    elif [[ "${MS_LEAF:-}" == "coarse" ]]; then
+    elif [[ "$MS_LEAF" == "coarse" ]]; then
       CAND="${CODEGEN_ROOT}/test/supers/ms_coarse_super"
     else
       CAND="${CODEGEN_ROOT}/test/supers/21_merge_sort_super"
@@ -122,9 +130,24 @@ if [[ "$USE_SUPERS" -eq 1 ]]; then
   [[ -n "$SUPERS_FIXED" ]] || { echo "[ERR ] SUPERS_FIXED not set and default not found"; exit 1; }
   [[ -f "$SUPERS_FIXED/libsupers.so" ]] || { echo "[ERR ] libsupers.so not found under SUPERS_FIXED: $SUPERS_FIXED"; exit 1; }
   echo "[sup ] using fixed supers: $SUPERS_FIXED"
-else
-  SUPERS_FIXED=""
-  echo "[sup ] supers disabled (MS_LEAF=asm)"
+fi
+
+BUILD_SUPERS="$(cd "$CODEGEN_ROOT" && pwd)/tools/build_supers.sh"
+
+# Detect GHC shim environment (built by 'make supers_prepare')
+SHIM_DIR="$(cd "$CODEGEN_ROOT" && pwd)/build/ghc-shim"
+if [[ -d "$SHIM_DIR/rts" ]]; then
+  GHC_VER="$(ghc --numeric-version)"
+  SHIM_RTS_SO="$(ls "$SHIM_DIR/rts/libHSrts"*"-ghc${GHC_VER}.so" 2>/dev/null | head -1 || true)"
+  if [[ -n "$SHIM_RTS_SO" ]]; then
+    export GHC_LIBDIR="$SHIM_DIR"
+    export RTS_SO="$SHIM_RTS_SO"
+    if [[ -f "$SHIM_DIR/.cpath" ]]; then
+      export C_INCLUDE_PATH="$(cat "$SHIM_DIR/.cpath")"
+      export CPATH="$(cat "$SHIM_DIR/.cpath")"
+    fi
+    echo "[sup ] detected shim: GHC_LIBDIR=$GHC_LIBDIR  RTS_SO=$RTS_SO"
+  fi
 fi
 
 MS_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -132,9 +155,7 @@ GEN_PY="$MS_DIR/gen_ms_input.py"
 PLOT_PY="$MS_DIR/plot.py"
 echo "[hsk ] using generator: $GEN_PY"
 
-if [[ -z "${MS_LEAF:-}" && "${DF_LIST_BUILTIN}" != "0" ]]; then
-  export MS_LEAF="asm"
-fi
+echo "[env ] MS_LEAF=${MS_LEAF}"
 
 rm -rf "$OUTROOT"
 mkdir -p "$OUTROOT"
@@ -152,6 +173,24 @@ make_abs() {
   else
     printf "%s/%s" "$(pwd)" "$p"
   fi
+}
+
+get_supers_dir() {
+  local N="$1"
+  local d="$OUTROOT/supers_cache/N_${N}"
+  if [[ -f "$d/libsupers.so" ]]; then
+    d="$(cd "$d" && pwd)"
+    echo "$d"
+    return
+  fi
+  mkdir -p "$d"
+  d="$(cd "$d" && pwd)"
+  echo "[sup ] building supers for N=${N}..." >&2
+  "$PY3" "$GEN_PY" --out "$d/representative.hsk" --N "$N" --P 1 --vec "$VEC_MODE" --cutoff 256 --mode "$MS_LEAF" >&2
+  bash "$BUILD_SUPERS" "$d/representative.hsk" "$d/Supers.hs" >&2
+  [[ -f "$d/libsupers.so" ]] || { echo "[ERR ] super build failed for N=${N}" >&2; exit 1; }
+  echo "[sup ] built: $d/libsupers.so" >&2
+  echo "$d"
 }
 
 gen_hsk() {
@@ -575,6 +614,19 @@ run_interp_time_rc() {
   if [[ -f "$errlog" ]]; then
     exec_t=$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$errlog" 2>/dev/null || true)
   fi
+
+  # Correctness check: for super mode, verify output is "1"
+  if [[ "$rc" -eq 0 && ( "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" || "$MS_LEAF" == "array" ) && -f "$outlog" ]]; then
+    local result; result="$(grep -oP '^\d+$' "$outlog" | head -1 || true)"
+    if [[ -n "$result" && "$result" != "1" ]]; then
+      >&2 echo "[ERR ] WRONG ANSWER: got '$result', expected '1'"
+      rc=99
+    elif [[ -z "$result" ]]; then
+      >&2 echo "[ERR ] No result found in output"
+      rc=98
+    fi
+  fi
+
   if [[ -n "$exec_t" ]]; then
     LC_ALL=C awk -v T="$exec_t" -v R="$rc" 'BEGIN{ printf "%.6f %d", T, R }'
   else
@@ -584,6 +636,12 @@ run_interp_time_rc() {
 
 # ----------------- main -----------------
 for N in $(seq "$START_N" "$STEP" "$N_MAX"); do
+  echo ""
+  echo "======== N=${N} ========"
+  # Pre-build supers for this N
+  if [[ "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" ]]; then
+    get_supers_dir "$N" > /dev/null
+  fi
   for P in "${PROCS[@]}"; do
     CASE_DIR="$OUTROOT/super/N_${N}/P_${P}"
     LOGS_DIR="$CASE_DIR/logs"
@@ -603,21 +661,36 @@ for N in $(seq "$START_N" "$STEP" "$N_MAX"); do
 
     LIBSUP=""
     if [[ "$USE_SUPERS" -eq 1 ]]; then
-      LIBSUP="$(stage_supers_fixed "$SUPERS_FIXED" "$CASE_DIR")"
+      if [[ "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" ]]; then
+        LIBSUP="$(get_supers_dir "$N")/libsupers.so"
+      else
+        LIBSUP="$(stage_supers_fixed "$SUPERS_FIXED" "$CASE_DIR")"
+      fi
     fi
 
     for ((rep=1; rep<=REPS; rep++)); do
-      set +e
-      out="$(run_interp_time_rc "$P" "${PREFIX}.flb" "$PLA_USED" "$LIBSUP" "$CASE_DIR")"
-      st=$?
-      set -e
+      retries=0; max_retries=2
+      while true; do
+        set +e
+        out="$(run_interp_time_rc "$P" "${PREFIX}.flb" "$PLA_USED" "$LIBSUP" "$CASE_DIR")"
+        st=$?
+        set -e
 
-      secs="NaN"; rc=999
-      if [[ $st -eq 0 ]]; then
-        if ! read -r secs rc <<< "$out"; then
-          secs="NaN"; rc=998
+        secs="NaN"; rc=999
+        if [[ $st -eq 0 ]]; then
+          if ! read -r secs rc <<< "$out"; then
+            secs="NaN"; rc=998
+          fi
         fi
-      fi
+
+        # Retry on rc=98 (intermittent missing output)
+        if [[ "$rc" -eq 98 && "$retries" -lt "$max_retries" ]]; then
+          retries=$((retries + 1))
+          echo "[warn] rc=98, retrying (attempt $((retries+1))/$((max_retries+1)))"
+          continue
+        fi
+        break
+      done
 
       echo "variant=super, N=${N}, P=${P}, rep=${rep}, secs=${secs}, rc=${rc}"
       echo "super,${N},${P},${rep},${secs},${rc}" >> "$METRICS_CSV"

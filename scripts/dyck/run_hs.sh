@@ -3,11 +3,12 @@ set -euo pipefail
 
 # ============================================================
 # dyck/run_hs.sh — GHC-parallel baseline (index-based)
-# Fixed N, varies IMB (work imbalance) and P.
+# Varies N, IMB (work imbalance) and P.
 # Checks correctness: delta=0 → expects "1", else "0".
+# Supports comma-separated N for multi-N sweeps.
 # ============================================================
 
-N=0; REPS=1
+N_CSV=""; REPS=1
 PROCS_CSV=""; OUTROOT=""; VEC_MODE="range"; TAG="hs_dyck"
 IMB_CSV=""; DELTA_CSV="0"
 GHC="${GHC:-ghc}"
@@ -16,7 +17,7 @@ GHC_PKGS="${GHC_PKGS:-$GHC_PKGS_DEFAULT}"
 PY3="${PY3:-python3}"
 
 usage(){
-  echo "uso: $0 --N SIZE --reps R --procs \"1,2,...\" --imb \"0,10,20,...\" [--delta \"0,2,-2\"] \\"
+  echo "uso: $0 --N \"50000,100000,...\" --reps R --procs \"1,2,...\" --imb \"0,10,20,...\" [--delta \"0,2,-2\"] \\"
   echo "          --outroot PATH [--tag TAG]"
   echo "env: GHC, GHC_PKGS, PY3"
   exit 2
@@ -24,7 +25,7 @@ usage(){
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --N)     N="$2"; shift 2;;
+    --N)     N_CSV="$2"; shift 2;;
     --reps)  REPS="$2"; shift 2;;
     --procs) PROCS_CSV="$2"; shift 2;;
     --imb)   IMB_CSV="$2"; shift 2;;
@@ -36,9 +37,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ "$N" -gt 0 && -n "$REPS$PROCS_CSV$OUTROOT$IMB_CSV" ]] || usage
+[[ -n "$N_CSV" && -n "$REPS$PROCS_CSV$OUTROOT$IMB_CSV" ]] || usage
 
-echo "[env ] GHC=${GHC} ; GHC_PKGS=${GHC_PKGS} ; PY3=${PY3} ; N=${N}"
+IFS=',' read -r -a NS     <<< "$N_CSV"
+IFS=',' read -r -a PROCS  <<< "$PROCS_CSV"
+IFS=',' read -r -a IMBS   <<< "$IMB_CSV"
+IFS=',' read -r -a DELTAS <<< "$DELTA_CSV"
+
+echo "[env ] GHC=${GHC} ; GHC_PKGS=${GHC_PKGS} ; PY3=${PY3} ; N=${N_CSV} (${#NS[@]} values)"
 
 BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 GEN_PY="$BASE_DIR/gen_hs_input.py"
@@ -47,10 +53,6 @@ mkdir -p "$OUTROOT"
 
 METRICS="$OUTROOT/metrics_${TAG}.csv"
 echo "variant,N,P,imb,delta,rep,seconds,rc" > "$METRICS"
-
-IFS=',' read -r -a PROCS <<< "$PROCS_CSV"
-IFS=',' read -r -a IMBS <<< "$IMB_CSV"
-IFS=',' read -r -a DELTAS <<< "$DELTA_CSV"
 
 # -------- helpers ----------
 gen_hs() {
@@ -89,29 +91,39 @@ run_bin() {
 }
 
 # -------------- main loop --------------
-for P in "${PROCS[@]}"; do
-  for IMB in "${IMBS[@]}"; do
-    for DELTA in "${DELTAS[@]}"; do
-      EXPECTED="$(expected_result "$DELTA")"
-      CASE_DIR="$OUTROOT/ghc/N_${N}/P_${P}/imb_${IMB}/delta_${DELTA}"
-      BIN_DIR="$CASE_DIR/bin"; mkdir -p "$BIN_DIR"
-      HS="$BIN_DIR/dyck_hs_N${N}_P${P}_imb${IMB}_delta${DELTA}.hs"
-      BIN="$BIN_DIR/dyck_hs_N${N}_P${P}_imb${IMB}_delta${DELTA}"
+TOTAL_RUNS=$(( ${#NS[@]} * ${#PROCS[@]} * ${#IMBS[@]} * ${#DELTAS[@]} * REPS ))
+RUN_NUM=0
 
-      echo "[build_hs] N=${N} P=${P} imb=${IMB} delta=${DELTA}"
-      gen_hs "$N" "$P" "$IMB" "$DELTA" "$HS"
-      compile_hs "$HS" "$BIN"
+for N in "${NS[@]}"; do
+  echo ""
+  echo "======== N=${N} ========"
 
-      for ((rep=1; rep<=REPS; rep++)); do
-        out="$(run_bin "$BIN" "$P" "$EXPECTED")" || true
-        secs="NaN"; rc=999
-        read -r secs rc <<< "$out" || true
-        echo "variant=ghc, N=${N}, P=${P}, imb=${IMB}, delta=${DELTA}, rep=${rep}, secs=${secs}, rc=${rc}"
-        echo "ghc,${N},${P},${IMB},${DELTA},${rep},${secs},${rc}" >> "$METRICS"
+  for P in "${PROCS[@]}"; do
+    for IMB in "${IMBS[@]}"; do
+      for DELTA in "${DELTAS[@]}"; do
+        EXPECTED="$(expected_result "$DELTA")"
+        CASE_DIR="$OUTROOT/ghc/N_${N}/P_${P}/imb_${IMB}/delta_${DELTA}"
+        BIN_DIR="$CASE_DIR/bin"; mkdir -p "$BIN_DIR"
+        HS="$BIN_DIR/dyck_hs.hs"
+        BIN="$BIN_DIR/dyck_hs"
+
+        echo "[build_hs] N=${N} P=${P} imb=${IMB} delta=${DELTA}"
+        gen_hs "$N" "$P" "$IMB" "$DELTA" "$HS"
+        compile_hs "$HS" "$BIN"
+
+        for ((rep=1; rep<=REPS; rep++)); do
+          RUN_NUM=$((RUN_NUM + 1))
+          out="$(run_bin "$BIN" "$P" "$EXPECTED")" || true
+          secs="NaN"; rc=999
+          read -r secs rc <<< "$out" || true
+          echo "[${RUN_NUM}/${TOTAL_RUNS}] N=${N} P=${P} imb=${IMB} delta=${DELTA} rep=${rep} -> ${secs}s rc=${rc}"
+          echo "ghc,${N},${P},${IMB},${DELTA},${rep},${secs},${rc}" >> "$METRICS"
+        done
       done
     done
   done
 done
 
-echo "[DONE] métricas em: $METRICS"
+echo ""
+echo "[DONE] ${TOTAL_RUNS} runs; métricas em: $METRICS"
 echo "[TIP ] Para plotar:  python3 $PLOT_PY --metrics $METRICS --outdir $OUTROOT --tag ${TAG}"

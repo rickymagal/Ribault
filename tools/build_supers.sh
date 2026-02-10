@@ -257,13 +257,13 @@ inject_hs_io_init() {
   {
     print $0
     if (!inserted_import && $0 ~ /import[[:space:]]+System\.IO\.Unsafe/) {
-      print "import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)"
+      print "import System.IO (hSetBuffering, hFlush, BufferMode(..), stdout, stderr)"
       inserted_import = 1
     }
   }
   END {
     if (!inserted_import) {
-      print "import System.IO (hSetBuffering, BufferMode(..), stdout, stderr)"
+      print "import System.IO (hSetBuffering, hFlush, BufferMode(..), stdout, stderr)"
     }
   }
   ' "$hs" >"$tmp"

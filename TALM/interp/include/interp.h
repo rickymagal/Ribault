@@ -143,7 +143,7 @@ struct oper {
 	//instr_t *dst;
 	//void *value;
        	generic_vartype value;
-	int tag; //this tag corresponds to the loop iteration
+	unsigned int tag; //this tag corresponds to the loop iteration
 	int exec; //the exec tag has two parts, the callgroup number(high bits) and the dynamic part corresponding to the instance of the function call. The dynamic part is set to the counter of the callsnd instruction that sends the operand. Everytime a callsnd instruction executes it increments its counter after sending the operand.
 	int spec; //speculation number.
 	//char isspeculative; //indicates if the operand is speculative. used for gc. 
@@ -165,11 +165,11 @@ typedef struct optoken {
 	struct optoken *next;
 } optoken_t;
 typedef struct marker {
-	msgtype_t type;	
-	int tag;
+	msgtype_t type;
+	unsigned int tag;
 } marker_t;
 struct opmatch {
-	int tag;
+	unsigned int tag;
 	int exec;
 	int spec;
 	oper_t *op[MAX_SOURCE];

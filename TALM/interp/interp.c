@@ -43,10 +43,10 @@ void dec_wait_counter(wcounters_list_t *counters, int tstamp, int n_threads);
 void spec_clean(thread_args *pe_attr, int tstamp);
 
 void debug_oplists(thread_args *pe_attr);
-oper_t ** get_oper(oper_t **oplist, int tag, int exectag);
+oper_t ** get_oper(oper_t **oplist, unsigned int tag, int exectag);
 
 void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr);
-//void bypass_oper(oper_t **oplist, oper_t oper); 
+//void bypass_oper(oper_t **oplist, oper_t oper);
 
 void send_single_oper(instr_t *instr, oper_t result[], thread_args *pe_attr, int i);
 void bypass_oper(opmatch_t **matchptr, int inport, oper_t *oper, thread_args *pe_attr, int match_tag_override, int match_exec_override);
@@ -54,7 +54,7 @@ void bypass_oper(opmatch_t **matchptr, int inport, oper_t *oper, thread_args *pe
 void inter_pe_send(int pe_id, instr_t *target, int dstn, oper_t oper, thread_args *pe_attr);
 //int can_exec(instr_t *instr);
 
-dispatch_t * can_exec(instr_t *instr, int tag, int exectag, thread_args *pe_attr);
+dispatch_t * can_exec(instr_t *instr, unsigned int tag, int exectag, thread_args *pe_attr);
 
 
 void init_combuff(combuff_t *comm);
@@ -63,9 +63,9 @@ void comm_send(combuff_t *comm, qelem elem);
 qelem comm_recv(combuff_t *comm, int blocking);
 
 
-int treat_marker(int tag, int *pmax_tag, int *pcount, thread_args *attr, int isidle);
+int treat_marker(unsigned int tag, int *pmax_tag, int *pcount, thread_args *attr, int isidle);
 
-void send_markers(int tag, int id, int n);
+void send_markers(unsigned int tag, int id, int n);
 
 void send_dispatch(dispatch_t *disp, int pe_id, thread_args *pe_attr);
 int get_notnull_spec(oper_t **oper, int len);
@@ -103,7 +103,7 @@ static inline int valtag_is_execonly_oper1(const oper_t *op) {
 	return (op && op->value.i < 0);
 }
 
-opmatch_t *create_opmatch(int tag, int exec, thread_args *pe_attr);
+opmatch_t *create_opmatch(unsigned int tag, int exec, thread_args *pe_attr);
 
 static int valtag_execonly_bucket(instr_t *instr, int exec) {
 	for (opmatch_t *m = instr->opmatch; m != NULL; m = m->next) {
@@ -156,7 +156,7 @@ static __thread size_t df_list_block_used = 0;
 static __thread int debug_match_target_id = -1;
 static __thread int debug_match_target_op = -1;
 static __thread int debug_trace_port = -1;
-opmatch_t *create_opmatch(int tag, int exec, thread_args *pe_attr);
+opmatch_t *create_opmatch(unsigned int tag, int exec, thread_args *pe_attr);
 static int debug_trace_id(int id) {
 	const char *env = getenv("DF_DEBUG_TRACE_ID");
 	char buf[32];
@@ -1434,7 +1434,7 @@ void treat_msgs(thread_args *attr, int isblocking) {
  */
 
 
-int treat_marker(int tag, int *pmax_tag, int *pcount, thread_args *attr, int isidle) {
+int treat_marker(unsigned int tag, int *pmax_tag, int *pcount, thread_args *attr, int isidle) {
 	//Global termination detection algorithm
 
 	int n_edges = attr->n_edges;
@@ -1478,7 +1478,7 @@ int treat_marker(int tag, int *pmax_tag, int *pcount, thread_args *attr, int isi
 
 }
 
-void send_markers(int tag, int id, int n) {
+void send_markers(unsigned int tag, int id, int n) {
 	/*NOTE: Since the communication is implemented in a complete graph topology, the target nodes of all nodes(threads) are the same, so we just have one array of communication buffers, the global variable comm_buffer[] */
 	int i;
 
@@ -1509,7 +1509,8 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 	//
 	oper_t **oper = disp->op; 
 	instr_t *instr = disp->instr;
-	int i, tag, exectag, spectag;
+	int i, exectag, spectag;
+	unsigned int tag;
 	//int free_disp = 1
 	int  free_opers = !disp->speculative;
 #ifdef USE_STM	
@@ -1876,7 +1877,8 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 		case OP_RETSND:
 			{
 				oper_t *tagop = oper[1] ? oper[1] : oper[0];
-				result[0].value.i = instr->immed.i;
+				result[0].value.li = (long int)instr->immed.i;
+				result[0].value.i = (int)result[0].value.li;
 				result[0].tag = tagop->tag;
 				result[0].exec = tagop->exec;
 				
@@ -1895,7 +1897,8 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 
 
 		case OP_TAGTOVAL:
-        		result[0].value.i = oper[0]->tag;
+			result[0].value.li = (long int)oper[0]->tag;
+        		result[0].value.i = (int)result[0].value.li;
 			result[0].exec = oper[0]->exec;
 			result[0].tag = oper[0]->tag;
 			#ifdef DEBUG_EXECUTION
@@ -1966,8 +1969,8 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 					#ifdef DEBUG_STM
 						printf("Instrucao commitada: opcode %d\n", disprcvd->instr->opcode);
 					#endif
-						result[0].value.i = 0; //Go-ahead token, could have any value
-						result[1].value.i = oper[0]->spec; //Wait token, equal to the last reexecution time
+						result[0].value.li = 0; result[0].value.i = 0; //Go-ahead token, could have any value
+						result[1].value.li = (long int)oper[0]->spec; result[1].value.i = (int)result[1].value.li; //Wait token, equal to the last reexecution time
 						result[0].spec = result[1].spec = 0;
 						//result[0].isspeculative = result[1].isspeculative = 0; 
 						//A commit's outputs are not speculative, commit ends speculation.
@@ -2495,7 +2498,7 @@ int get_notnull_spec(oper_t **oper, int len) {
 
 
 /*
-oper_t * get_oper(oper_t **oplist, int tag) {
+oper_t * get_oper(oper_t **oplist, unsigned int tag) {
 	//TODO; remove from list
 	oper_t *op_ptr, *op_ret=NULL, **prevptr;
 	
@@ -2520,7 +2523,7 @@ oper_t * get_oper(oper_t **oplist, int tag) {
 } 
 */
 /*
-oper_t ** get_oper(oper_t **oplist, int tag, int exectag) {
+oper_t ** get_oper(oper_t **oplist, unsigned int tag, int exectag) {
 	//returns the address of the pointer to the operand(if found), so the operand can be then removed from the list
 	//with just one step
 	oper_t **ptr;
@@ -2615,7 +2618,7 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 						debug_match_target_id = -1;
 						debug_match_target_op = -1;
 					}
-					int tag_exec = (ignore_tag_match ? 0 : result[i].tag);
+					unsigned int tag_exec = (ignore_tag_match ? 0 : result[i].tag);
 					int exec_exec = (ignore_exec_match ? 0 : result[i].exec);
 					if (target->opcode == OP_VALTOTAG && !ignore_tag_match) {
 						if (inputn == 1 && valtag_is_execonly_oper1(&result[i])) {
@@ -2642,7 +2645,7 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 }
 
 
-dispatch_t * can_exec(instr_t *instr, int tag, int exectag, thread_args *pe_attr) {
+dispatch_t * can_exec(instr_t *instr, unsigned int tag, int exectag, thread_args *pe_attr) {
 	int i;
 	dispatch_t *disp;
 	opmatch_t **matchptr = &(instr->opmatch), *match;
@@ -2705,7 +2708,7 @@ dispatch_t * can_exec(instr_t *instr, int tag, int exectag, thread_args *pe_attr
 }
 
 /*
-dispatch_t * can_exec_old(instr_t *instr, int tag, int exectag) {
+dispatch_t * can_exec_old(instr_t *instr, unsigned int tag, int exectag) {
 
 	oper_t *op, **opptr[MAX_SOURCE]; //TODO: allocate dynamically??
 	int i, no_null_found = 1;
@@ -2810,7 +2813,7 @@ void add_to_match(opmatch_t *match, int inport, oper_t *oper, thread_args *pe_at
 	}
 
 }
-opmatch_t *create_opmatch(int tag, int exec, thread_args *pe_attr) {
+opmatch_t *create_opmatch(unsigned int tag, int exec, thread_args *pe_attr) {
 	opmatch_t *match = opmatch_alloc(pe_attr);
 	int i;
 

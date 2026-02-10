@@ -4,9 +4,10 @@ set -euo pipefail
 # ============================================================
 # dyck/run_compare.sh — Run TALM super sweep + GHC baseline,
 # then produce individual + comparison plots.
+# Supports comma-separated N for multi-N sweeps.
 # ============================================================
 
-N=0; REPS=1
+N_CSV=""; REPS=1
 PROCS_CSV=""; IMB_CSV=""; DELTA_CSV="0"
 INTERP=""; ASM_ROOT=""; CODEGEN_ROOT=""
 OUTROOT=""; TAG="dyck_compare"
@@ -18,7 +19,7 @@ SKIP_SUPER="${SKIP_SUPER:-0}"
 SKIP_GHC="${SKIP_GHC:-0}"
 
 usage(){
-  echo "uso: $0 --N SIZE --reps R --procs \"1,2,...\" --imb \"0,10,...\" [--delta \"0,2\"] \\"
+  echo "uso: $0 --N \"50000,100000,...\" --reps R --procs \"1,2,...\" --imb \"0,10,...\" [--delta \"0,2\"] \\"
   echo "        --interp PATH --asm-root PATH --codegen PATH --outroot PATH [--tag TAG]"
   echo ""
   echo "env: SKIP_SUPER=1  (reuse existing TALM metrics)"
@@ -29,7 +30,7 @@ usage(){
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --N)        N="$2"; shift 2;;
+    --N)        N_CSV="$2"; shift 2;;
     --reps)     REPS="$2"; shift 2;;
     --procs)    PROCS_CSV="$2"; shift 2;;
     --imb)      IMB_CSV="$2"; shift 2;;
@@ -43,7 +44,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ "$N" -gt 0 && -n "$PROCS_CSV$IMB_CSV$OUTROOT" ]] || usage
+[[ -n "$N_CSV" && -n "$PROCS_CSV$IMB_CSV$OUTROOT" ]] || usage
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SUPER_CSV="$OUTROOT/metrics_${TAG}_super.csv"
@@ -57,7 +58,7 @@ else
   echo "=== TALM Super Sweep ==="
   PY2="$PY2" PLACE_MODE="$PLACE_MODE" SUPERS_FIXED="$SUPERS_FIXED" \
   bash "$SCRIPT_DIR/run.sh" \
-    --N "$N" --reps "$REPS" --procs "$PROCS_CSV" --imb "$IMB_CSV" --delta "$DELTA_CSV" \
+    --N "$N_CSV" --reps "$REPS" --procs "$PROCS_CSV" --imb "$IMB_CSV" --delta "$DELTA_CSV" \
     --interp "$INTERP" --asm-root "$ASM_ROOT" --codegen "$CODEGEN_ROOT" \
     --outroot "$OUTROOT" --tag "${TAG}_super" --plots no
 fi
@@ -68,7 +69,7 @@ if [[ "$SKIP_GHC" -eq 1 && -f "$GHC_CSV" ]]; then
 else
   echo "=== GHC Baseline ==="
   bash "$SCRIPT_DIR/run_hs.sh" \
-    --N "$N" --reps "$REPS" --procs "$PROCS_CSV" --imb "$IMB_CSV" --delta "$DELTA_CSV" \
+    --N "$N_CSV" --reps "$REPS" --procs "$PROCS_CSV" --imb "$IMB_CSV" --delta "$DELTA_CSV" \
     --outroot "$OUTROOT" --tag "${TAG}_ghc"
 fi
 
