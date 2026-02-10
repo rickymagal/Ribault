@@ -6,6 +6,8 @@ import random
 
 SUPER_BODY_SEQ = """    sorted =
       let
+        hlist = ctoList lst
+
         splitLocal []         = ([], [])
         splitLocal [x]        = ([x], [])
         splitLocal (x:y:rest) =
@@ -24,11 +26,13 @@ SUPER_BODY_SEQ = """    sorted =
           let (l, r) = splitLocal xs
           in mergeLocal (ms l) (ms r)
       in
-        ms lst
+        cfromList (ms hlist)
 """
 
 SUPER_BODY_PAR = """    sorted =
       let
+        hlist = ctoList lst
+
         forceList []     = ()
         forceList (_:xs) = forceList xs
 
@@ -52,7 +56,7 @@ SUPER_BODY_PAR = """    sorted =
               r' = ms r
           in forceList l' `par` (forceList r' `pseq` mergeLocal l' r')
       in
-        ms lst
+        cfromList (ms hlist)
 """
 
 
@@ -97,11 +101,35 @@ cutoff = __CUTOFF__;
 
 depth n = if n <= cutoff then 0 else 1 + depth (n / 2);
 
+-- SUPER: generate the input vector inside Haskell (avoids O(N) inline list in source)
+init_super inp =
+  super single input (inp) output (result)
+#BEGINSUPER
+    result = let
+        hlist = ctoList inp
+        n = head hlist
+      in cfromList [n, n-1 .. 1]
+#ENDSUPER;
+
 -- SUPER: full merge sort for small lists
 ms_super lst =
   super single input (lst) output (sorted)
 #BEGINSUPER
 __SUPER_BODY__
+#ENDSUPER;
+
+-- SUPER: verify sorted order and print result (1=sorted, 0=not sorted)
+verify_sorted lst =
+  super single input (lst) output (out)
+#BEGINSUPER
+    out =
+      let hlist = ctoList lst
+          isSorted []       = True
+          isSorted [_]      = True
+          isSorted (x:y:ys) = x <= y && isSorted (y:ys)
+          n = length hlist
+          r = if isSorted hlist && n == __N__ then 1 else 0
+      in unsafePerformIO (do print r; pure 0)
 #ENDSUPER;
 
 mergeSort0 lst =
@@ -121,7 +149,7 @@ mergeSortD d lst = case lst of
           merge (mergeSortD (d - 1) left) (mergeSortD (d - 1) right);;
 ;
 
-main = mergeSort0 __VEC__;
+main = verify_sorted (mergeSort0 (init_super [__N__]));
 """
 
 
@@ -197,7 +225,10 @@ p = __P__;
 init_super inp =
   super single input (inp) output (result)
 #BEGINSUPER
-    result = let n = head inp in [n, n-1 .. 1]
+    result = let
+        hlist = ctoList inp
+        n = head hlist
+      in cfromList [n, n-1 .. 1]
 #ENDSUPER;
 
 -- split_super: list -> [leftHandle, rightHandle]
@@ -206,11 +237,12 @@ split_super lst =
 #BEGINSUPER
     result =
       let
+        hlist = ctoList lst
         sp []         = ([], [])
         sp [x]        = ([x], [])
         sp (x:y:rest) = let (xs, ys) = sp rest in (x:xs, y:ys)
-        (l, r) = sp lst
-      in [cfromList l, cfromList r]
+        (l, r) = sp hlist
+      in cfromList [cfromList l, cfromList r]
 #ENDSUPER;
 
 -- merge_super: [leftHandle, rightHandle] -> merged list
@@ -219,14 +251,15 @@ merge_super pair =
 #BEGINSUPER
     result =
       let
-        l  = ctoList (head pair)
-        r  = ctoList (head (tail pair))
+        hpair = ctoList pair
+        l  = ctoList (head hpair)
+        r  = ctoList (head (tail hpair))
         mg [] ys        = ys
         mg xs []        = xs
         mg (x:xt) (y:yt)
           | x <= y     = x : mg xt (y:yt)
           | otherwise  = y : mg (x:xt) yt
-      in mg l r
+      in cfromList (mg l r)
 #ENDSUPER;
 
 -- ms_super: list -> sorted list (leaf sort, sequential)
@@ -234,6 +267,45 @@ ms_super lst =
   super single input (lst) output (sorted)
 #BEGINSUPER
 __SUPER_BODY__
+#ENDSUPER;
+
+-- verify sorted order: returns 1 if sorted with correct count, 0 otherwise.
+-- Traverses C-list cells directly in IO to avoid stack overflow on large lists.
+verify_sorted lst =
+  super single input (lst) output (out)
+#BEGINSUPER
+    out = unsafePerformIO $ do
+      let pHead p = peekByteOff (intPtrToPtr (fromIntegral p)) 0 :: IO Int64
+          pTail p = peekByteOff (intPtrToPtr (fromIntegral p)) 8 :: IO Int64
+      prevRef   <- newIORef (0 :: Int64)
+      cntRef    <- newIORef (0 :: Int)
+      sortedRef <- newIORef True
+      ptrRef    <- newIORef lst
+      let loop = do
+            ptr <- readIORef ptrRef
+            if ptr == 0
+              then return ()
+              else do
+                h <- pHead ptr
+                t <- pTail ptr
+                prev <- readIORef prevRef
+                cnt  <- readIORef cntRef
+                when (cnt > 0 && h < prev) $ writeIORef sortedRef False
+                writeIORef prevRef h
+                writeIORef cntRef (cnt + 1)
+                writeIORef ptrRef t
+                loop
+      loop
+      cnt <- readIORef cntRef
+      ok  <- readIORef sortedRef
+      pure (if ok && cnt == __N__ then 1 else 0)
+#ENDSUPER;
+
+-- print_result: takes an Int64, prints it, returns 0.
+print_result v =
+  super single input (v) output (out)
+#BEGINSUPER
+    out = unsafePerformIO (do print v; hFlush stdout; pure 0)
 #ENDSUPER;
 
 -- Pure fork/join skeleton: no DF list ops, only super calls.
@@ -247,7 +319,7 @@ mergeSortD d lst =
             merge_super (mergeSortD (d - 1) lh : mergeSortD (d - 1) rh : []);;
 ;
 
-main = mergeSortD __DEPTH__ (init_super [__N__]);
+main = print_result (verify_sorted (mergeSortD __DEPTH__ (init_super [__N__])));
 """
 
 SEQ_TMPL = """-- Merge Sort in the subset of the compiled functional language
@@ -319,7 +391,13 @@ msort ptr size nparts =
 ;;
 ;
 
-main = msort (init_super [__N__]) __N__ __NPARTS__;
+verify_sorted arr =
+  super single input (arr) output (out)
+#BEGINSUPER
+    out = arr
+#ENDSUPER;
+
+main = verify_sorted (msort (init_super [__N__]) __N__ __NPARTS__);
 """
 
 
@@ -350,7 +428,9 @@ def make_vec(n: int, kind: str) -> str:
 
 def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    vec = make_vec(n, vec_kind)
+    # Only generate inline vector for modes that need it (seq, asm)
+    need_vec = mode in ("seq",) or (mode == "super" and os.getenv("MS_LEAF", "super").lower() == "asm")
+    vec = make_vec(n, vec_kind) if need_vec else ""
     if mode == "seq":
         src = SEQ_TMPL.replace("__VEC__", vec)
     elif mode == "array":
@@ -370,8 +450,8 @@ def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str) -
             .replace("__N__", str(n))
             .replace("__SUPER_BODY__", super_body)
         )
-        if src.count("#BEGINSUPER") != 4:
-            raise SystemExit("expected exactly four SUPER blocks (coarse)")
+        if src.count("#BEGINSUPER") != 6:
+            raise SystemExit("expected exactly six SUPER blocks (coarse)")
     else:
         leaf_mode = os.getenv("MS_LEAF", "super").lower()
         if leaf_mode == "asm":
@@ -387,12 +467,12 @@ def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str) -
             src = (
                 WORKING_TMPL_SUPER.replace("__P__", str(p))
                 .replace("__CUTOFF__", str(cutoff))
-                .replace("__VEC__", vec)
+                .replace("__N__", str(n))
                 .replace("__LEAF_FN__", leaf_fn)
                 .replace("__SUPER_BODY__", super_body)
             )
-            if src.count("#BEGINSUPER") != 1:
-                raise SystemExit("expected exactly one SUPER block (ms)")
+            if src.count("#BEGINSUPER") != 3:
+                raise SystemExit("expected exactly three SUPER blocks (ms)")
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
     print(f"[ms_gen_input] wrote {path} (N={n}, P={p}, vec={vec_kind})")

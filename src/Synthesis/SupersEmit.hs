@@ -39,6 +39,8 @@ emitSupersModule baseName specs =
       , "import GHC.Conc (par, pseq)"
       , "import GHC.Float (castWord32ToFloat, castFloatToWord32)"
       , "import System.IO.Unsafe (unsafePerformIO)"
+      , "import Data.IORef       (IORef, newIORef, readIORef, writeIORef)"
+      , "import Control.Monad    (when)"
       , ""
       , "-- Profile B: sN :: Ptr Int64 -> Ptr Int64 -> IO ()"
       , "-- Contract: reads in[0] and writes to out[0]."

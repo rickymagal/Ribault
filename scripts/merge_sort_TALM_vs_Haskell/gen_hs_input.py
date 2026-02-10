@@ -59,7 +59,7 @@ main = do
 
 def make_vec(n, kind):
     if kind == "range":
-        return "[" + ",".join(str(i) for i in range(n, 0, -1)) + "]"
+        return f"[{n}, {n-1} .. 1]"
     elif kind == "rand":
         rnd = random.Random(1337)
         xs = [rnd.randint(0, n*2) for _ in range(n)]
