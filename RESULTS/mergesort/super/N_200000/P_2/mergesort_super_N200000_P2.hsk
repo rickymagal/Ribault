@@ -1,0 +1,44 @@
+-- Array-based parallel merge sort v2b (C supers).
+-- sort_leaf takes [ptr, size] list; outputs arr_alloc'd ptr.
+-- merge_pair takes [lptr, rptr]; both arr_alloc'd, so ptr[-1] = size.
+
+p = 2;
+
+init_super inp =
+  super single input (inp) output (result)
+#BEGINSUPER
+    result = inp
+#ENDSUPER;
+
+sort_leaf info =
+  super single input (info) output (result)
+#BEGINSUPER
+    result = info
+#ENDSUPER;
+
+merge_pair pair =
+  super single input (pair) output (result)
+#BEGINSUPER
+    result = pair
+#ENDSUPER;
+
+msort ptr size nparts =
+  if nparts <= 1
+  then sort_leaf (ptr : size : [])
+  else
+    let lsize = size / 2
+        rsize = size - lsize
+        rptr  = ptr + lsize * 8
+        lnp   = nparts / 2
+        rnp   = nparts - lnp
+    in merge_pair (msort ptr lsize lnp : msort rptr rsize rnp : [])
+;;
+;
+
+verify_sorted arr =
+  super single input (arr) output (out)
+#BEGINSUPER
+    out = arr
+#ENDSUPER;
+
+main = verify_sorted (msort (init_super [200000]) 200000 2);

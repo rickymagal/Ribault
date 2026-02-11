@@ -8,44 +8,47 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-def load_super(path_super):
-    df = pd.read_csv(path_super)
-    df = df[(df["variant"]=="super") & (df["rc"]==0)].copy()
-    return df
-
-def load_hs(path_hs):
-    df = pd.read_csv(path_hs)
-    df = df[(df["variant"]=="ghc") & (df["rc"]==0)].copy()
+def load_variant(path, variant):
+    df = pd.read_csv(path)
+    df = df[(df["variant"]==variant) & (df["rc"]==0)].copy()
     return df
 
 def mean_std(df):
-    # mean/std por (impl,N,P,imb,delta)
     g = df.groupby(["N","P","imb","delta"], as_index=False)["seconds"].agg(["mean","std"]).reset_index()
     g.rename(columns={"mean":"mean_seconds","std":"std_seconds"}, inplace=True)
     return g
 
 def pick_best_per_N(g):
-    # para cada (N,imb,delta): pega P com menor mean_seconds
     g["rank"] = g.groupby(["N","imb","delta"])["mean_seconds"].rank(method="first")
     best = g[g["rank"]==1].drop(columns=["rank"])
     return best
 
-def plot_compare(best_super, best_hs, outdir, tag):
-    # um gráfico por (imb,delta): N x mean_seconds (com barras de erro)
-    keys = sorted(set(map(tuple, best_super[["imb","delta"]].drop_duplicates().values.tolist() +
-                                best_hs[["imb","delta"]].drop_duplicates().values.tolist())))
-    for (imb, delta) in keys:
-        s = best_super[(best_super["imb"]==imb) & (best_super["delta"]==delta)]
-        h = best_hs[(best_hs["imb"]==imb) & (best_hs["delta"]==delta)]
-        if s.empty and h.empty: 
-            continue
+STYLES = [
+    dict(marker="o", capsize=3, color="tab:blue"),   # TALM
+    dict(marker="s", capsize=3, color="tab:orange"),  # GHC Strategies
+    dict(marker="D", capsize=3, color="tab:green"),   # GHC par/pseq
+]
+
+def plot_compare(variants_data, outdir, tag):
+    # collect all (imb,delta) keys
+    all_keys = set()
+    for label, best, style in variants_data:
+        keys = set(map(tuple, best[["imb","delta"]].drop_duplicates().values.tolist()))
+        all_keys |= keys
+
+    for (imb, delta) in sorted(all_keys):
         plt.figure()
-        if not s.empty:
-            plt.errorbar(s["N"], s["mean_seconds"], yerr=s["std_seconds"].fillna(0.0),
-                         marker="o", capsize=3, label="TALM (best P)")
-        if not h.empty:
-            plt.errorbar(h["N"], h["mean_seconds"], yerr=h["std_seconds"].fillna(0.0),
-                         marker="s", capsize=3, label="GHC Parallel (best P)")
+        has_data = False
+        for label, best, style in variants_data:
+            sub = best[(best["imb"]==imb) & (best["delta"]==delta)]
+            if sub.empty: continue
+            has_data = True
+            plt.errorbar(sub["N"], sub["mean_seconds"],
+                         yerr=sub["std_seconds"].fillna(0.0),
+                         label=f"{label} (best P)", **style)
+        if not has_data:
+            plt.close()
+            continue
         plt.title(f"Dyck Path: Best-of-Breed Runtime vs N  (imb={imb}, delta={delta})")
         plt.xlabel("Input size N"); plt.ylabel("Runtime (seconds)")
         plt.grid(True, linestyle=":", linewidth=0.8)
@@ -57,20 +60,37 @@ def plot_compare(best_super, best_hs, outdir, tag):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--metrics-super", required=True)
-    ap.add_argument("--metrics-hs", required=True)
-    ap.add_argument("--outdir", required=True)
-    ap.add_argument("--tag", required=True)
+    ap.add_argument("--metrics-super",   required=True)
+    ap.add_argument("--metrics-hs",      required=True)
+    ap.add_argument("--metrics-parpseq", default=None)
+    ap.add_argument("--outdir",          required=True)
+    ap.add_argument("--tag",             required=True)
     args = ap.parse_args()
     os.makedirs(args.outdir, exist_ok=True)
 
-    ds = load_super(args.metrics_super)
-    dh = load_hs(args.metrics_hs)
-    if ds.empty or dh.empty:
-        print("[warn] one of the metrics files has no rows.")
-    gs = mean_std(ds); gh = mean_std(dh)
-    bs = pick_best_per_N(gs); bh = pick_best_per_N(gh)
-    plot_compare(bs, bh, args.outdir, args.tag)
+    variants_data = []
+
+    ds = load_variant(args.metrics_super, "super")
+    if not ds.empty:
+        gs = mean_std(ds); bs = pick_best_per_N(gs)
+        variants_data.append(("Ribault (TALM)", bs, STYLES[0]))
+
+    dh = load_variant(args.metrics_hs, "ghc")
+    if not dh.empty:
+        gh = mean_std(dh); bh = pick_best_per_N(gh)
+        variants_data.append(("GHC Strategies", bh, STYLES[1]))
+
+    if args.metrics_parpseq and os.path.isfile(args.metrics_parpseq):
+        dp = load_variant(args.metrics_parpseq, "parpseq")
+        if not dp.empty:
+            gp = mean_std(dp); bp = pick_best_per_N(gp)
+            variants_data.append(("GHC par/pseq", bp, STYLES[2]))
+
+    if len(variants_data) < 2:
+        print("[warn] need at least 2 variants to compare.")
+        return
+
+    plot_compare(variants_data, args.outdir, args.tag)
     print(f"[compare] saved into {args.outdir}")
 
 if __name__ == "__main__":

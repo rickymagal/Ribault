@@ -1,0 +1,150 @@
+const z0, 0
+callgroup("cg30","fib_seq")
+callgroup("cg64","fib")
+callgroup("cg91","fib")
+callgroup("cg112","fib")
+callgroup("cg132","print_result")
+const n0, 35
+addi n1, [s111.w, s110.w], 0
+addi n2, fib[1], 0
+const n3, 30
+sub n4, n2, n2
+addi n5, n4, 30
+lthan n6, n2, n5
+sub n7, n2, n2
+addi n8, n7, 30
+equal n9, n2, n8
+add n10, n6, n9
+sub n11, n10, n10
+gthan n12, n10, n11
+sub n13, n12, n12
+gthan n14, n12, n13
+const n15, 1
+sub n16, n14, n14
+addi n17, n16, 1
+steer s18, n14, n17
+const n19, 1
+sub n20, n14, n14
+addi n21, n20, 1
+steer s22, n14, n21
+tagval n23, n2
+valtag n24, s22.w, n23
+steer s25, n24, n2
+addi n26, n28, 0
+addi n27, fib_seq[1], 0
+super n28, 5, 1, n27
+ret fib_seq, n42, n40
+tagval n31, s25.w
+muli n32, n31, 9
+addi n33, n32, 2
+valtag n34, s25.w, n33
+tagval n35, s25.w
+muli n36, n35, 9
+addi n37, n36, 2
+valtag n38, s25.w, n37
+callsnd fib_seq[1], n38, n34, 0
+retsnd n40, n34, n34, cg30
+tagval n41, n40
+valtag n42, n26, n41
+tagval n43, n42
+divi n44, n43, 9
+valtag n45, n42, n44
+tagval n46, s18.w
+valtag n47, n45, n46
+sub n48, n14, n14
+equal n49, n14, n48
+const n50, 1
+sub n51, n49, n49
+addi n52, n51, 1
+steer s53, n49, n52
+sub n54, n49, n49
+addi n55, n54, 1
+sub n56, n2, n55
+const n57, 1
+sub n58, n49, n49
+addi n59, n58, 1
+steer s60, n49, n59
+tagval n61, n56
+valtag n62, s60.w, n61
+steer s63, n62, n56
+tagval n65, s63.w
+muli n66, n65, 9
+addi n67, n66, 2
+valtag n68, s63.w, n67
+tagval n69, s63.w
+muli n70, n69, 9
+addi n71, n70, 2
+valtag n72, s63.w, n71
+callsnd fib[1], n72, n68, 0
+retsnd n74, n68, n68, cg64
+ret fib, [n77, n103, n124], [n74, n101, n122]
+tagval n76, n74
+valtag n77, n1, n76
+tagval n78, n77
+divi n79, n78, 9
+valtag n80, n77, n79
+sub n81, n49, n49
+addi n82, n81, 2
+sub n83, n2, n82
+const n84, 1
+sub n85, n49, n49
+addi n86, n85, 1
+steer s87, n49, n86
+tagval n88, n83
+valtag n89, s87.w, n88
+steer s90, n89, n83
+tagval n92, s90.w
+muli n93, n92, 9
+addi n94, n93, 3
+valtag n95, s90.w, n94
+tagval n96, s90.w
+muli n97, n96, 9
+addi n98, n97, 3
+valtag n99, s90.w, n98
+callsnd fib[1], n99, n95, 0
+retsnd n101, n95, n95, cg91
+tagval n102, n101
+valtag n103, n1, n102
+tagval n104, n103
+divi n105, n104, 9
+valtag n106, n103, n105
+add n107, n80, n106
+tagval n108, s53.w
+valtag n109, n107, n108
+steer s110, n14, n47
+steer s111, n49, n109
+tagval n113, n0
+muli n114, n113, 9
+addi n115, n114, 4
+valtag n116, n0, n115
+tagval n117, n0
+muli n118, n117, 9
+addi n119, n118, 4
+valtag n120, n0, n119
+callsnd fib[1], n120, n116, 0
+retsnd n122, n116, n116, cg112
+tagval n123, n122
+valtag n124, n1, n123
+tagval n125, n124
+divi n126, n125, 9
+valtag n127, n124, n126
+addi n128, n130, 0
+addi n129, print_result[1], 0
+super n130, 4, 1, n129
+ret print_result, n144, n142
+tagval n133, n127
+muli n134, n133, 9
+addi n135, n134, 2
+valtag n136, n127, n135
+tagval n137, n127
+muli n138, n137, 9
+addi n139, n138, 2
+valtag n140, n127, n139
+callsnd print_result[1], n140, n136, 0
+retsnd n142, n136, n136, cg132
+tagval n143, n142
+valtag n144, n128, n143
+tagval n145, n144
+divi n146, n145, 9
+valtag n147, n144, n146
+ret main, n147, z0
