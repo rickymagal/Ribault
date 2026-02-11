@@ -99,9 +99,9 @@ def plot_runtime(byP, outdir, tag, N, delta):
         xs, mu, sd = series_stats(byP[P])
         if xs:
             plt.errorbar(xs, mu, yerr=sd, marker="o", capsize=3, label=f"P={P}")
-    t = f"Runtime vs IMB (N={N:,})"
-    if delta: t += f", delta={delta}"
-    plt.title(t); plt.xlabel("IMB"); plt.ylabel("Runtime (s)")
+    t = f"Dyck Path Validation: Runtime vs Work Imbalance (N={N:,})"
+    if delta: t += f", \u03b4={delta}"
+    plt.title(t, fontsize=12); plt.xlabel("Work Imbalance (%)", fontsize=11); plt.ylabel("Runtime (s)", fontsize=11)
     plt.grid(True, ls=":", lw=.8); plt.legend(title="Processors"); plt.tight_layout()
     _save(outdir, f"runtime_{tag}_delta{delta}")
 
@@ -117,9 +117,9 @@ def plot_speedup(byP, outdir, tag, N, delta):
             if imb in bmap and t > 0:
                 si.append(imb); sv.append(bmap[imb] / t)
         if si: plt.plot(si, sv, marker="o", label=f"P={P}")
-    t = f"Speedup vs IMB (N={N:,})"
-    if delta: t += f", delta={delta}"
-    plt.title(t); plt.xlabel("IMB"); plt.ylabel(f"Speedup vs P={bP}")
+    t = f"Dyck Path Validation: Speedup vs Work Imbalance (N={N:,})"
+    if delta: t += f", \u03b4={delta}"
+    plt.title(t, fontsize=12); plt.xlabel("Work Imbalance (%)", fontsize=11); plt.ylabel(f"Speedup (baseline P={bP})", fontsize=11)
     plt.grid(True, ls=":", lw=.8); plt.legend(title="Processors"); plt.tight_layout()
     _save(outdir, f"speedup_{tag}_delta{delta}")
 
@@ -135,44 +135,49 @@ def plot_efficiency(byP, outdir, tag, N, delta):
             if imb in bmap and t > 0:
                 ei.append(imb); ev.append((bmap[imb] / t) / P)
         if ei: plt.plot(ei, ev, marker="o", label=f"P={P}")
-    t = f"Efficiency vs IMB (N={N:,})"
-    if delta: t += f", delta={delta}"
-    plt.title(t); plt.xlabel("IMB"); plt.ylabel("Efficiency")
+    t = f"Dyck Path Validation: Parallel Efficiency vs Work Imbalance (N={N:,})"
+    if delta: t += f", \u03b4={delta}"
+    plt.title(t, fontsize=11); plt.xlabel("Work Imbalance (%)", fontsize=11); plt.ylabel("Efficiency (Speedup / P)", fontsize=11)
     plt.grid(True, ls=":", lw=.8); plt.legend(title="Processors"); plt.tight_layout()
     _save(outdir, f"efficiency_{tag}_delta{delta}")
 
 # ── comparison plots (per-N) ────────────────────────────────
 
 def plot_compare_runtime(data, outdir, tag, N, delta):
-    """All TALM P-curves vs all GHC P-curves, each with a unique color."""
+    """All variant P-curves, each with a unique color."""
     plt.figure(figsize=(10, 6))
     colors = plt.cm.tab10.colors
     ci = 0
-    if 'super' in data and delta in data['super']:
-        for P in sorted(data['super'][delta]):
-            xs, mu, sd = series_stats(data['super'][delta][P])
+    variant_styles = [
+        ('super',  '-',  's', 'TALM'),
+        ('ghc',    '--', 'o', 'GHC Strategies'),
+        ('parpseq','-.', 'D', 'GHC par/pseq'),
+    ]
+    for variant, ls, mk, vlbl in variant_styles:
+        if variant not in data or delta not in data[variant]:
+            continue
+        for P in sorted(data[variant][delta]):
+            xs, mu, sd = series_stats(data[variant][delta][P])
             plt.errorbar(xs, mu, yerr=sd, color=colors[ci % len(colors)],
-                         ls='-', marker='s', ms=6, capsize=3, lw=1.8,
-                         label=f'TALM P={P}')
+                         ls=ls, marker=mk, ms=5, capsize=3, lw=1.8,
+                         label=f'{vlbl} P={P}')
             ci += 1
-    if 'ghc' in data and delta in data['ghc']:
-        for P in sorted(data['ghc'][delta]):
-            xs, mu, sd = series_stats(data['ghc'][delta][P])
-            plt.errorbar(xs, mu, yerr=sd, color=colors[ci % len(colors)],
-                         ls='--', marker='o', ms=5, capsize=3, lw=1.8,
-                         label=f'GHC P={P}')
-            ci += 1
-    plt.title(f"TALM vs GHC \u2013 Runtime (N={N:,})")
-    plt.xlabel("Work Imbalance (IMB)"); plt.ylabel("Runtime (s)")
+    plt.title(f"Dyck Path Validation: Runtime Comparison (N={N:,})", fontsize=12)
+    plt.xlabel("Work Imbalance (%)", fontsize=11); plt.ylabel("Runtime (s)", fontsize=11)
     plt.grid(True, ls=":", lw=.8); plt.legend(fontsize=8, ncol=2); plt.tight_layout()
     _save(outdir, f"compare_runtime_{tag}_delta{delta}")
 
 def plot_compare_speedup(data, outdir, tag, N, delta):
-    """Speedup comparison: TALM vs GHC, both relative to own P=1. Unique color per curve."""
+    """Speedup comparison: all variants, each relative to own P=1. Unique color per curve."""
     plt.figure(figsize=(10, 6))
     colors = plt.cm.tab10.colors
     ci = 0
-    for variant, (ls, vlbl) in [('super', ('-', 'TALM')), ('ghc', ('--', 'GHC'))]:
+    variant_styles = [
+        ('super',  '-',  'TALM'),
+        ('ghc',    '--', 'GHC Strategies'),
+        ('parpseq','-.', 'GHC par/pseq'),
+    ]
+    for variant, ls, vlbl in variant_styles:
         if variant not in data or delta not in data[variant]:
             continue
         byP = data[variant][delta]
@@ -189,27 +194,30 @@ def plot_compare_speedup(data, outdir, tag, N, delta):
                 plt.plot(si, sv, ls, color=colors[ci % len(colors)],
                          marker='o', ms=5, lw=1.8, label=f'{vlbl} P={P}')
             ci += 1
-    plt.title(f"TALM vs GHC \u2013 Speedup (N={N:,})")
-    plt.xlabel("IMB"); plt.ylabel("Speedup vs own P=1")
+    plt.title(f"Dyck Path Validation: Speedup Comparison (N={N:,})", fontsize=12)
+    plt.xlabel("Work Imbalance (%)", fontsize=11); plt.ylabel("Speedup (baseline P=1)", fontsize=11)
     plt.grid(True, ls=":", lw=.8); plt.legend(fontsize=8, ncol=2); plt.tight_layout()
     _save(outdir, f"compare_speedup_{tag}_delta{delta}")
 
 def plot_compare_best(data, outdir, tag, N, delta):
     """Best-of-each-variant runtime comparison, annotated with chosen P."""
     plt.figure(figsize=(10, 6))
-    styles = {'super': ('k-', 's', 'TALM best'), 'ghc': ('r--', 'D', 'GHC best')}
-    for variant in ('super', 'ghc'):
+    styles = {
+        'super':  ('k-',   's', 'TALM best',          'black'),
+        'ghc':    ('r--',  'D', 'GHC Strategies best', 'red'),
+        'parpseq':('g-.', '^', 'GHC par/pseq best',   'green'),
+    }
+    for variant in ('super', 'ghc', 'parpseq'):
         if variant not in data or delta not in data[variant]:
             continue
         imbs, best, best_Ps = best_runtime(data[variant][delta])
-        ls, mk, lbl = styles[variant]
+        ls, mk, lbl, clr = styles[variant]
         plt.plot(imbs, best, ls, marker=mk, ms=7, lw=2.5, label=lbl)
         for x, y, p in zip(imbs, best, best_Ps):
             plt.annotate(f'P={p}', (x, y), textcoords="offset points",
-                         xytext=(0, 10), ha='center', fontsize=7,
-                         color='black' if variant == 'super' else 'red')
-    plt.title(f"Best TALM vs Best GHC \u2013 Runtime (N={N:,})")
-    plt.xlabel("Work Imbalance (IMB)"); plt.ylabel("Runtime (s)")
+                         xytext=(0, 10), ha='center', fontsize=7, color=clr)
+    plt.title(f"Dyck Path Validation: Best Runtime per System (N={N:,})", fontsize=12)
+    plt.xlabel("Work Imbalance (%)", fontsize=11); plt.ylabel("Runtime (s)", fontsize=11)
     plt.grid(True, ls=":", lw=.8); plt.legend(fontsize=11); plt.tight_layout()
     _save(outdir, f"compare_best_{tag}_delta{delta}")
 
@@ -232,9 +240,9 @@ def plot_runtime_vs_N(byN, outdir, tag, Ns, delta, selected_imbs=None):
                     sds.append(stats.stdev(vals) if len(vals) >= 2 else 0.0)
             if ns:
                 plt.errorbar(ns, mus, yerr=sds, marker='o', capsize=3, label=f'P={P}')
-        t = f"Runtime vs N (IMB={imb})"
-        if delta: t += f", delta={delta}"
-        plt.title(t); plt.xlabel("N"); plt.ylabel("Runtime (s)")
+        t = f"Dyck Path Validation: Runtime vs Input Size (IMB={imb}%)"
+        if delta: t += f", \u03b4={delta}"
+        plt.title(t, fontsize=12); plt.xlabel("Input Size (N)", fontsize=11); plt.ylabel("Runtime (s)", fontsize=11)
         plt.grid(True, ls=":", lw=.8); plt.legend(title="Processors"); plt.tight_layout()
         _save(outdir, f"runtime_vs_N_{tag}_imb{imb}_delta{delta}")
 
@@ -263,9 +271,9 @@ def plot_speedup_vs_N(byN, outdir, tag, Ns, delta, selected_imbs=None):
                             sus.append(base_map[N] / mu)
             if ns:
                 plt.plot(ns, sus, marker='o', label=f'P={P}')
-        t = f"Speedup vs N (IMB={imb})"
-        if delta: t += f", delta={delta}"
-        plt.title(t); plt.xlabel("N"); plt.ylabel(f"Speedup vs P={base_P}")
+        t = f"Dyck Path Validation: Speedup vs Input Size (IMB={imb}%)"
+        if delta: t += f", \u03b4={delta}"
+        plt.title(t, fontsize=12); plt.xlabel("Input Size (N)", fontsize=11); plt.ylabel(f"Speedup (baseline P={base_P})", fontsize=11)
         plt.grid(True, ls=":", lw=.8); plt.legend(title="Processors"); plt.tight_layout()
         _save(outdir, f"speedup_vs_N_{tag}_imb{imb}_delta{delta}")
 
@@ -297,10 +305,10 @@ def plot_heatmap_best(byN, outdir, tag, Ns, delta):
     # Y ticks (N)
     ax.set_yticks(range(len(Ns)))
     ax.set_yticklabels([f"{N // 1000}k" for N in Ns], fontsize=8)
-    ax.set_xlabel('IMB'); ax.set_ylabel('N')
-    t = f"Best Runtime Heatmap"
-    if delta: t += f" (delta={delta})"
-    ax.set_title(t)
+    ax.set_xlabel('Work Imbalance (%)', fontsize=11); ax.set_ylabel('Input Size (N)', fontsize=11)
+    t = f"Dyck Path Validation: Best Runtime Heatmap"
+    if delta: t += f" (\u03b4={delta})"
+    ax.set_title(t, fontsize=12)
     plt.tight_layout()
     _save(outdir, f"heatmap_best_{tag}_delta{delta}")
 
@@ -341,10 +349,10 @@ def plot_heatmap_speedup(byN, outdir, tag, Ns, delta):
     ax.set_xticklabels([str(all_imbs[i]) for i in range(0, len(all_imbs), step_x)], fontsize=8)
     ax.set_yticks(range(len(Ns)))
     ax.set_yticklabels([f"{N // 1000}k" for N in Ns], fontsize=8)
-    ax.set_xlabel('IMB'); ax.set_ylabel('N')
-    t = f"Best Speedup Heatmap"
-    if delta: t += f" (delta={delta})"
-    ax.set_title(t)
+    ax.set_xlabel('Work Imbalance (%)', fontsize=11); ax.set_ylabel('Input Size (N)', fontsize=11)
+    t = f"Dyck Path Validation: Best Speedup Heatmap"
+    if delta: t += f" (\u03b4={delta})"
+    ax.set_title(t, fontsize=12)
     plt.tight_layout()
     _save(outdir, f"heatmap_speedup_{tag}_delta{delta}")
 

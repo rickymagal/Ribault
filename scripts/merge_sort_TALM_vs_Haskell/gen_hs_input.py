@@ -54,6 +54,9 @@ main = do
   forceList ys `seq` return ()
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
+  let sorted = and (zipWith (<=) ys (tail ys))
+  putStrLn $ "SORTED=" ++ show sorted
+  putStrLn $ "SORTED_HEAD=" ++ show (take 10 ys)
   putStrLn $ "RUNTIME_SEC=" ++ show secs
 """
 

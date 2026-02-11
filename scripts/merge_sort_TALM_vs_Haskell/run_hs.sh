@@ -7,12 +7,14 @@ set -euo pipefail
 
 START_N=0; STEP=0; N_MAX=0; REPS=1
 PROCS_CSV=""; OUTROOT=""; VEC_MODE="range"; TAG="ghc_ms"
+GEN_OVERRIDE=""
+VARIANT="ghc"
 GHC="${GHC:-ghc}"
 GHC_PKGS="${GHC_PKGS:--package time}"
 PY3="${PY3:-python3}"
 
 usage(){
-  echo "uso: $0 --start-N A --step B --n-max C --reps R --procs \"1,2,...\" --outroot DIR [--vec range|rand] [--tag nome]"
+  echo "uso: $0 --start-N A --step B --n-max C --reps R --procs \"1,2,...\" --outroot DIR [--vec range|rand] [--tag nome] [--gen script.py] [--variant name]"
   echo "env: GHC=ghc  PY3=python3"
   exit 2
 }
@@ -28,6 +30,8 @@ while [[ $# -gt 0 ]]; do
     --outroot) OUTROOT="$2"; shift 2;;
     --vec)     VEC_MODE="$2"; shift 2;;
     --tag)     TAG="$2"; shift 2;;
+    --gen)     GEN_OVERRIDE="$2"; shift 2;;
+    --variant) VARIANT="$2"; shift 2;;
     *) usage;;
   esac
 done
@@ -38,11 +42,15 @@ command -v "$GHC" >/dev/null || { echo "[ERRO] GHC não encontrado: $GHC"; exit 
 echo "[env ] GHC=${GHC} ; PY3=${PY3} ; GHC_PKGS=${GHC_PKGS}"
 
 MS_DIR="$(cd "$(dirname "$0")" && pwd)"
-GEN_HS="$MS_DIR/gen_hs_input.py"
+if [[ -n "$GEN_OVERRIDE" ]]; then
+  GEN_HS="$GEN_OVERRIDE"
+else
+  GEN_HS="$MS_DIR/gen_hs_input.py"
+fi
 [[ -f "$GEN_HS" ]] || { echo "[ERRO] não achei: $GEN_HS"; exit 1; }
 echo "[hs  ] usando gerador: $GEN_HS"
 
-rm -rf "$OUTROOT"; mkdir -p "$OUTROOT"
+mkdir -p "$OUTROOT"
 METRICS_CSV="$OUTROOT/metrics_${TAG}.csv"
 echo "variant,N,P,rep,seconds,rc" > "$METRICS_CSV"
 
@@ -72,6 +80,15 @@ run_bin_time_rc() {
   local secs="NaN"
   if [[ $rc -eq 0 ]]; then
     secs="$(awk -F= '/^RUNTIME_SEC=/{print $2; found=1} END{if(!found) print "NaN"}' "$outlog")"
+    # Verify sorting correctness
+    local sorted_val
+    sorted_val="$(awk -F= '/^SORTED=/{print $2}' "$outlog" 2>/dev/null || true)"
+    if [[ -n "$sorted_val" && "$sorted_val" != "True" ]]; then
+      >&2 echo "[ERR ] SORT INCORRECT: SORTED=$sorted_val"
+      rc=99
+    elif [[ -z "$sorted_val" ]]; then
+      >&2 echo "[WARN] SORTED= line missing from output"
+    fi
   fi
   echo "$secs $rc"
 }
@@ -93,7 +110,7 @@ while [[ "$N" -le "$N_MAX" ]]; do
       out="$(run_bin_time_rc "$BIN" "$P" "$CASE_DIR/logs")"
       read -r secs rc <<< "$out"
       echo "variant=ghc, N=${N}, P=${P}, rep=${rep}, secs=${secs}, rc=${rc}"
-      echo "ghc,${N},${P},${rep},${secs},${rc}" >> "$METRICS_CSV"
+      echo "${VARIANT},${N},${P},${rep},${secs},${rc}" >> "$METRICS_CSV"
     done
   done
   N=$((N + STEP))

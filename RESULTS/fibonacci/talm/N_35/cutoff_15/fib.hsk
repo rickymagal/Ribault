@@ -1,0 +1,29 @@
+-- fib.hsk  (auto-generated)
+-- N=35  CUTOFF=15
+
+-- SUPER: sequential fibonacci (iterative)
+fib_seq n =
+  super single input (n) output (out)
+#BEGINSUPER
+    out = let go i a b = if i >= n then a
+                         else go (i + 1) b (a + b)
+          in go 0 0 1
+#ENDSUPER
+
+-- Recursive fib: parallel above cutoff, sequential below
+fib n =
+  if n <= 15
+  then fib_seq n
+  else fib (n - 1) + fib (n - 2)
+
+-- SUPER: print result for correctness check
+print_result r =
+  super single input (r) output (out)
+#BEGINSUPER
+    out = unsafePerformIO
+      (do
+        putStrLn ("RESULT=" ++ show r)
+        pure 0)
+#ENDSUPER
+
+main = print_result (fib 35)

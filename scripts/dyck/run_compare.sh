@@ -17,6 +17,7 @@ PLACE_MODE="${PLACE_MODE:-rr}"
 SUPERS_FIXED="${SUPERS_FIXED:-}"
 SKIP_SUPER="${SKIP_SUPER:-0}"
 SKIP_GHC="${SKIP_GHC:-0}"
+SKIP_PARPSEQ="${SKIP_PARPSEQ:-0}"
 
 usage(){
   echo "uso: $0 --N \"50000,100000,...\" --reps R --procs \"1,2,...\" --imb \"0,10,...\" [--delta \"0,2\"] \\"
@@ -49,6 +50,7 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SUPER_CSV="$OUTROOT/metrics_${TAG}_super.csv"
 GHC_CSV="$OUTROOT/metrics_${TAG}_ghc.csv"
+PARPSEQ_CSV="$OUTROOT/metrics_${TAG}_parpseq.csv"
 mkdir -p "$OUTROOT"
 
 # ── Step 1: TALM super sweep ──────────────────────────────
@@ -73,12 +75,24 @@ else
     --outroot "$OUTROOT" --tag "${TAG}_ghc"
 fi
 
+# ── Step 2b: GHC par/pseq baseline ────────────────────────
+if [[ "$SKIP_PARPSEQ" -eq 1 && -f "$PARPSEQ_CSV" ]]; then
+  echo "=== Skipping GHC par/pseq (SKIP_PARPSEQ=1, reusing $PARPSEQ_CSV) ==="
+else
+  echo "=== GHC par/pseq Baseline ==="
+  bash "$SCRIPT_DIR/run_hs.sh" \
+    --N "$N_CSV" --reps "$REPS" --procs "$PROCS_CSV" --imb "$IMB_CSV" --delta "$DELTA_CSV" \
+    --outroot "$OUTROOT" --tag "${TAG}_parpseq" \
+    --gen "$SCRIPT_DIR/gen_hs_parpseq.py" --variant "parpseq"
+fi
+
 # ── Step 3: Plots ─────────────────────────────────────────
 echo "=== Generating plots ==="
 PLOT_ARGS=("--outdir" "$OUTROOT" "--tag" "$TAG")
 METRICS_FILES=()
-[[ -f "$SUPER_CSV" ]] && METRICS_FILES+=("$SUPER_CSV")
-[[ -f "$GHC_CSV" ]]   && METRICS_FILES+=("$GHC_CSV")
+[[ -f "$SUPER_CSV" ]]   && METRICS_FILES+=("$SUPER_CSV")
+[[ -f "$GHC_CSV" ]]     && METRICS_FILES+=("$GHC_CSV")
+[[ -f "$PARPSEQ_CSV" ]] && METRICS_FILES+=("$PARPSEQ_CSV")
 
 if [[ ${#METRICS_FILES[@]} -eq 0 ]]; then
   echo "[ERRO] No metrics CSV found"; exit 1

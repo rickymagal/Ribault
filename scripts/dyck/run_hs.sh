@@ -11,6 +11,8 @@ set -euo pipefail
 N_CSV=""; REPS=1
 PROCS_CSV=""; OUTROOT=""; VEC_MODE="range"; TAG="hs_dyck"
 IMB_CSV=""; DELTA_CSV="0"
+GEN_OVERRIDE=""
+VARIANT="ghc"
 GHC="${GHC:-ghc}"
 GHC_PKGS_DEFAULT="-package parallel -package deepseq"
 GHC_PKGS="${GHC_PKGS:-$GHC_PKGS_DEFAULT}"
@@ -32,7 +34,9 @@ while [[ $# -gt 0 ]]; do
     --delta) DELTA_CSV="$2"; shift 2;;
     --outroot) OUTROOT="$2"; shift 2;;
     --vec)   VEC_MODE="$2"; shift 2;;
-    --tag)   TAG="$2"; shift 2;;
+    --tag)     TAG="$2"; shift 2;;
+    --gen)     GEN_OVERRIDE="$2"; shift 2;;
+    --variant) VARIANT="$2"; shift 2;;
     *) usage;;
   esac
 done
@@ -47,7 +51,11 @@ IFS=',' read -r -a DELTAS <<< "$DELTA_CSV"
 echo "[env ] GHC=${GHC} ; GHC_PKGS=${GHC_PKGS} ; PY3=${PY3} ; N=${N_CSV} (${#NS[@]} values)"
 
 BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
-GEN_PY="$BASE_DIR/gen_hs_input.py"
+if [[ -n "$GEN_OVERRIDE" ]]; then
+  GEN_PY="$GEN_OVERRIDE"
+else
+  GEN_PY="$BASE_DIR/gen_hs_input.py"
+fi
 PLOT_PY="$BASE_DIR/plot.py"
 mkdir -p "$OUTROOT"
 
@@ -117,7 +125,7 @@ for N in "${NS[@]}"; do
           secs="NaN"; rc=999
           read -r secs rc <<< "$out" || true
           echo "[${RUN_NUM}/${TOTAL_RUNS}] N=${N} P=${P} imb=${IMB} delta=${DELTA} rep=${rep} -> ${secs}s rc=${rc}"
-          echo "ghc,${N},${P},${IMB},${DELTA},${rep},${secs},${rc}" >> "$METRICS"
+          echo "${VARIANT},${N},${P},${IMB},${DELTA},${rep},${secs},${rc}" >> "$METRICS"
         done
       done
     done

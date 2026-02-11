@@ -1,0 +1,169 @@
+const z0, 0
+callgroup("cg5","block_mul")
+callgroup("cg22","block_mul")
+callgroup("cg40","block_mul")
+callgroup("cg58","block_mul")
+callgroup("cg76","block_mul")
+callgroup("cg94","block_mul")
+callgroup("cg112","block_mul")
+callgroup("cg130","block_mul")
+callgroup("cg151","print_checksum")
+const n0, 107
+addi n1, n3, 0
+addi n2, block_mul[1], 0
+super n3, 5, 1, n2
+ret block_mul, [n17, n34, n52, n70, n88, n106, n124, n142], [n15, n32, n50, n68, n86, n104, n122, n140]
+tagval n6, n0
+muli n7, n6, 9
+addi n8, n7, 2
+valtag n9, n0, n8
+tagval n10, n0
+muli n11, n10, 9
+addi n12, n11, 2
+valtag n13, n0, n12
+callsnd block_mul[1], n13, n9, 0
+retsnd n15, n9, n9, cg5
+tagval n16, n15
+valtag n17, n1, n16
+tagval n18, n17
+divi n19, n18, 9
+valtag n20, n17, n19
+const n21, 91164
+tagval n23, n21
+muli n24, n23, 9
+addi n25, n24, 3
+valtag n26, n21, n25
+tagval n27, n21
+muli n28, n27, 9
+addi n29, n28, 3
+valtag n30, n21, n29
+callsnd block_mul[1], n30, n26, 0
+retsnd n32, n26, n26, cg22
+tagval n33, n32
+valtag n34, n1, n33
+tagval n35, n34
+divi n36, n35, 9
+valtag n37, n34, n36
+add n38, n20, n37
+const n39, 182220
+tagval n41, n39
+muli n42, n41, 9
+addi n43, n42, 4
+valtag n44, n39, n43
+tagval n45, n39
+muli n46, n45, 9
+addi n47, n46, 4
+valtag n48, n39, n47
+callsnd block_mul[1], n48, n44, 0
+retsnd n50, n44, n44, cg40
+tagval n51, n50
+valtag n52, n1, n51
+tagval n53, n52
+divi n54, n53, 9
+valtag n55, n52, n54
+add n56, n38, n55
+const n57, 272426
+tagval n59, n57
+muli n60, n59, 9
+addi n61, n60, 5
+valtag n62, n57, n61
+tagval n63, n57
+muli n64, n63, 9
+addi n65, n64, 5
+valtag n66, n57, n65
+callsnd block_mul[1], n66, n62, 0
+retsnd n68, n62, n62, cg58
+tagval n69, n68
+valtag n70, n1, n69
+tagval n71, n70
+divi n72, n71, 9
+valtag n73, n70, n72
+add n74, n56, n73
+const n75, 362632
+tagval n77, n75
+muli n78, n77, 9
+addi n79, n78, 6
+valtag n80, n75, n79
+tagval n81, n75
+muli n82, n81, 9
+addi n83, n82, 6
+valtag n84, n75, n83
+callsnd block_mul[1], n84, n80, 0
+retsnd n86, n80, n80, cg76
+tagval n87, n86
+valtag n88, n1, n87
+tagval n89, n88
+divi n90, n89, 9
+valtag n91, n88, n90
+add n92, n74, n91
+const n93, 452838
+tagval n95, n93
+muli n96, n95, 9
+addi n97, n96, 7
+valtag n98, n93, n97
+tagval n99, n93
+muli n100, n99, 9
+addi n101, n100, 7
+valtag n102, n93, n101
+callsnd block_mul[1], n102, n98, 0
+retsnd n104, n98, n98, cg94
+tagval n105, n104
+valtag n106, n1, n105
+tagval n107, n106
+divi n108, n107, 9
+valtag n109, n106, n108
+add n110, n92, n109
+const n111, 543044
+tagval n113, n111
+muli n114, n113, 9
+addi n115, n114, 8
+valtag n116, n111, n115
+tagval n117, n111
+muli n118, n117, 9
+addi n119, n118, 8
+valtag n120, n111, n119
+callsnd block_mul[1], n120, n116, 0
+retsnd n122, n116, n116, cg112
+tagval n123, n122
+valtag n124, n1, n123
+tagval n125, n124
+divi n126, n125, 9
+valtag n127, n124, n126
+add n128, n110, n127
+const n129, 633250
+tagval n131, n129
+muli n132, n131, 9
+addi n133, n132, 1
+valtag n134, n129, n133
+tagval n135, n129
+muli n136, n135, 9
+addi n137, n136, 1
+valtag n138, n129, n137
+callsnd block_mul[1], n138, n134, 0
+retsnd n140, n134, n134, cg130
+tagval n141, n140
+valtag n142, n1, n141
+tagval n143, n142
+divi n144, n143, 9
+valtag n145, n142, n144
+add n146, n128, n145
+addi n147, n149, 0
+addi n148, print_checksum[1], 0
+super n149, 4, 1, n148
+ret print_checksum, n163, n161
+tagval n152, n146
+muli n153, n152, 9
+addi n154, n153, 2
+valtag n155, n146, n154
+tagval n156, n146
+muli n157, n156, 9
+addi n158, n157, 2
+valtag n159, n146, n158
+callsnd print_checksum[1], n159, n155, 0
+retsnd n161, n155, n155, cg151
+tagval n162, n161
+valtag n163, n147, n162
+tagval n164, n163
+divi n165, n164, 9
+valtag n166, n163, n165
+ret main, n166, z0

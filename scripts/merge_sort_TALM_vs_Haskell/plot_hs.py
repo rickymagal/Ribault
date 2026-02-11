@@ -10,12 +10,12 @@ import matplotlib.pyplot as plt
 
 def read_rows(metrics_path):
     rows = []
+    variant_found = None
     with open(metrics_path, newline="") as f:
         cr = csv.DictReader(f)
         for row in cr:
             try:
-                if row.get("variant","") != "ghc":
-                    continue
+                v  = row.get("variant","")
                 N  = int(row["N"])
                 P  = int(row["P"])
                 rc = int(row["rc"])
@@ -24,8 +24,10 @@ def read_rows(metrics_path):
                 t  = float(row["seconds"])
             except Exception:
                 continue
+            if variant_found is None:
+                variant_found = v
             rows.append((N, P, t))
-    return rows
+    return rows, variant_found or "ghc"
 
 def aggregate(rows, trim=1):
     g = defaultdict(list)         # (P,N) -> [times]
@@ -54,7 +56,7 @@ def aggregate(rows, trim=1):
         stats[P] = {"Ns": Ns, "mean": mus, "std": sigs, "count": cnts}
     return stats
 
-def save_aggregated_csv(stats, outdir, tag):
+def save_aggregated_csv(stats, outdir, tag, variant="ghc"):
     path = os.path.join(outdir, f"metrics_aggregated_{tag}.csv")
     with open(path, "w", newline="") as f:
         cw = csv.writer(f)
@@ -62,7 +64,7 @@ def save_aggregated_csv(stats, outdir, tag):
         for P in sorted(stats.keys()):
             Ns=stats[P]["Ns"]; mus=stats[P]["mean"]; sigs=stats[P]["std"]; cnts=stats[P]["count"]
             for N, m, s, c in zip(Ns, mus, sigs, cnts):
-                cw.writerow(["ghc", N, P, c, f"{m:.6f}", f"{s:.6f}"])
+                cw.writerow([variant, N, P, c, f"{m:.6f}", f"{s:.6f}"])
     print(f"[plot] aggregated CSV: {path}")
     return path
 
@@ -157,11 +159,11 @@ def main():
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
-    rows = read_rows(args.metrics)
+    rows, variant = read_rows(args.metrics)
     if not rows:
         print("[plot] no data to plot"); return
     stats = aggregate(rows, trim=args.trim)
-    save_aggregated_csv(stats, args.outdir, args.tag)
+    save_aggregated_csv(stats, args.outdir, args.tag, variant=variant)
     plot_runtime(stats, args.outdir, args.tag)
     plot_speedup(stats, args.outdir, args.tag, baselineP=args.baselineP)
     plot_efficiency(stats, args.outdir, args.tag, baselineP=args.baselineP)

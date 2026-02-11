@@ -1,0 +1,61 @@
+const z0, 0
+callgroup("cg5","block_mul")
+callgroup("cg22","block_mul")
+callgroup("cg43","print_checksum")
+const n0, 125
+addi n1, n3, 0
+addi n2, block_mul[1], 0
+super n3, 5, 1, n2
+ret block_mul, [n17, n34], [n15, n32]
+tagval n6, n0
+muli n7, n6, 9
+addi n8, n7, 2
+valtag n9, n0, n8
+tagval n10, n0
+muli n11, n10, 9
+addi n12, n11, 2
+valtag n13, n0, n12
+callsnd block_mul[1], n13, n9, 0
+retsnd n15, n9, n9, cg5
+tagval n16, n15
+valtag n17, n1, n16
+tagval n18, n17
+divi n19, n18, 9
+valtag n20, n17, n19
+const n21, 31500
+tagval n23, n21
+muli n24, n23, 9
+addi n25, n24, 3
+valtag n26, n21, n25
+tagval n27, n21
+muli n28, n27, 9
+addi n29, n28, 3
+valtag n30, n21, n29
+callsnd block_mul[1], n30, n26, 0
+retsnd n32, n26, n26, cg22
+tagval n33, n32
+valtag n34, n1, n33
+tagval n35, n34
+divi n36, n35, 9
+valtag n37, n34, n36
+add n38, n20, n37
+addi n39, n41, 0
+addi n40, print_checksum[1], 0
+super n41, 4, 1, n40
+ret print_checksum, n55, n53
+tagval n44, n38
+muli n45, n44, 9
+addi n46, n45, 2
+valtag n47, n38, n46
+tagval n48, n38
+muli n49, n48, 9
+addi n50, n49, 2
+valtag n51, n38, n50
+callsnd print_checksum[1], n51, n47, 0
+retsnd n53, n47, n47, cg43
+tagval n54, n53
+valtag n55, n39, n54
+tagval n56, n55
+divi n57, n56, 9
+valtag n58, n55, n57
+ret main, n58, z0
