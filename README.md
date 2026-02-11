@@ -24,7 +24,6 @@ This work proposes the translation of programs written in a Haskell subset into 
 | `test/df-images` | Dataflow `.png` rendered from `.dot`. |
 | `test/talm` | TALM `.fl` generated from `codegen`. |
 | `test/supers/` | Per-program `Supers.hs` + `libsupers.so`. |
-| `test/golden-*` | Golden references for tests. |
 | `scripts/` | Performance/correctness scripts. |
 | `tools/` | Supers build helpers, alias/fix scripts. |
 | `TALM/` | Trebuchet interpreter + assembler (vendored). |
