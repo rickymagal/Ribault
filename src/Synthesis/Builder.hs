@@ -33,7 +33,7 @@ import           GHC.Float              (castFloatToWord32)
 import qualified Data.Map              as M
 import qualified Data.Set              as S
 
-import           Semantic              (assignSuperNames)
+import           Analysis.Semantic     (assignSuperNames)
 import           Syntax
 import           Types                  (DGraph(..), Edge, NodeId, emptyGraph, addNode, addEdge)
 import           Port                   (Port(..), (-->))

@@ -34,7 +34,7 @@ import qualified Data.Text.Lazy.IO as TLIO
 ----------------------------------------------------------------------
 import Analysis.Lexer    (Token, scanAll)
 import Analysis.Parser   (parse)
-import Semantic          (checkAll)
+import Analysis.Semantic (checkAll)
 import Syntax            (Program)
 
 ----------------------------------------------------------------------

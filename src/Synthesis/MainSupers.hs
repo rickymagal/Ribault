@@ -27,7 +27,7 @@ import System.IO          (readFile, getContents, hPutStrLn, stderr)
 import qualified Analysis.Lexer         as L
 import qualified Analysis.Parser        as P
 import qualified Syntax        as S
-import qualified Semantic      as Sem
+import qualified Analysis.Semantic as Sem
 import qualified Synthesis.SuperExtract as SE
 import qualified Synthesis.SupersEmit   as SEt
 
