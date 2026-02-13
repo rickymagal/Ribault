@@ -1,0 +1,88 @@
+const z0, 0
+callgroup("cg5","colorChunk")
+callgroup("cg22","colorChunk")
+callgroup("cg50","mergeColorings")
+callgroup("cg70","validateAndPrint")
+const n0, 375
+addi n1, n3, 0
+addi n2, colorChunk[1], 0
+super n3, 6, 1, n2
+ret colorChunk, [n17, n34], [n15, n32]
+tagval n6, n0
+muli n7, n6, 9
+addi n8, n7, 2
+valtag n9, n0, n8
+tagval n10, n0
+muli n11, n10, 9
+addi n12, n11, 2
+valtag n13, n0, n12
+callsnd colorChunk[1], n13, n9, 0
+retsnd n15, n9, n9, cg5
+tagval n16, n15
+valtag n17, n1, n16
+tagval n18, n17
+divi n19, n18, 9
+valtag n20, n17, n19
+const n21, 282000
+tagval n23, n21
+muli n24, n23, 9
+addi n25, n24, 3
+valtag n26, n21, n25
+tagval n27, n21
+muli n28, n27, 9
+addi n29, n28, 3
+valtag n30, n21, n29
+callsnd colorChunk[1], n30, n26, 0
+retsnd n32, n26, n26, cg22
+tagval n33, n32
+valtag n34, n1, n33
+tagval n35, n34
+divi n36, n35, 9
+valtag n37, n34, n36
+const n38, 0
+sub n39, n37, n37
+tagval n40, n37
+valtag n41, n39, n40
+super n42, 0, 1, n37, n41
+tagval n43, n20
+valtag n44, n42, n43
+super n45, 0, 1, n20, n44
+addi n46, n48, 0
+addi n47, mergeColorings[1], 0
+super n48, 5, 1, n47
+ret mergeColorings, n62, n60
+tagval n51, n45
+muli n52, n51, 9
+addi n53, n52, 2
+valtag n54, n45, n53
+tagval n55, n45
+muli n56, n55, 9
+addi n57, n56, 2
+valtag n58, n45, n57
+callsnd mergeColorings[1], n58, n54, 0
+retsnd n60, n54, n54, cg50
+tagval n61, n60
+valtag n62, n46, n61
+tagval n63, n62
+divi n64, n63, 9
+valtag n65, n62, n64
+addi n66, n68, 0
+addi n67, validateAndPrint[1], 0
+super n68, 4, 1, n67
+ret validateAndPrint, n82, n80
+tagval n71, n65
+muli n72, n71, 9
+addi n73, n72, 2
+valtag n74, n65, n73
+tagval n75, n65
+muli n76, n75, 9
+addi n77, n76, 2
+valtag n78, n65, n77
+callsnd validateAndPrint[1], n78, n74, 0
+retsnd n80, n74, n74, cg70
+tagval n81, n80
+valtag n82, n66, n81
+tagval n83, n82
+divi n84, n83, 9
+valtag n85, n82, n84
+ret main, n85, z0

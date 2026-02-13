@@ -42,7 +42,7 @@ EDGE_PROB="0.001"; SEED="42"
 GEN_OVERRIDE=""
 VARIANT="ghc"
 GHC="${GHC:-ghc}"
-GHC_PKGS="${GHC_PKGS:--package time -package containers -package deepseq -package parallel}"
+GHC_PKGS="${GHC_PKGS:--hide-package containers-0.6.7 -package time -package deepseq -package parallel}"
 PY3="${PY3:-python3}"
 
 usage(){
@@ -99,7 +99,7 @@ for N in "${NS[@]}"; do
 
     "$PY3" "$GEN_PY" --out "$HS" --N "$N" --P "$P" --edge-prob "$EDGE_PROB" --seed "$SEED"
     echo "[build] N=${N} P=${P} -> compiling"
-    "$GHC" -O2 -threaded -rtsopts -dynamic $GHC_PKGS -outputdir "$BIN_DIR" -o "$BIN" "$HS" >/dev/null 2>&1
+    "$GHC" -O2 -threaded -rtsopts -dynamic $GHC_PKGS -outputdir "$BIN_DIR" -o "$BIN" "$HS" 2>&1
 
     for ((rep=1; rep<=REPS; rep++)); do
       RUN_NUM=$((RUN_NUM + 1))

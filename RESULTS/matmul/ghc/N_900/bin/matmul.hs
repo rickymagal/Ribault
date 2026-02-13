@@ -42,13 +42,13 @@ checksum = sum . map sum
 main :: IO ()
 main = do
   let n = 900
-      a = genMatrix 42 n
-      b = genMatrix 137 n
-  -- force input matrices
-  a `deepseq` b `deepseq` return ()
   t0 <- getCurrentTime
+  let a = genMatrix 42 n
+      b = genMatrix 137 n
+  a `deepseq` b `deepseq` return ()
   let !c = force (matMul a b)
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
-  putStrLn $ "CHECKSUM=" ++ show (checksum c)
+      cs   = truncate (checksum c * 1000000 :: Double) :: Int
+  putStrLn $ "CHECKSUM=" ++ show cs
   putStrLn $ "RUNTIME_SEC=" ++ show secs

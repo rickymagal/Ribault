@@ -12,9 +12,10 @@ import Control.Parallel (par, pseq)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 
 fibSeq :: Int -> Int
-fibSeq 0 = 0
-fibSeq 1 = 1
-fibSeq n = fibSeq (n - 1) + fibSeq (n - 2)
+fibSeq n = go n 0 1
+  where go !i !a !b
+          | i <= 0    = a
+          | otherwise = go (i - 1) b (a + b)
 
 fib :: Int -> Int -> Int
 fib cutoff n

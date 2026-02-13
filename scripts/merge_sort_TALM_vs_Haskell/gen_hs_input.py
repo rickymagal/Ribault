@@ -23,20 +23,35 @@ merge (x:xs) (y:ys)
   | x <= y    = x : merge xs (y:ys)
   | otherwise = y : merge (x:xs) ys
 
--- mergesort com paralelismo explícito (2 sparks por nível)
-msort :: [Int] -> [Int]
-msort []  = []
-msort [x] = [x]
-msort xs  =
+-- sequential mergesort (below cutoff)
+msortSeq :: [Int] -> [Int]
+msortSeq []  = []
+msortSeq [x] = [x]
+msortSeq xs  =
   let (a,b) = split2 xs
-      goA   = msort a
-      goB   = msort b
-  in runEval $ do
-       a' <- rpar (force goA)
-       b' <- rpar (force goB)
-       rseq a'
-       rseq b'
-       return (merge a' b')
+  in merge (msortSeq a) (msortSeq b)
+
+-- mergesort com paralelismo (sparks only above cutoff=256)
+msort :: [Int] -> [Int]
+msort xs = msortGo (length xs) xs
+
+msortGo :: Int -> [Int] -> [Int]
+msortGo _ []  = []
+msortGo _ [x] = [x]
+msortGo n xs
+  | n <= 256  = msortSeq xs
+  | otherwise =
+      let (a,b)  = split2 xs
+          halfA  = (n + 1) `div` 2
+          halfB  = n `div` 2
+          goA    = msortGo halfA a
+          goB    = msortGo halfB b
+      in runEval $ do
+           a' <- rpar (force goA)
+           b' <- rpar (force goB)
+           rseq a'
+           rseq b'
+           return (merge a' b')
 
 -- garante avaliação total
 forceList :: NFData a => [a] -> ()
