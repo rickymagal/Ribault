@@ -2,17 +2,17 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 {-|
-Module      : Semantic
+Module      : Analysis.Semantic
 Description : Semantic checks (scope, arity, duplicates) and lightweight type inference over the core AST, plus desugaring and super-name assignment utilities.
 -}
-module Semantic where
+module Analysis.Semantic where
 
 import Syntax
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Control.Monad.Except
 import Control.Monad.State
-import Control.Monad (forM, foldM, zipWithM, unless)
+import Control.Monad (forM, foldM, zipWithM, zipWithM_, unless)
 
 -- | Desugar a single declaration.
 desugarDecl :: Decl -> Decl
@@ -252,27 +252,37 @@ inferExpr fenv tenv expr = case expr of
       (r0:rs') -> foldM unifyReturn r0 rs'
       []       -> throwError (Mismatch scr scrT scrT)
   Let ds e -> do
+    -- T-Let (Appendix B): extend Φ with all declarations, type-check all bodies.
     let fenv' = Map.union (buildFuncEnv ds) fenv
     tenv' <- foldM
-               (\envAcc d -> case d of
-                  FunDecl fn [] bd' -> do
-                    t <- inferExpr fenv' envAcc bd'
-                    return (Map.insert fn t envAcc)
-                  _ -> return envAcc
+               (\envAcc (FunDecl fn ps bd') -> do
+                  argTys <- mapM (const freshTypeVar) ps
+                  let localEnv = Map.union (Map.fromList (zip ps argTys)) envAcc
+                  retTy <- inferExpr fenv' localEnv bd'
+                  if null ps
+                    then return (Map.insert fn retTy envAcc)
+                    else return envAcc
                )
                tenv
                ds
     inferExpr fenv' tenv' e
   App{} -> do
-    -- Aplicação relaxada: inferimos função e argumentos,
-    -- mas não geramos mais erro por quantidade/tipo de argumentos.
+    -- T-App (Appendix B): check argument types against function signature.
     let (fn0,args) = flattenApp expr
-    fty   <- inferExpr fenv tenv fn0
-    _     <- mapM (inferExpr fenv tenv) args
+    fty    <- inferExpr fenv tenv fn0
+    argTys <- mapM (inferExpr fenv tenv) args
     case fty of
-      TFun _ r -> return r
-      TVar _   -> freshTypeVar
-      _        -> freshTypeVar
+      TFun paramTys r
+        | length argTys == length paramTys -> do
+            zipWithM_ unifyReturn paramTys argTys
+            return r
+        | length argTys < length paramTys -> do
+            let (checked, remaining) = splitAt (length argTys) paramTys
+            zipWithM_ unifyReturn checked argTys
+            return (TFun remaining r)
+        | otherwise -> freshTypeVar   -- over-application
+      TVar _ -> freshTypeVar
+      _      -> freshTypeVar
   BinOp op l r -> do
     tl <- inferExpr fenv tenv l
     tr <- inferExpr fenv tenv r
@@ -306,10 +316,14 @@ inferExpr fenv tenv expr = case expr of
                (t:ts') -> foldM (unifyTypes expr) t ts'
     return (TList eltTy)
   Tuple xs -> TTuple <$> mapM (inferExpr fenv tenv) xs
-  Super _ _ inId _ _ ->
+  Super _ _ inId _ _ -> do
+    -- T-Super (Appendix B): verify input is typed; output type τ' is independent.
     case Map.lookup inId tenv of
-      Just t  -> return t
-      Nothing -> freshTypeVar
+      Just _  -> return ()
+      Nothing -> case Map.lookup inId fenv of
+                   Just _  -> return ()
+                   Nothing -> throwError (UnknownVar inId)
+    freshTypeVar
   where
     unifyTypes :: Expr -> Type -> Type -> Infer Type
     unifyTypes e t1 t2 = case (t1,t2) of
@@ -385,7 +399,7 @@ boolBin _ _ (TVar _)  = return TBool
 boolBin op a b        = throwError (BinOpTypeErr op a b)
 
 compBin _ a b
-  | a==b && a `elem` [TInt,TFloat,TChar,TString] = return TBool
+  | a == b    = return TBool   -- T-Comp: any type τ, both operands same
 compBin _ (TVar _) _ = return TBool
 compBin _ _ (TVar _) = return TBool
 compBin op a b       = throwError (BinOpTypeErr op a b)

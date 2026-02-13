@@ -17,7 +17,7 @@ import qualified Data.Text.Lazy.IO as TLIO
 import Analysis.Lexer     (scanAll)
 import Analysis.Parser    (parse)
 import Syntax             (Program)
-import Semantic           (checkAll, assignSuperNames)
+import Analysis.Semantic  (checkAll, assignSuperNames)
 import Analysis.ASTGen    (programToDot)
 
 main :: IO ()

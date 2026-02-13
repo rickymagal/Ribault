@@ -38,7 +38,7 @@ import qualified Data.Text.Lazy.IO as TLIO
 import Analysis.Lexer  (Token, scanAll)
 import Analysis.Parser (parse)
 import Syntax          (Program)
-import Semantic        (checkAll)
+import Analysis.Semantic (checkAll)
 
 -- Back-end ----------------------------------------------------------------
 import qualified Synthesis.Builder as DF  -- AST → DGraph
