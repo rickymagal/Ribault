@@ -1,0 +1,160 @@
+-- graph_coloring.hsk (auto-generated)
+-- N=600  P=8  edge_prob=0.3  seed=42
+-- 8 chunks for parallel coloring
+
+-- Parameters available to supers
+-- N_VERTICES = 600
+-- EDGE_PROB = 0.3
+-- SEED = 42
+-- SHIFT = 601
+
+-- SUPER: Color a chunk of vertices using greedy algorithm.
+-- Input: packed = start * SHIFT + count
+-- Output: packed coloring info (colors_used * COLORS_SHIFT + valid_flag)
+-- The coloring is stored internally and used for conflict resolution.
+colorChunk packed =
+  super single input (packed) output (result)
+#BEGINSUPER
+    result =
+      let
+        shift = 601
+        n_vertices = 600
+        edge_prob_scaled = 300000  -- scaled by 1e6
+        rng_seed = 42
+
+        start = packed `div` shift
+        count = packed `mod` shift
+        endV = start + count
+
+        -- LCG RNG for deterministic graph generation
+        lcgA = 6364136223846793005
+        lcgC = 1442695040888963407
+        lcgNext r = (lcgA * r + lcgC) `mod` (2^63)
+        lcgValue r = (r `div` (2^33)) `mod` 1000000  -- 0 to 999999
+
+        -- Check if edge exists between u and v (u < v)
+        hasEdge u v =
+          let r0 = rng_seed + u * 31337 + v * 7919
+              rVal = lcgValue (lcgNext (fromIntegral r0))
+          in rVal < edge_prob_scaled
+
+        -- Get neighbors of vertex v (only neighbors < v for greedy)
+        neighborsLess v = [u | u <- [0..v-1], hasEdge u v || hasEdge v u]
+
+        -- Find smallest color not in use by neighbors
+        smallestMissing used = go 0
+          where go c = if c `elem` used then go (c + 1) else c
+
+        -- Greedy color vertices in range [start, endV)
+        colorRange coloring v
+          | v >= endV = coloring
+          | otherwise =
+              let neighborColors = [c | (u, c) <- coloring, u `elem` neighborsLess v]
+                  myColor = smallestMissing neighborColors
+              in colorRange ((v, myColor) : coloring) (v + 1)
+
+        coloring = colorRange [] start
+        maxColor = if null coloring then 0 else maximum (map snd coloring)
+        nColored = length coloring
+      in
+        -- Pack result: maxColor * (n+1) + nColored
+        fromIntegral (maxColor * (n_vertices + 1) + nColored)
+#ENDSUPER;
+
+-- SUPER: Merge two partial colorings and resolve conflicts.
+-- Input: list of two packed colorings [c1, c2]
+-- Output: merged packed coloring
+mergeColorings pair =
+  super single input (pair) output (result)
+#BEGINSUPER
+    result =
+      let
+        hpair = toList pair
+        c1 = head hpair
+        c2 = head (tail hpair)
+        n_vertices = 600
+
+        -- Unpack: packed = maxColor * (n+1) + nColored
+        unpack p = (p `div` (n_vertices + 1), p `mod` (n_vertices + 1))
+
+        (max1, n1) = unpack c1
+        (max2, n2) = unpack c2
+
+        -- Merged: max of maxColors, sum of counts
+        maxColor = if max1 > max2 then max1 else max2
+        nColored = n1 + n2
+      in
+        fromIntegral (maxColor * (n_vertices + 1) + nColored)
+#ENDSUPER;
+
+-- SUPER: Validate the coloring and print results.
+-- Input: packed coloring
+-- Output: 0 (prints results to stdout)
+validateAndPrint packed =
+  super single input (packed) output (out)
+#BEGINSUPER
+    out =
+      let
+        n_vertices = 600
+        edge_prob_scaled = 300000
+        rng_seed = 42
+
+        maxColor = packed `div` (n_vertices + 1)
+        nColored = packed `mod` (n_vertices + 1)
+
+        -- Recompute the full coloring to validate
+        lcgA = 6364136223846793005
+        lcgC = 1442695040888963407
+        lcgNext r = (lcgA * r + lcgC) `mod` (2^63)
+        lcgValue r = (r `div` (2^33)) `mod` 1000000
+
+        hasEdge u v =
+          let r0 = rng_seed + u * 31337 + v * 7919
+              rVal = lcgValue (lcgNext (fromIntegral r0))
+          in rVal < edge_prob_scaled
+
+        smallestMissing used = go 0
+          where go c = if c `elem` used then go (c + 1) else c
+
+        isNeighbor u v = hasEdge u v || hasEdge v u
+
+        computeColor coloring v
+          | v >= n_vertices = coloring
+          | otherwise =
+              let neighborColors = [c | (u, c) <- coloring, isNeighbor u v]
+                  myColor = smallestMissing neighborColors
+              in computeColor ((v, myColor) : coloring) (v + 1)
+
+        fullColoring = computeColor [] 0
+
+        -- Validate: no two adjacent vertices have same color
+        isValid = and [not (isNeighbor u v) || cu /= cv
+                      | (u, cu) <- fullColoring, (v, cv) <- fullColoring, u < v]
+
+        colors = if null fullColoring then 0 else maximum (map snd fullColoring) + 1
+        valid = if isValid then 1 else 0
+      in
+        unsafePerformIO $ do
+          print colors
+          print valid
+          pure (0 :: Int64)
+#ENDSUPER;
+
+-- Main: 8 parallel chunk colorings + merge tree
+main =
+  let c0 = colorChunk 75
+  in let c1 = colorChunk 45150
+  in let c2 = colorChunk 90225
+  in let c3 = colorChunk 135300
+  in let c4 = colorChunk 180375
+  in let c5 = colorChunk 225450
+  in let c6 = colorChunk 270525
+  in let c7 = colorChunk 315600
+  in let m0 = mergeColorings (c0 : c1 : [])
+  in let m1 = mergeColorings (c2 : c3 : [])
+  in let m2 = mergeColorings (c4 : c5 : [])
+  in let m3 = mergeColorings (c6 : c7 : [])
+  in let m4 = mergeColorings (m0 : m1 : [])
+  in let m5 = mergeColorings (m2 : m3 : [])
+  in let m6 = mergeColorings (m4 : m5 : [])
+  in validateAndPrint m6

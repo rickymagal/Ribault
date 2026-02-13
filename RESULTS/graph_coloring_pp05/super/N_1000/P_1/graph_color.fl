@@ -1,0 +1,43 @@
+const z0, 0
+callgroup("cg5","colorChunk")
+callgroup("cg25","validateAndPrint")
+const n0, 1000
+addi n1, n3, 0
+addi n2, colorChunk[1], 0
+super n3, 6, 1, n2
+ret colorChunk, n17, n15
+tagval n6, n0
+muli n7, n6, 9
+addi n8, n7, 2
+valtag n9, n0, n8
+tagval n10, n0
+muli n11, n10, 9
+addi n12, n11, 2
+valtag n13, n0, n12
+callsnd colorChunk[1], n13, n9, 0
+retsnd n15, n9, n9, cg5
+tagval n16, n15
+valtag n17, n1, n16
+tagval n18, n17
+divi n19, n18, 9
+valtag n20, n17, n19
+addi n21, n23, 0
+addi n22, validateAndPrint[1], 0
+super n23, 4, 1, n22
+ret validateAndPrint, n37, n35
+tagval n26, n20
+muli n27, n26, 9
+addi n28, n27, 2
+valtag n29, n20, n28
+tagval n30, n20
+muli n31, n30, 9
+addi n32, n31, 2
+valtag n33, n20, n32
+callsnd validateAndPrint[1], n33, n29, 0
+retsnd n35, n29, n29, cg25
+tagval n36, n35
+valtag n37, n21, n36
+tagval n38, n37
+divi n39, n38, 9
+valtag n40, n37, n39
+ret main, n40, z0

@@ -229,17 +229,19 @@ validateAndPrint packed =
         smallestMissing used = go 0
           where go c = if c `elem` used then go (c + 1) else c
 
+        isNeighbor u v = hasEdge u v || hasEdge v u
+
         computeColor coloring v
           | v >= n_vertices = coloring
           | otherwise =
-              let neighborColors = [c | (u, c) <- coloring, hasEdge (min u v) (max u v)]
+              let neighborColors = [c | (u, c) <- coloring, isNeighbor u v]
                   myColor = smallestMissing neighborColors
               in computeColor ((v, myColor) : coloring) (v + 1)
 
         fullColoring = computeColor [] 0
 
         -- Validate: no two adjacent vertices have same color
-        isValid = and [not (hasEdge (min u v) (max u v)) || cu /= cv
+        isValid = and [not (isNeighbor u v) || cu /= cv
                       | (u, cu) <- fullColoring, (v, cv) <- fullColoring, u < v]
 
         colors = if null fullColoring then 0 else maximum (map snd fullColoring) + 1

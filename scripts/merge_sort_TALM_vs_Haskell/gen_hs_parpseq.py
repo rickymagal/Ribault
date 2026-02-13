@@ -24,15 +24,30 @@ merge (x:xs) (y:ys)
   | x <= y    = x : merge xs (y:ys)
   | otherwise = y : merge (x:xs) ys
 
--- mergesort com par/pseq (sem Strategies)
-msort :: [Int] -> [Int]
-msort []  = []
-msort [x] = [x]
-msort xs  =
+-- sequential mergesort (below cutoff)
+msortSeq :: [Int] -> [Int]
+msortSeq []  = []
+msortSeq [x] = [x]
+msortSeq xs  =
   let (a,b) = split2 xs
-      goA   = force (msort a)
-      goB   = force (msort b)
-  in goA `par` goB `pseq` merge goA goB
+  in merge (msortSeq a) (msortSeq b)
+
+-- mergesort com par/pseq (sparks only above cutoff=256)
+msort :: [Int] -> [Int]
+msort xs = msortGo (length xs) xs
+
+msortGo :: Int -> [Int] -> [Int]
+msortGo _ []  = []
+msortGo _ [x] = [x]
+msortGo n xs
+  | n <= 256  = msortSeq xs
+  | otherwise =
+      let (a,b)  = split2 xs
+          halfA  = (n + 1) `div` 2
+          halfB  = n `div` 2
+          goA    = force (msortGo halfA a)
+          goB    = force (msortGo halfB b)
+      in goA `par` goB `pseq` merge goA goB
 
 -- garante avaliação total
 forceList :: NFData a => [a] -> ()
