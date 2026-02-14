@@ -242,55 +242,142 @@ TALM/interp/interp 1 /tmp/hello.flb /tmp/hello_auto.pla test/supers/hello_world_
 
 ---
 
-## Benchmarks
+## Running All Benchmarks
 
-### Master Script: `scripts/run_all.sh`
+Use `scripts/run_all.sh`. This is the single entry point for running all benchmarks. It orchestrates all 5 benchmarks (MergeSort, Dyck, Fibonacci, MatMul, Graph Coloring), each comparing three backends: Ribault/TALM (superinstructions), GHC Strategies, and GHC par/pseq.
 
-Runs all 5 benchmarks (MergeSort, Dyck, Fibonacci, MatMul, Graph Coloring) comparing three execution backends: **Ribault/TALM** (superinstructions), **GHC Strategies**, and **GHC par/pseq**.
+### Run with paper defaults (full sweep, ~20,700 runs, takes hours)
 
 ```bash
-# Run with paper defaults (full sweep, takes hours)
 bash scripts/run_all.sh
-
-# Quick smoke test
-bash scripts/run_all.sh --reps 1 --procs 1,2 \
-  --ms-N 50000,100000 --dyck-N 50000 --dyck-imb 0,50,100 \
-  --fib-cutoff 25,30 --matmul-N 100,200 --gc-N 50,100
-
-# Dry run (print config without executing)
-bash scripts/run_all.sh --dry-run
-
-# Run only specific benchmarks
-bash scripts/run_all.sh --only mergesort,fibonacci
-
-# Skip specific benchmarks
-bash scripts/run_all.sh --skip dyck,graph_coloring
 ```
 
-### Global Flags
+Paper defaults:
+
+| Benchmark | N range | Other params | Reps | Procs |
+|-----------|---------|--------------|------|-------|
+| MergeSort | 50K–1M step 50K | | 10 | 1,2,4,8 |
+| Dyck | 50K–1M step 50K | imb=0–100 step 5, delta=0 | 3 | 1,2,4,8 |
+| Fibonacci | 35 | cutoff=15,20,25,30 | 3 | 1,2,4,8 |
+| MatMul | 50–1000 step 50 | | 10 | 1,2,4,8 |
+| Graph Coloring | 50–1000 step 50 | edge_prob=0.01, seed=42 | 3 | 1,2,4,8 |
+
+### Quick smoke test
+
+```bash
+bash scripts/run_all.sh --reps 1 --procs 1,2 \
+  --ms-start-N 100000 --ms-max-N 200000 \
+  --dyck-N 50000 --dyck-imb 0,50,100 \
+  --fib-cutoff 25,30 \
+  --matmul-N 100,200 \
+  --gc-N 50,100
+```
+
+### Selective runs
+
+```bash
+bash scripts/run_all.sh --only mergesort,fibonacci   # only these two
+bash scripts/run_all.sh --skip dyck,graph_coloring   # skip these two
+bash scripts/run_all.sh --dry-run                     # print config, don't execute
+```
+
+### Skip specific backends
+
+```bash
+SKIP_TALM=1 bash scripts/run_all.sh                       # skip Ribault, only GHC variants
+SKIP_GHC=1 SKIP_PARPSEQ=1 bash scripts/run_all.sh         # only Ribault
+```
+
+(`SKIP_SUPER=1` is equivalent to `SKIP_TALM=1`, used by dyck/gc scripts internally.)
+
+### All `run_all.sh` flags
+
+**Global:**
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--procs <csv>` | `1,2,4,8` | Comma-separated PE counts to test |
-| `--reps <n>` | (per-benchmark) | Override default repetitions for all benchmarks |
-| `--outdir <dir>` | `RESULTS` | Root directory for all output |
-| `--only <csv>` | (all) | Only run these benchmarks. Choices: `mergesort`, `dyck`, `fibonacci`, `matmul`, `graph_coloring` |
-| `--skip <csv>` | (none) | Skip these benchmarks |
-| `--dry-run` | off | Print configuration and exit without running |
-| `-h`, `--help` | | Show usage help |
+| `--procs <csv>` | `1,2,4,8` | PE counts to benchmark |
+| `--reps <n>` | per-benchmark | Override all benchmark reps |
+| `--outdir <dir>` | `RESULTS` | Results root directory |
+| `--only <csv>` | all | Run only listed benchmarks: `mergesort`, `dyck`, `fibonacci`, `matmul`, `graph_coloring` |
+| `--skip <csv>` | none | Skip listed benchmarks |
+| `--dry-run` | off | Print config and exit |
+| `-h`, `--help` | | Show help |
 
-### Environment Variables (all benchmarks)
+**MergeSort:**
 
-| Variable | Effect |
-|----------|--------|
-| `SKIP_TALM=1` | Skip TALM/Ribault runs (reuse existing metrics) |
-| `SKIP_SUPER=1` | Same as `SKIP_TALM` (used by dyck and graph_coloring scripts) |
-| `SKIP_GHC=1` | Skip GHC Strategies runs |
-| `SKIP_PARPSEQ=1` | Skip GHC par/pseq runs |
-| `PY2` | Python interpreter for assembler (default: `python3`) |
-| `PY3` | Python interpreter for generators (default: `python3`) |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--ms-start-N <n>` | `50000` | Starting array size |
+| `--ms-step <n>` | `50000` | Step increment |
+| `--ms-max-N <n>` | `1000000` | Maximum array size |
+| `--ms-N <csv>` | generated from start/step/max | Explicit N values (overrides start/step/max) |
+| `--ms-reps <n>` | `--reps` or `10` | Repetitions |
+
+**Dyck:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--dyck-N <csv>` | `50000..1000000` step 50K | Sequence lengths |
+| `--dyck-imb <csv>` | `0..100` step 5 | Workload imbalance percentages |
+| `--dyck-delta <csv>` | `0` | Delta parameter |
+| `--dyck-reps <n>` | `--reps` or `3` | Repetitions |
+
+**Fibonacci:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--fib-N <csv>` | `35` | Which fib(N) to compute |
+| `--fib-cutoff <csv>` | `15,20,25,30` | Sequential cutoff thresholds |
+| `--fib-reps <n>` | `--reps` or `3` | Repetitions |
+
+**MatMul:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--matmul-N <csv>` | `50..1000` step 50 | Matrix dimension N×N |
+| `--matmul-reps <n>` | `--reps` or `10` | Repetitions |
+
+**Graph Coloring:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--gc-N <csv>` | `50..1000` step 50 | Number of vertices |
+| `--gc-reps <n>` | `--reps` or `3` | Repetitions |
+| `--gc-edge-prob <f>` | `0.01` | Edge probability (Erdos-Renyi) |
+| `--gc-seed <n>` | `42` | Random seed |
+
+**Environment variables** (passed through to per-benchmark scripts):
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `SKIP_TALM=1` / `SKIP_SUPER=1` | off | Skip Ribault/TALM runs |
+| `SKIP_GHC=1` | off | Skip GHC Strategies runs |
+| `SKIP_PARPSEQ=1` | off | Skip GHC par/pseq runs |
+| `PY2`, `PY3` | `python3` | Python interpreters for assembler/generators |
+| `MS_LEAF` | `array` | MergeSort leaf node type: `array`, `super`, `coarse`, `asm` |
+| `CUTOFF_MODE` | `fixed` | MergeSort cutoff strategy: `fixed`, `scaled`, `perP`, `balanced`, `grain` |
+| `CUTOFF` | `4096` | MergeSort base cutoff threshold |
+| `DF_LIST_BUILTIN` | `1` | MergeSort: use dataflow list builtin encoding |
+| `PLACE_MODE` | `rr` | Dyck/GC: placement strategy (`rr` or `chunk`) |
+| `SUPERS_FIXED` | (none) | Dyck/GC: path to pre-built supers directory |
+
+### Output
+
+Results go to `RESULTS/` (or `--outdir`):
+```
+RESULTS/mergesort/metrics_ms_{super,ghc,parpseq}.csv
+RESULTS/dyck_N_IMB_sweep/metrics_dyck_{super,ghc,parpseq}.csv
+RESULTS/fibonacci/metrics_fib_{talm,ghc,parpseq}.csv
+RESULTS/matmul/metrics_matmul_{talm,ghc,parpseq}.csv
+RESULTS/graph_coloring/metrics_gc_{super,ghc,parpseq}.csv
+```
+
+`run_all.sh` prints a summary at the end with run counts per file and total errors.
 
 ---
+
+## Benchmark Details
 
 ### MergeSort Flags
 
