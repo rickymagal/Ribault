@@ -286,17 +286,19 @@ bash scripts/run_all.sh --procs 1,2,4,8 \
   --gc-N "$(seq -s, 50 50 1000)" --gc-reps 3 --gc-edge-prob 0.01 --gc-seed 42
 ```
 
-Estimated TALM-only times (on a typical 8-core machine):
+Estimated times per backend (on a typical 8-core machine):
 
-| Benchmark      | N range             | Runs   | Est. TALM time |
-|----------------|---------------------|--------|----------------|
-| MergeSort      | 50K → 20M step 50K  | 16,000 | ~30 min        |
-| Dyck           | 50K → 25M step 50K  |126,000 | ~25 min        |
-| Fibonacci      | N=35, cut=15,20,25,30| 48    | ~140 min       |
-| MatMul         | 50 → 1500 step 50   | 1,200  | ~30 min        |
-| Graph Coloring | 50 → 1000 step 50   | 240    | ~23 min        |
+| Benchmark      | N range              | Runs   | Est. TALM   | Est. GHC Strategies | Est. GHC par/pseq |
+|----------------|----------------------|--------|-------------|---------------------|--------------------|
+| MergeSort      | 50K → 20M step 50K   | 16,000 | ~30 min     | ~16 h               | ~14 h              |
+| Dyck           | 50K → 25M step 50K   |126,000 | ~25 min     | ~4 h                | ~2.5 h             |
+| Fibonacci      | N=35, cut=15,20,25,30| 48     | ~140 min    | < 1 min             | < 1 min            |
+| MatMul         | 50 → 1500 step 50    | 1,200  | ~30 min     | ~43 min             | ~48 min            |
+| Graph Coloring | 50 → 1000 step 50    | 240    | ~23 min     | < 1 min             | < 1 min            |
 
-Total estimated wall time (TALM + GHC Strategies + GHC par/pseq): **several hours**.
+GHC times include compilation overhead (one `ghc -O2 -threaded` per N value). MergeSort and Dyck are much faster on TALM (C superinstructions) than GHC, so the GHC variants dominate total wall time for those benchmarks.
+
+Total estimated wall time (all 3 backends, sequential): **~40 hours**.
 
 ### Selective runs
 
