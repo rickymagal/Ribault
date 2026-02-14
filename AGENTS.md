@@ -273,32 +273,32 @@ bash scripts/run_all.sh --reps 1 --procs 1,2 \
   --gc-N 50,100
 ```
 
-### Full heavy run (each benchmark ≥ 20 min on TALM)
+### Extended run (4 N values per benchmark, beyond paper defaults)
 
-This command extends the N ranges beyond the paper defaults so that **each benchmark's TALM portion alone takes at least 20 minutes**. All ranges start at the same initial N as the paper results. GHC (Strategies + par/pseq) runs after TALM for each benchmark and takes additional time on top.
+This command uses 4 N values per benchmark (initial N from the paper results + 3 larger values), extending well beyond paper defaults. MergeSort goes up to 20M. GHC runs after TALM for each benchmark.
 
 ```bash
 bash scripts/run_all.sh --procs 1,2,4,8 \
-  --ms-start-N 50000 --ms-step 50000 --ms-max-N 20000000 --ms-reps 10 \
-  --dyck-N "$(seq -s, 50000 50000 25000000)" --dyck-imb "$(seq -s, 0 5 100)" --dyck-reps 3 \
+  --ms-N 50000,5000000,10000000,20000000 --ms-reps 10 \
+  --dyck-N 50000,8000000,16000000,25000000 --dyck-imb "$(seq -s, 0 5 100)" --dyck-reps 3 \
   --fib-N 35 --fib-cutoff 15,20,25,30 --fib-reps 3 \
-  --matmul-N "$(seq -s, 50 50 1500)" --matmul-reps 10 \
-  --gc-N "$(seq -s, 50 50 1000)" --gc-reps 3 --gc-edge-prob 0.01 --gc-seed 42
+  --matmul-N 50,500,1000,1500 --matmul-reps 10 \
+  --gc-N 50,350,700,1000 --gc-reps 3 --gc-edge-prob 0.01 --gc-seed 42
 ```
 
 Estimated times per backend (on a typical 8-core machine):
 
-| Benchmark      | N range              | Runs   | Est. TALM   | Est. GHC Strategies | Est. GHC par/pseq |
-|----------------|----------------------|--------|-------------|---------------------|--------------------|
-| MergeSort      | 50K → 20M step 50K   | 16,000 | ~30 min     | ~16 h               | ~14 h              |
-| Dyck           | 50K → 25M step 50K   |126,000 | ~25 min     | ~4 h                | ~2.5 h             |
-| Fibonacci      | N=35, cut=15,20,25,30| 48     | ~140 min    | < 1 min             | < 1 min            |
-| MatMul         | 50 → 1500 step 50    | 1,200  | ~30 min     | ~43 min             | ~48 min            |
-| Graph Coloring | 50 → 1000 step 50    | 240    | ~23 min     | < 1 min             | < 1 min            |
+| Benchmark      | N values                    | Runs | Est. TALM | Est. GHC Strategies | Est. GHC par/pseq |
+|----------------|-----------------------------|------|-----------|---------------------|--------------------|
+| MergeSort      | 50K, 5M, 10M, 20M          | 160  | < 1 min   | ~17 min             | ~13 min            |
+| Dyck           | 50K, 8M, 16M, 25M          |1,008 | < 1 min   | ~2 min              | ~2 min             |
+| Fibonacci      | N=35, cut=15,20,25,30       | 48   | ~140 min  | < 1 min             | < 1 min            |
+| MatMul         | 50, 500, 1000, 1500         | 160  | ~10 min   | ~27 min             | ~27 min            |
+| Graph Coloring | 50, 350, 700, 1000          | 48   | ~5 min    | < 1 min             | < 1 min            |
 
-GHC times include compilation overhead (one `ghc -O2 -threaded` per N value). MergeSort and Dyck are much faster on TALM (C superinstructions) than GHC, so the GHC variants dominate total wall time for those benchmarks.
+Fibonacci dominates total time (TALM cutoff=15 takes ~530s/run). MergeSort and Dyck are extremely fast on TALM (C superinstructions) but slower on GHC.
 
-Total estimated wall time (all 3 backends, sequential): **~40 hours**.
+Total estimated wall time (all 3 backends, sequential): **~4 hours** (Fibonacci TALM dominates).
 
 ### Selective runs
 
