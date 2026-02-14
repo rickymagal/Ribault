@@ -22,6 +22,8 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
+#include <stdint.h>
+#include <inttypes.h>
 
 
 
@@ -143,7 +145,7 @@ struct oper {
 	//instr_t *dst;
 	//void *value;
        	generic_vartype value;
-	unsigned int tag; //this tag corresponds to the loop iteration
+	uint64_t tag; //this tag corresponds to the loop iteration
 	int exec; //the exec tag has two parts, the callgroup number(high bits) and the dynamic part corresponding to the instance of the function call. The dynamic part is set to the counter of the callsnd instruction that sends the operand. Everytime a callsnd instruction executes it increments its counter after sending the operand.
 	int spec; //speculation number.
 	//char isspeculative; //indicates if the operand is speculative. used for gc. 
@@ -166,10 +168,10 @@ typedef struct optoken {
 } optoken_t;
 typedef struct marker {
 	msgtype_t type;
-	unsigned int tag;
+	uint64_t tag;
 } marker_t;
 struct opmatch {
-	unsigned int tag;
+	uint64_t tag;
 	int exec;
 	int spec;
 	oper_t *op[MAX_SOURCE];
