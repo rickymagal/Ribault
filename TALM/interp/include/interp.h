@@ -218,8 +218,7 @@ typedef struct {
 	int n_instrs;
 	int n_edges;		//number of edges (threads that send/receive operands to/from this one)
 	int n_threads;
-	queue_t ready_queue;
-	pthread_mutex_t ready_mutex;
+	deque_t ready_queue;
 	optoken_t *optoken_free;
 	dispsnd_t *dispsnd_free;
 	dispatch_t *dispatch_free;

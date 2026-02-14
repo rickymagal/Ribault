@@ -43,7 +43,7 @@ Global options:
   --reps <n>              Default repetitions for all benchmarks
   --outdir <dir>          Results root directory (default: RESULTS)
   --only <csv>            Only run these benchmarks (comma-separated)
-                          Choices: mergesort,dyck,fibonacci,matmul,graph_coloring
+                          Choices: mergesort,dyck,fibonacci,matmul,graph_coloring,nqueens
   --skip <csv>            Skip these benchmarks
   --dry-run               Print what would run without executing
   -h, --help              Show this help
@@ -75,6 +75,11 @@ Graph Coloring options:
   --gc-reps <n>           Repetitions (default: --reps or 3)
   --gc-edge-prob <f>      Edge probability (default: 0.01)
   --gc-seed <n>           Random seed (default: 42)
+
+N-Queens options:
+  --nq-N <csv>            Board sizes (default: 8,10,12,13,14)
+  --nq-cutoff <n>         Cutoff depth (default: 3)
+  --nq-reps <n>           Repetitions (default: --reps or 3)
 USAGE
   exit 0
 }
@@ -127,6 +132,11 @@ GC_REPS=""
 GC_EDGE_PROB="0.01"
 GC_SEED="42"
 
+# N-Queens
+NQ_N="8,10,12,13,14"
+NQ_CUTOFF="3"
+NQ_REPS=""
+
 # ── Parse arguments ───────────────────────────────────────────
 
 while [[ $# -gt 0 ]]; do
@@ -162,6 +172,10 @@ while [[ $# -gt 0 ]]; do
     --gc-edge-prob)  GC_EDGE_PROB="$2"; shift 2 ;;
     --gc-seed)       GC_SEED="$2"; shift 2 ;;
 
+    --nq-N)          NQ_N="$2"; shift 2 ;;
+    --nq-cutoff)     NQ_CUTOFF="$2"; shift 2 ;;
+    --nq-reps)       NQ_REPS="$2"; shift 2 ;;
+
     *) echo "Unknown option: $1"; echo "Use --help for usage."; exit 1 ;;
   esac
 done
@@ -181,6 +195,7 @@ done
 [[ -z "$FIB_REPS" ]]    && FIB_REPS="${GLOBAL_REPS:-3}"
 [[ -z "$MATMUL_REPS" ]] && MATMUL_REPS="${GLOBAL_REPS:-10}"
 [[ -z "$GC_REPS" ]]     && GC_REPS="${GLOBAL_REPS:-3}"
+[[ -z "$NQ_REPS" ]]     && NQ_REPS="${GLOBAL_REPS:-3}"
 
 # Infrastructure paths
 INTERP="$ROOT/TALM/interp/interp"
@@ -192,7 +207,7 @@ export PY2 PY3
 
 # ── Benchmark selection ───────────────────────────────────────
 
-ALL_BENCHMARKS="mergesort dyck fibonacci matmul graph_coloring"
+ALL_BENCHMARKS="mergesort dyck fibonacci matmul graph_coloring nqueens"
 
 should_run() {
   local bench="$1"
@@ -250,6 +265,9 @@ if should_run matmul; then
 fi
 if should_run graph_coloring; then
   echo "  Graph Coloring: N=$GC_N  edge_prob=$GC_EDGE_PROB  seed=$GC_SEED  reps=$GC_REPS"
+fi
+if should_run nqueens; then
+  echo "  N-Queens:       N=$NQ_N  cutoff=$NQ_CUTOFF  reps=$NQ_REPS"
 fi
 echo ""
 
@@ -323,6 +341,15 @@ if should_run graph_coloring; then
     --outroot "$OUTDIR/graph_coloring" --tag gc
 fi
 
+# 6. N-Queens
+if should_run nqueens; then
+  run_bench nqueens bash "$ROOT/scripts/nqueens/run_compare.sh" \
+    --N "$NQ_N" --cutoff "$NQ_CUTOFF" \
+    --reps "$NQ_REPS" --procs "$PROCS" \
+    --interp "$INTERP" --asm-root "$ASM_ROOT" --codegen "$CODEGEN_ROOT" \
+    --outroot "$OUTDIR/nqueens" --tag nq
+fi
+
 # ── Summary ───────────────────────────────────────────────────
 
 echo ""
@@ -343,7 +370,8 @@ for f in "$OUTDIR"/mergesort/metrics_ms_*.csv \
          "$OUTDIR"/dyck_N_IMB_sweep/metrics_dyck_*.csv \
          "$OUTDIR"/fibonacci/metrics_fib_*.csv \
          "$OUTDIR"/matmul/metrics_matmul_*.csv \
-         "$OUTDIR"/graph_coloring/metrics_gc_*.csv; do
+         "$OUTDIR"/graph_coloring/metrics_gc_*.csv \
+         "$OUTDIR"/nqueens/metrics_nq_*.csv; do
   if [[ -f "$f" ]]; then
     lines=$(($(wc -l < "$f") - 1))
     printf "  %-60s %6d runs\n" "${f#$ROOT/}" "$lines"
@@ -357,7 +385,8 @@ for f in "$OUTDIR"/mergesort/metrics_ms_*.csv \
          "$OUTDIR"/dyck_N_IMB_sweep/metrics_dyck_*.csv \
          "$OUTDIR"/fibonacci/metrics_fib_*.csv \
          "$OUTDIR"/matmul/metrics_matmul_*.csv \
-         "$OUTDIR"/graph_coloring/metrics_gc_*.csv; do
+         "$OUTDIR"/graph_coloring/metrics_gc_*.csv \
+         "$OUTDIR"/nqueens/metrics_nq_*.csv; do
   if [[ -f "$f" ]]; then
     errs=$(grep -cE ',9[89]$' "$f" 2>/dev/null || true)
     total_errors=$((total_errors + errs))

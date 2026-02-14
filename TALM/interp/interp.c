@@ -242,11 +242,7 @@ static long comm_wait_usec = -1;
 static int comm_wait_env_set = 0;
 static int force_spin = 0;
 static int force_spin_env_set = 0;
-static int steal_enabled = 1;
-static int steal_batch = 1;
-static int steal_batch_env_set = 0;
-static int steal_threshold = 0;
-static int steal_threshold_env_set = 0;
+static deque_t **global_deques = NULL;
 static int sched_prof = 0;
 static uint64_t *sched_busy_iters = NULL;
 static uint64_t *sched_idle_iters = NULL;
@@ -254,74 +250,26 @@ static uint64_t *sched_execs = NULL;
 static int *sched_max_ready = NULL;
 static __thread thread_args *tls_attr = NULL;
 
-static inline void readyq_enqueue(thread_args *attr, qelem x) {
-	if (steal_enabled) {
-		pthread_mutex_lock(&attr->ready_mutex);
-		enqueue(x, &attr->ready_queue);
-		pthread_mutex_unlock(&attr->ready_mutex);
-	} else {
-		enqueue(x, &attr->ready_queue);
+static int treb_deque_heuristic(qelem elem) {
+	dispatch_t *disp = (dispatch_t *)elem;
+	if (disp->instr != 0) {
+		return (disp->instr->opcode >= OP_SUPER1);
 	}
+	return 0;
 }
 
-static inline dispatch_t *readyq_dequeue(thread_args *attr, int *count_before) {
-	dispatch_t *disp = NULL;
-	if (steal_enabled) {
-		pthread_mutex_lock(&attr->ready_mutex);
-		if (count_before) {
-			*count_before = attr->ready_queue.count;
-		}
-		if (attr->ready_queue.count > 0) {
-			disp = (dispatch_t *)get_first(&attr->ready_queue);
-		}
-		pthread_mutex_unlock(&attr->ready_mutex);
-	} else {
-		if (count_before) {
-			*count_before = attr->ready_queue.count;
-		}
-		if (attr->ready_queue.count > 0) {
-			disp = (dispatch_t *)get_first(&attr->ready_queue);
-		}
-	}
-	return disp;
-}
-
-static dispatch_t *steal_work(thread_args *attr) {
-	if (!steal_enabled || !g_args || g_n_threads <= 1) {
+static dispatch_t *try_steal(thread_args *attr) {
+	if (!global_deques || g_n_threads <= 1) {
 		return NULL;
 	}
-	dispatch_t *stolen[32];
-	int stolen_count = 0;
-	int batch = steal_batch;
-	if (batch < 1) {
-		batch = 1;
-	}
-	if (batch > 32) {
-		batch = 32;
-	}
-	int start = (attr->id + 1) % g_n_threads;
-	for (int offset = 0; offset < g_n_threads - 1; offset++) {
-		int vid = (start + offset) % g_n_threads;
-		thread_args *victim = &g_args[vid];
-		if (pthread_mutex_trylock(&victim->ready_mutex) != 0) {
-			continue;
-		}
-		dispatch_t *disp = NULL;
-		if (victim->ready_queue.count > 0) {
-			disp = (dispatch_t *)get_first(&victim->ready_queue);
-			int to_take = batch - 1;
-			while (to_take > 0 && victim->ready_queue.count > 0 && stolen_count < 32) {
-				stolen[stolen_count++] = (dispatch_t *)get_first(&victim->ready_queue);
-				to_take--;
-			}
-		}
-		pthread_mutex_unlock(&victim->ready_mutex);
-		for (int i = 0; i < stolen_count; i++) {
-			readyq_enqueue(attr, (qelem)stolen[i]);
-		}
-		stolen_count = 0;
-		if (disp) {
-			return disp;
+	int n_victims = g_n_threads;
+	int start = random() % n_victims;
+	for (int i = 0; i < n_victims; i++) {
+		int victim = (start + i) % n_victims;
+		if (victim == attr->id) continue;
+		qelem elem = pop_last(global_deques[victim]);
+		if ((qelem)elem > DEQUE_RETURN_ABORT) {
+			return (dispatch_t *)elem;
 		}
 	}
 	return NULL;
@@ -917,28 +865,6 @@ int main(int argc, char **argv) {
 			comm_wait_env_set = 1;
 		}
 	}
-	const char *steal_env = getenv("STEAL_WORK");
-	if (steal_env && steal_env[0] != '\0') {
-		if (steal_env[0] == '0') {
-			steal_enabled = 0;
-		}
-	}
-	const char *steal_batch_env = getenv("STEAL_BATCH");
-	if (steal_batch_env && steal_batch_env[0] != '\0') {
-		int v = atoi(steal_batch_env);
-		if (v > 0) {
-			steal_batch = v;
-			steal_batch_env_set = 1;
-		}
-	}
-	const char *steal_thr_env = getenv("STEAL_THRESHOLD");
-	if (steal_thr_env && steal_thr_env[0] != '\0') {
-		int v = atoi(steal_thr_env);
-		if (v >= 0) {
-			steal_threshold = v;
-			steal_threshold_env_set = 1;
-		}
-	}
 	const char *sched_env = getenv("SCHED_PROF");
 	if (sched_env && sched_env[0] != '\0' && sched_env[0] != '0') {
 		sched_prof = 1;
@@ -972,27 +898,6 @@ int main(int argc, char **argv) {
 	} else {
 		// Default to enforcing tag matching for correctness.
 		ignore_tag_match = 0;
-	}
-
-	if (n_threads > 1 && steal_enabled) {
-		if (!check_msgs_env_set && check_msgs_interval < 8) {
-			check_msgs_interval = 64;
-		}
-		if (!comm_wait_env_set && comm_wait_usec < 0) {
-			comm_wait_usec = 50;
-		}
-		if (!idle_spins_env_set && idle_spins == 0) {
-			idle_spins = 1000;
-		}
-		if (!idle_yield_env_set) {
-			idle_yield = 1;
-		}
-		if (!steal_threshold_env_set && steal_threshold == 0) {
-			steal_threshold = 8;
-		}
-		if (!steal_batch_env_set && steal_batch <= 1) {
-			steal_batch = 8;
-		}
 	}
 
 	if (n_threads < 1) {
@@ -1107,6 +1012,12 @@ int main(int argc, char **argv) {
 	initialize_threads(t_args, n_threads, fp, pla);
 	g_args = t_args;
 	g_n_threads = n_threads;
+
+	/* Set up global deque pointers for work stealing */
+	global_deques = (deque_t **)malloc(sizeof(deque_t *) * n_threads);
+	for (i = 0; i < n_threads; i++) {
+		global_deques[i] = &(t_args[i].ready_queue);
+	}
 	#ifdef USE_STM
 	//stm_init(); //initialize main stm
 	#endif
@@ -1131,7 +1042,6 @@ int main(int argc, char **argv) {
 	for (i=0; i < n_threads; i++) {
 		pthread_join(threads[i], NULL);
 		free(t_args[i].ready_queue.elem);
-		pthread_mutex_destroy(&t_args[i].ready_mutex);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &_ts_end);
 	{
@@ -1170,6 +1080,8 @@ int main(int argc, char **argv) {
 	#ifdef USE_STM
 	//stm_exit();
 	#endif
+	free(global_deques);
+	global_deques = NULL;
 	free(t_args);
 	free(threads);
 	#ifdef DEBUG_MEMORY
@@ -1208,94 +1120,77 @@ void * pe_main(void *args) {
 		hs_init_thread_fp();
 	}
 
+	deque_t *readyq = &(attr->ready_queue);
+
 	while (!attr->global_termination) {  //MAIN LOOP
-		int ready_count = 0;
-		#define EXEC_DISP() \
-			do { \
-				if (sched_prof && ready_count > max_ready) { \
-					max_ready = ready_count; \
-				} \
-				if (sched_prof) { \
-					busy_iters++; \
-					execs++; \
-				} \
-				instr = disp->instr; \
-				eval(disp, attr); \
-				check_msgs_count--; \
-				if (!check_msgs_count) { \
-					treat_msgs(attr, 0); \
-					check_msgs_count = check_msgs_interval; \
-				} \
-			} while (0)
-		while ((disp = readyq_dequeue(attr, &ready_count)) != NULL) {
+		/* Inner loop: drain own ready queue (owner pops from front) */
+		for (;;) {
+			qelem pf = pop_first(readyq);
+			if (pf == DEQUE_RETURN_EMPTY) break;
+			if (pf == DEQUE_RETURN_ABORT) continue; /* CAS conflict, retry */
+			disp = (dispatch_t *)pf;
 			#ifdef DEBUG_EXECUTION
 			printf("Executando instrucao %d (pe: %d)\n", disp->instr->opcode, attr->id);
 			#endif
-			EXEC_DISP();
-			if (steal_threshold > 0 && ready_count <= steal_threshold) {
-				dispatch_t *stolen = steal_work(attr);
-				if (stolen) {
-					readyq_enqueue(attr, (qelem)stolen);
-				}
-			}
-			//free(disp);
-		}
-		disp = steal_work(attr);
-		if (disp) {
-			attr->isidle = 0;
-			EXEC_DISP();
-			continue;
-		}
-		if (idle_spins > 0) {
-			for (int spin = 0; spin < idle_spins; spin++) {
+			if (sched_prof) { busy_iters++; execs++; }
+			instr = disp->instr;
+			eval(disp, attr);
+			check_msgs_count--;
+			if (!check_msgs_count) {
 				treat_msgs(attr, 0);
-				disp = readyq_dequeue(attr, &ready_count);
-				if (disp) {
-					attr->isidle = 0;
-					EXEC_DISP();
-					goto continue_loop;
-				}
-				disp = steal_work(attr);
-				if (disp) {
-					attr->isidle = 0;
-					EXEC_DISP();
-					goto continue_loop;
-				}
-				if (idle_yield) {
-					sched_yield();
-				}
+				check_msgs_count = check_msgs_interval;
 			}
 		}
-		// TODO: move this if outside of the loop
+		/* Own queue empty: try to steal before going idle */
 		if (attr->n_edges == 0) {
-			attr->global_termination = 1; 
+			attr->global_termination = 1;
 			continue;
 		}
-		check_msgs_count = check_msgs_interval;
-		if (!HAS_ELEMENTS(commq) && !attr->isidle)  {
-			attr->isidle = 1;
-			attr->termination_tag++;
-			attr->termination_count = 0;
-			#ifdef DEBUG_TERMINATION
-			printf("Initiating termination detection with tag %" PRIu64 ". (pe: %d)\n", attr->termination_tag, attr->id);
-			#endif
-			send_markers(attr->termination_tag, attr->id, attr->n_edges);
-			
+		{
+			int got_work = 0;
+			/* Spin trying to steal — never sleep while work exists */
+			for (;;) {
+				if (attr->global_termination) break;
+				/* Check for incoming messages (non-blocking) */
+				treat_msgs(attr, 0);
+				if (attr->global_termination) break;
+				/* Try own queue first (messages may have added work) */
+				{
+					qelem pf = pop_first(readyq);
+					if (pf != DEQUE_RETURN_EMPTY && pf != DEQUE_RETURN_ABORT) {
+						disp = (dispatch_t *)pf;
+						attr->isidle = 0;
+						if (sched_prof) { busy_iters++; execs++; }
+						instr = disp->instr;
+						eval(disp, attr);
+						got_work = 1;
+						break;
+					}
+				}
+				/* Try to steal from another PE */
+				disp = try_steal(attr);
+				if (disp) {
+					attr->isidle = 0;
+					if (sched_prof) { busy_iters++; execs++; }
+					instr = disp->instr;
+					eval(disp, attr);
+					got_work = 1;
+					break;
+				}
+				if (sched_prof) { idle_iters++; }
+				/* Initiate termination detection if not already idle */
+				if (!HAS_ELEMENTS(commq) && !attr->isidle) {
+					attr->isidle = 1;
+					attr->termination_tag++;
+					attr->termination_count = 0;
+					#ifdef DEBUG_TERMINATION
+					printf("Initiating termination detection with tag %" PRIu64 ". (pe: %d)\n", attr->termination_tag, attr->id);
+					#endif
+					send_markers(attr->termination_tag, attr->id, attr->n_edges);
+				}
+			}
+			(void)got_work;
 		}
-	
-		#ifdef DEBUG_COMMUNICATION
-	        printf("PE: %d esperando msg\n", attr->id);
-	        #endif
-		if (sched_prof) {
-			idle_iters++;
-		}
-		if (force_spin) {
-			treat_msgs(attr, 0);
-		} else {
-			treat_msgs(attr, 1);
-		}
-continue_loop:
-		;
 	} //END OF MAIN LOOP
 	#undef EXEC_DISP
 	
@@ -1398,7 +1293,7 @@ void treat_msgs(thread_args *attr, int isblocking) {
 				                     tag_exec,
 				                     exec_exec,
 				                     attr)))
-					readyq_enqueue(attr, (qelem)disp);
+					push_last((qelem)disp, &attr->ready_queue);
 				// token ownership transferred; release happens when operand is cleaned
 				attr->isidle = 0;
 				break;
@@ -1407,7 +1302,7 @@ void treat_msgs(thread_args *attr, int isblocking) {
 				printf("PE: %d - dispatch recebido %x\n", attr->id, ((dispsnd_t *)rcvmsg)->disp);
 				#endif
 				disp = ((dispsnd_t *)rcvmsg)->disp;	
-				readyq_enqueue(attr, (qelem)disp);
+				push_last((qelem)disp, &attr->ready_queue);
 				dispsnd_release(attr, (dispsnd_t *)rcvmsg);
 				attr->isidle = 0;
 				break;
@@ -1995,7 +1890,7 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 						if ((disprcvd->instr)->pe_id != pe_attr->id)
 							send_dispatch(disprcvd, (disprcvd->instr)->pe_id, pe_attr);
 						else
-							readyq_enqueue(pe_attr, (qelem)disprcvd);
+							push_last((qelem)disprcvd, &pe_attr->ready_queue);
 						//free_disprcvd = 0; //don't free the dispatch because it was sent for reexecution
 						//do rollback
 					}
@@ -2632,7 +2527,7 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 					                         tag_exec,
 					                         exec_exec,
 					                         pe_attr))) {
-						readyq_enqueue(pe_attr, (qelem)dispatch);
+						push_last((qelem)dispatch, &pe_attr->ready_queue);
 						}
 			
 				} else {
@@ -3049,8 +2944,7 @@ void initialize_threads(thread_args *args, int n_threads, FILE *fp, FILE *pla) {
 */
 	for (i = 0; i < n_threads; i++) {
 		args[i].id = i;
-		init_queue(&(args[i].ready_queue));
-		pthread_mutex_init(&args[i].ready_mutex, NULL);
+		init_deque(&(args[i].ready_queue));
 		init_combuff(comm_buffer + i);	
 		args[i].n_edges = n_threads - 1;
 		args[i].n_threads = n_threads;
