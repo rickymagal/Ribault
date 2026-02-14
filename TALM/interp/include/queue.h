@@ -83,4 +83,10 @@ qelem get_first(queue_t *q);
 
 void print_queue(queue_t q);
 
+void push_last(qelem x, deque_t *d);
+
+qelem pop_first(deque_t *d);
+
+qelem pop_last(deque_t *d);
+
 

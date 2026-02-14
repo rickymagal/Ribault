@@ -25,20 +25,20 @@
 void expand_queue(queue_t *q);
 
 void enqueue(qelem x, queue_t *q) {
-	
+
 	if (q->count == q->allocsize) {
 #ifdef DEBUG_QUEUE
 		printf("Queue is full. Reallocating\n");
 #endif
-		//q->elem = realloc(q->elem, (q->allocsize + REALLOC_INCREMENT)*sizeof(qelem)); 
+		//q->elem = realloc(q->elem, (q->allocsize + REALLOC_INCREMENT)*sizeof(qelem));
 		expand_queue(q);
 	}
 
 
-	
+
 	q->last = (q->last + 1) % q->allocsize;
 	q->elem[q->last] = x;
-	(q->count)++; 
+	(q->count)++;
 
 
 }
@@ -51,18 +51,17 @@ void init_queue(queue_t *q) {
 }
 
 void init_deque(deque_t *d) {
-	d->first = 0;
-	d->last.st.index = -1;
+	d->first = 1;
+	d->last.st.index = 0;
 	d->last.st.tag = 0;
 	d->elem = (qelem *)malloc(sizeof(qelem) * INITIAL_QUEUE_SIZE);
 	d->allocsize = INITIAL_QUEUE_SIZE;
-
 }
 
 
 //int has_elements(queue_t *q) {
 //	return (q->count > 0);
-	
+
 //}
 
 
@@ -73,10 +72,10 @@ qelem get_first(queue_t *q) {
 		first = q->elem[q->first];
 		q->first = (q->first + 1) % q->allocsize;
 
-		
+
 	} else
-		first = NULL;	
-	
+		first = NULL;
+
 	return(first);
 
 }
@@ -84,7 +83,7 @@ void expand_queue(queue_t *q) {
 	int i, count_old = q->count;
 	qelem *elem_old = q->elem;
 	qelem *elem_new = (qelem *)malloc(sizeof(qelem) * (REALLOC_INCREMENT + q->allocsize));
-	
+
 	if (elem_new == NULL) {
 		printf("Error expanding queue memory\n");
 		exit(0);
@@ -105,39 +104,34 @@ void expand_queue(queue_t *q) {
 	free(elem_old);
 
 	q->elem = elem_new;
-	
+
 
 }
 
 
 
 void push_last(qelem x, deque_t *d) {
-	int pos, count, output;
-	deque_anchor_t last = d->last, last_new; 
+	int count, retry = 1;
+	deque_anchor_t last, last_new;
 	/* Notice that deque_anchor_t is a union where deque.st is its interpretation as a struct anchor_struct
-	 * and deque.w is its interpretion as a casword_t, to be used with CAS() */ 
-	
-	count = last.st.index - d->first;
+	 * and deque.w is its interpretion as a casword_t, to be used with CAS() */
+	while (retry) {
+		last = d->last;
 
+		count = last.st.index - d->first;
 
-	if (count == d->allocsize) {
-#ifdef DEBUG_QUEUE
-		printf("Deque is full. Reallocating\n");
-#endif
-		//q->elem = realloc(q->elem, (q->allocsize + REALLOC_INCREMENT)*sizeof(qelem)); 
-		//expand_queue(q);
-		exit(1);
+		if (count == d->allocsize) {
+			fprintf(stderr, "Deque is full. Aborting.\n");
+			exit(1);
+		}
+
+		last_new.st.index = last.st.index + 1;
+		last_new.st.tag = last.st.tag + 1;
+
+		d->elem[last_new.st.index % d->allocsize] = x;
+
+		retry = !(CAS(&(d->last), last.w, last_new.w)) ? retry + 1 : 0;
 	}
-	
-
-
-	pos = last_new.st.index = (last.st.index+1) % d->allocsize;
-	last_new.st.tag = last.st.tag + 1;
-
-	d->elem[pos] = x;
-	
-	output = CAS(&(d->last), last.w, last_new.w);
-	
 }
 
 
@@ -145,46 +139,40 @@ qelem pop_first(deque_t *d) {
 	int count, first;
 	deque_anchor_t last, newlast;
 
-	qelem *output = NULL;
-	
+	qelem output = NULL;
+
 	first = d->first;
-	d->first++;
-	
+	d->first = first + 1;
+
 	last = d->last;
 
+	output = d->elem[first % d->allocsize];
+
 	count = last.st.index - first;
- 
 	if (count < 0) {
 		output = DEQUE_RETURN_EMPTY;
-	
+		d->first = first;
+
 	} else {
 
 		if (count > 0) {
-			output = d->elem[first];
-		
-		
+			output = d->elem[first % d->allocsize];
+
 		} else {
-			newlast.st.index = last.st.index;
-			newlast.st.tag = last.st.tag+1;
-			if (CAS(&(d->last), last.w, newlast.w))
-				
-				output = d->elem[first];
-			else
+			/* Last element: CAS to prevent conflict with thief */
+			newlast.st.index = 0;
+			newlast.st.tag = last.st.tag + 1;
+			if (CAS(&(d->last), last.w, newlast.w)) {
+				/* Owner got the last element; reset deque indices */
+				d->first = 1;
+			} else {
 				output = DEQUE_RETURN_ABORT;
-
-
-
-			//d->first = d->last + 1;
-		
-		
+				d->first = first;
+			}
 		}
-	
-	
-
 	}
 
 	return(output);
-
 }
 
 
@@ -192,11 +180,13 @@ qelem pop_first(deque_t *d) {
 qelem pop_last(deque_t *d) {
 	int first, count;
 	deque_anchor_t last, newlast;
-	qelem *output;
+	qelem output;
+
+	last = d->last;
 
 	first = d->first;
 
-	last = d->last;
+	output = d->elem[last.st.index % d->allocsize];
 
 	count = last.st.index - first;
 
@@ -205,70 +195,10 @@ qelem pop_last(deque_t *d) {
 	else {
 		newlast.st.index = last.st.index - 1;
 		newlast.st.tag = last.st.tag;
-			
-		if (CAS(&(d->last), last.w, newlast.w))
-			output = d->elem[last.st.index];
-		else
-			output = DEQUE_RETURN_ABORT;	
-	
-	
-	
+
+		if (!CAS(&(d->last), last.w, newlast.w))
+			output = DEQUE_RETURN_ABORT;
 	}
 
 	return(output);
-	
-
 }
-
-
-
-
-
-
-/*
-void print_queue(queue_t q) {
-	int k = q.first;
-
-	printf("first: %d last: %d\n", q.first, q.last);	
-	printf("k: %d ", q.elem[k]);	
-	while (k != q.last) {
-		//printf("first: %d\n", k);
-		
-		k = (k + 1) % MAX_ELEMENTS;
-			
-		printf("k: %d ", q.elem[k]);fflush(stdout);
-
-	} 
-
-	printf("\n");
-}
-*/
-/*
-int main(void) {
-	queue_t q;
-
-
-	init_queue(&q);
-
-	enqueue(&q, 2);
-	printf("aaa\n");
-	print_queue(q);
-	
-	printf("Uia\n");
-	enqueue(&q, 3);
-	print_queue(q);
-
-	enqueue(&q,4);
-	
-	enqueue(&q,6);
-	enqueue(&q,7);
-	enqueue(&q,10);
-
-	print_queue(q);
-
-
-	return(0);
-
-}
-
- */

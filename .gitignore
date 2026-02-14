@@ -39,3 +39,6 @@ test/supers/*/libsupers.so
 .venv/
 .ribault-venv/
 .ghcup-cache/
+
+# original TALM work stealing reference archive
+interp_selective_WS.tar

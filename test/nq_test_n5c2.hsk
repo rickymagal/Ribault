@@ -1,0 +1,84 @@
+-- nqueens.hsk  (auto-generated)
+-- N=5  CUTOFF=2
+
+-- SUPER: sequential backtracking from packed state
+-- packed = cols * 16 + row  (row in lower 4 bits)
+solve_seq packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count =
+      let
+        n = 5
+        row0 = packed `mod` 16
+        cols0 = packed `div` 16
+        getQ cs r = fromIntegral ((cs `div` (16 ^ r)) `mod` 16)
+        packQ cs r c = cs + fromIntegral c * (16 ^ r)
+        safe cs r c = go 0
+          where go i | i >= r    = True
+                     | otherwise = let ci = getQ cs i
+                                   in ci /= c && abs (ci - c) /= (r - i) && go (i + 1)
+        solve r cs
+          | r >= n    = 1
+          | otherwise = sum [ solve (r + 1) (packQ cs r c)
+                            | c <- [0..n-1], safe cs r c ]
+      in solve row0 cols0
+#ENDSUPER
+
+-- SUPER: print result
+print_result r =
+  super single input (r) output (out)
+#BEGINSUPER
+    out = unsafePerformIO (do putStrLn ("RESULT=" ++ show r); hFlush stdout; pure 0)
+#ENDSUPER
+
+-- Get queen column at row i (flat, no recursion)
+get_queen cols i =
+  if i == 0 then cols % 16
+  else if i == 1 then cols / 16 % 16
+  else if i == 2 then cols / 16 / 16 % 16
+  else if i == 3 then cols / 16 / 16 / 16 % 16
+  else if i == 4 then cols / 16 / 16 / 16 / 16 % 16
+  else 0
+
+-- Pack queen at (row, col) into cols (flat, no recursion)
+pack_queen cols row col =
+  if row == 0 then cols + col
+  else if row == 1 then cols + col * 16
+  else if row == 2 then cols + col * 16 * 16
+  else if row == 3 then cols + col * 16 * 16 * 16
+  else if row == 4 then cols + col * 16 * 16 * 16 * 16
+  else cols
+
+-- Absolute value
+abs_val x = if x >= 0 then x else 0 - x
+
+-- Check if placing queen at (row, col) is safe
+is_safe_loop row cols col i =
+  if i >= row
+  then 1
+  else if get_queen cols i == col
+  then 0
+  else if abs_val (get_queen cols i - col) == row - i
+  then 0
+  else is_safe_loop row cols col (i + 1)
+
+is_safe row cols col = is_safe_loop row cols col 0
+
+-- Parallel N-Queens: unrolled columns, balanced addition tree
+nqueens row cols =
+  if row >= 5
+  then 1
+  else if row >= 2
+  then solve_seq (cols * 16 + row)
+  else try_all row cols
+
+-- Unrolled column attempts (no recursion, balanced tree)
+try_all row cols =
+  let s0 = if is_safe row cols 0 == 1 then nqueens (row + 1) (pack_queen cols row 0) else 0
+  in let s1 = if is_safe row cols 1 == 1 then nqueens (row + 1) (pack_queen cols row 1) else 0
+  in let s2 = if is_safe row cols 2 == 1 then nqueens (row + 1) (pack_queen cols row 2) else 0
+  in let s3 = if is_safe row cols 3 == 1 then nqueens (row + 1) (pack_queen cols row 3) else 0
+  in let s4 = if is_safe row cols 4 == 1 then nqueens (row + 1) (pack_queen cols row 4) else 0
+  in ((s0 + s1) + (s2 + (s3 + s4)))
+
+main = print_result (nqueens 0 0)

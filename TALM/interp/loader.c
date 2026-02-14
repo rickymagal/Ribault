@@ -177,7 +177,7 @@ void loader(int placement[], thread_args *args, FILE *fp) {
 			}
 			disp->speculative = 0;
 			disp->free_disp = 1;
-       			enqueue((qelem)disp, &(args[placement[i]].ready_queue)); //TODO: do this as a general rule(n_src == 0)
+       			push_last((qelem)disp, &(args[placement[i]].ready_queue)); //TODO: do this as a general rule(n_src == 0)
 			#ifdef DEUG_LOADER
 			printf("Tamanho da fila de ready: %d\n", args[placement[i]].ready_queue.allocsize);
 			#endif
