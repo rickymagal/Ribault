@@ -273,6 +273,31 @@ bash scripts/run_all.sh --reps 1 --procs 1,2 \
   --gc-N 50,100
 ```
 
+### Full heavy run (each benchmark ≥ 20 min on TALM)
+
+This command extends the N ranges beyond the paper defaults so that **each benchmark's TALM portion alone takes at least 20 minutes**. All ranges start at the same initial N as the paper results. GHC (Strategies + par/pseq) runs after TALM for each benchmark and takes additional time on top.
+
+```bash
+bash scripts/run_all.sh --procs 1,2,4,8 \
+  --ms-start-N 50000 --ms-step 50000 --ms-max-N 20000000 --ms-reps 10 \
+  --dyck-N "$(seq -s, 50000 50000 25000000)" --dyck-imb "$(seq -s, 0 5 100)" --dyck-reps 3 \
+  --fib-N 35 --fib-cutoff 15,20,25,30 --fib-reps 3 \
+  --matmul-N "$(seq -s, 50 50 1500)" --matmul-reps 10 \
+  --gc-N "$(seq -s, 50 50 1000)" --gc-reps 3 --gc-edge-prob 0.01 --gc-seed 42
+```
+
+Estimated TALM-only times (on a typical 8-core machine):
+
+| Benchmark      | N range             | Runs   | Est. TALM time |
+|----------------|---------------------|--------|----------------|
+| MergeSort      | 50K → 20M step 50K  | 16,000 | ~30 min        |
+| Dyck           | 50K → 25M step 50K  |126,000 | ~25 min        |
+| Fibonacci      | N=35, cut=15,20,25,30| 48    | ~140 min       |
+| MatMul         | 50 → 1500 step 50   | 1,200  | ~30 min        |
+| Graph Coloring | 50 → 1000 step 50   | 240    | ~23 min        |
+
+Total estimated wall time (TALM + GHC Strategies + GHC par/pseq): **several hours**.
+
 ### Selective runs
 
 ```bash
