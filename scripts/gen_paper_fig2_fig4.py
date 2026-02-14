@@ -110,6 +110,7 @@ def fig2_pipeline():
 
     os.makedirs(OUTDIR, exist_ok=True)
     fig.savefig(os.path.join(OUTDIR, "fig2_pipeline.png"), bbox_inches='tight', dpi=300)
+    fig.savefig(os.path.join(OUTDIR, "fig2_pipeline.pdf"), bbox_inches='tight')
     print("  [ok] fig2_pipeline.png")
     plt.close()
 
@@ -263,6 +264,7 @@ def fig4_mergesort_dfg():
 
     os.makedirs(OUTDIR, exist_ok=True)
     fig.savefig(os.path.join(OUTDIR, "fig4_mergesort_dfg.png"), bbox_inches='tight', dpi=300)
+    fig.savefig(os.path.join(OUTDIR, "fig4_mergesort_dfg.pdf"), bbox_inches='tight')
     print("  [ok] fig4_mergesort_dfg.png")
     plt.close()
 

@@ -1,4 +1,4 @@
 [sup ] worker=0 worker_main=0
 [list] builtin=df
 Procs 2
-EXEC_TIME_S 0.008733223
+EXEC_TIME_S 0.006623319

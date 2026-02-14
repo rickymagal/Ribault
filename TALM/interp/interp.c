@@ -43,7 +43,7 @@ void dec_wait_counter(wcounters_list_t *counters, int tstamp, int n_threads);
 void spec_clean(thread_args *pe_attr, int tstamp);
 
 void debug_oplists(thread_args *pe_attr);
-oper_t ** get_oper(oper_t **oplist, unsigned int tag, int exectag);
+oper_t ** get_oper(oper_t **oplist, uint64_t tag, int exectag);
 
 void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr);
 //void bypass_oper(oper_t **oplist, oper_t oper);
@@ -54,7 +54,7 @@ void bypass_oper(opmatch_t **matchptr, int inport, oper_t *oper, thread_args *pe
 void inter_pe_send(int pe_id, instr_t *target, int dstn, oper_t oper, thread_args *pe_attr);
 //int can_exec(instr_t *instr);
 
-dispatch_t * can_exec(instr_t *instr, unsigned int tag, int exectag, thread_args *pe_attr);
+dispatch_t * can_exec(instr_t *instr, uint64_t tag, int exectag, thread_args *pe_attr);
 
 
 void init_combuff(combuff_t *comm);
@@ -63,9 +63,9 @@ void comm_send(combuff_t *comm, qelem elem);
 qelem comm_recv(combuff_t *comm, int blocking);
 
 
-int treat_marker(unsigned int tag, int *pmax_tag, int *pcount, thread_args *attr, int isidle);
+int treat_marker(uint64_t tag, int *pmax_tag, int *pcount, thread_args *attr, int isidle);
 
-void send_markers(unsigned int tag, int id, int n);
+void send_markers(uint64_t tag, int id, int n);
 
 void send_dispatch(dispatch_t *disp, int pe_id, thread_args *pe_attr);
 int get_notnull_spec(oper_t **oper, int len);
@@ -100,14 +100,14 @@ static inline int is_list_super_op(int opcode) {
 }
 
 static inline int valtag_is_execonly_oper1(const oper_t *op) {
-	return (op && op->value.i < 0);
+	return (op && op->value.li < 0);
 }
 
-opmatch_t *create_opmatch(unsigned int tag, int exec, thread_args *pe_attr);
+opmatch_t *create_opmatch(uint64_t tag, int exec, thread_args *pe_attr);
 
 static int valtag_execonly_bucket(instr_t *instr, int exec) {
 	for (opmatch_t *m = instr->opmatch; m != NULL; m = m->next) {
-		if (m->tag == 0 && m->exec == exec && m->op[1] && m->op[1]->value.i < 0) {
+		if (m->tag == 0 && m->exec == exec && m->op[1] && m->op[1]->value.li < 0) {
 			return 1;
 		}
 	}
@@ -156,7 +156,7 @@ static __thread size_t df_list_block_used = 0;
 static __thread int debug_match_target_id = -1;
 static __thread int debug_match_target_op = -1;
 static __thread int debug_trace_port = -1;
-opmatch_t *create_opmatch(unsigned int tag, int exec, thread_args *pe_attr);
+opmatch_t *create_opmatch(uint64_t tag, int exec, thread_args *pe_attr);
 static int debug_trace_id(int id) {
 	const char *env = getenv("DF_DEBUG_TRACE_ID");
 	char buf[32];
@@ -1277,7 +1277,7 @@ void * pe_main(void *args) {
 			attr->termination_tag++;
 			attr->termination_count = 0;
 			#ifdef DEBUG_TERMINATION
-			printf("Initiating termination detection with tag %d. (pe: %d)\n", attr->termination_tag, attr->id);
+			printf("Initiating termination detection with tag %" PRIu64 ". (pe: %d)\n", attr->termination_tag, attr->id);
 			#endif
 			send_markers(attr->termination_tag, attr->id, attr->n_edges);
 			
@@ -1339,7 +1339,7 @@ void treat_msgs(thread_args *attr, int isblocking) {
 		switch (((marker_t *)rcvmsg)->type) {
 			case MSG_TERMDETECT:
 				#ifdef DEBUG_TERMINATION
-				printf("Received marker with tag: %d (pe: %d, count = %d).\n", ((marker_t*)rcvmsg)->tag, attr->id, attr->termination_count);
+				printf("Received marker with tag: %" PRIu64 " (pe: %d, count = %d).\n", ((marker_t*)rcvmsg)->tag, attr->id, attr->termination_count);
 				#endif
 				attr->global_termination = treat_marker(((marker_t *)rcvmsg)->tag, &(attr->termination_tag), &(attr->termination_count), attr, attr->isidle);
 				free((marker_t *)rcvmsg);
@@ -1364,7 +1364,7 @@ void treat_msgs(thread_args *attr, int isblocking) {
 			case MSG_OPER:
 				rcvtoken = (optoken_t *)rcvmsg;
 				#ifdef DEBUG_COMMUNICATION
-				printf("PE: %d - Token recebido %x - tag: %d spec: %d\n", attr->id, (int)(rcvtoken->oper).value.i, (rcvtoken->oper).tag,(rcvtoken->oper).spec);
+				printf("PE: %d - Token recebido %x - tag: %" PRIu64 " spec: %d\n", attr->id, (int)(rcvtoken->oper).value.i, (rcvtoken->oper).tag,(rcvtoken->oper).spec);
 				#endif
 				//bypass_oper((rcvtoken->dst)->src + rcvtoken->dstn, rcvtoken->oper);
 
@@ -1385,7 +1385,7 @@ void treat_msgs(thread_args *attr, int isblocking) {
 				    rcvtoken->dstn == 1 && valtag_is_execonly_oper1(&rcvtoken->oper)) {
 					valtag_promote_execonly_op0(rcvtoken->dst, rcvtoken->oper.exec, attr);
 				}
-				int tag_exec = (ignore_tag_match ? 0 : (rcvtoken->oper).tag);
+				uint64_t tag_exec = (ignore_tag_match ? 0 : (rcvtoken->oper).tag);
 				int exec_exec = (ignore_exec_match ? 0 : (rcvtoken->oper).exec);
 				if (rcvtoken->dst->opcode == OP_VALTOTAG && !ignore_tag_match) {
 					if (rcvtoken->dstn == 1 && valtag_is_execonly_oper1(&rcvtoken->oper)) {
@@ -1434,7 +1434,7 @@ void treat_msgs(thread_args *attr, int isblocking) {
  */
 
 
-int treat_marker(unsigned int tag, int *pmax_tag, int *pcount, thread_args *attr, int isidle) {
+int treat_marker(uint64_t tag, int *pmax_tag, int *pcount, thread_args *attr, int isidle) {
 	//Global termination detection algorithm
 
 	int n_edges = attr->n_edges;
@@ -1447,7 +1447,7 @@ int treat_marker(unsigned int tag, int *pmax_tag, int *pcount, thread_args *attr
 		if (isidle) {
 			*pcount = 0; //the count will be incremented in the next if
 			#ifdef DEBUG_TERMINATION
-			printf("Entered termination detection tag: %d (pe: %d).\n", tag, attr->id); //Got into a new termination detection
+			printf("Entered termination detection tag: %" PRIu64 " (pe: %d).\n", tag, attr->id); //Got into a new termination detection
 			#endif
 			send_markers(tag, attr->id, attr->n_edges); 
 		}
@@ -1478,7 +1478,7 @@ int treat_marker(unsigned int tag, int *pmax_tag, int *pcount, thread_args *attr
 
 }
 
-void send_markers(unsigned int tag, int id, int n) {
+void send_markers(uint64_t tag, int id, int n) {
 	/*NOTE: Since the communication is implemented in a complete graph topology, the target nodes of all nodes(threads) are the same, so we just have one array of communication buffers, the global variable comm_buffer[] */
 	int i;
 
@@ -1491,7 +1491,7 @@ void send_markers(unsigned int tag, int id, int n) {
 			marker->tag = tag;
 			marker->type = MSG_TERMDETECT;
 			#ifdef DEBUG_TERMINATION
-			printf("Sending token with tag %d to %d. (pe: %d), nedges= %d\n", tag, i, id, n);
+			printf("Sending token with tag %" PRIu64 " to %d. (pe: %d), nedges= %d\n", tag, i, id, n);
 			#endif
 			comm_send(comm_buffer + i, (qelem)marker);		
 		}
@@ -1510,7 +1510,7 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 	oper_t **oper = disp->op; 
 	instr_t *instr = disp->instr;
 	int i, exectag, spectag;
-	unsigned int tag;
+	uint64_t tag;
 	//int free_disp = 1
 	int  free_opers = !disp->speculative;
 #ifdef USE_STM	
@@ -1543,7 +1543,7 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 		        instr->id, instr->opcode, instr->n_src, instr->n_dst);
 		for (i = 0; i < instr->n_src; i++) {
 			if (oper[i]) {
-				fprintf(stderr, "[trace]  src%d tag=%d exec=%d val=%lld\n",
+				fprintf(stderr, "[trace]  src%d tag=%" PRIu64 " exec=%d val=%lld\n",
 				        i, oper[i]->tag, oper[i]->exec, (long long)oper[i]->value.li);
 			}
 		}
@@ -1577,14 +1577,14 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 			result[0].value.i = instr->immed.i;
 			result[0].value.li = (long int)result[0].value.i;
 			#ifdef DEBUG_EXECUTION
-			printf("CONST: %lld tag: %d\n", (long long)result[0].value.li, result[0].tag);
+			printf("CONST: %lld tag: %" PRIu64 "\n", (long long)result[0].value.li, result[0].tag);
 			#endif
 			break;
 
 		case OP_DCONST:
 			result[0].value.d = (double)instr->immed.f;
 			#ifdef DEBUG_EXECUTION
-                       	printf("DCONST: %lf tag: %d -- immed: %lf \n", result[0].value.d, result[0].tag, instr->immed.f);
+                       	printf("DCONST: %lf tag: %" PRIu64 " -- immed: %lf \n", result[0].value.d, result[0].tag, instr->immed.f);
                        	#endif
 			break;
 		case OP_ADD:
@@ -1845,7 +1845,7 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 			result[0].value = oper[0]->value;
 			result[0].tag = oper[0]->tag + 1;
 			#ifdef DEBUG_EXECUTION
-			printf("ITAG %d + 1 = %d (valor %d)\n", oper[0]->tag, result[0].tag, result[0].value.i);
+			printf("ITAG %" PRIu64 " + 1 = %" PRIu64 " (valor %d)\n", oper[0]->tag, result[0].tag, result[0].value.i);
 			#endif
 			break;
 
@@ -1853,7 +1853,7 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 			result[0].value = oper[0]->value;
 			result[0].tag = oper[0]->tag + instr->immed.i;
 			#ifdef DEBUG_EXECUTION
-			printf("ITAGO %d + %d = %d (valor %d)\n", oper[0]->tag, instr->immed.i, result[0].tag, result[0].value.i);
+			printf("ITAGO %" PRIu64 " + %d = %" PRIu64 " (valor %d)\n", oper[0]->tag, instr->immed.i, result[0].tag, result[0].value.i);
 			#endif
 			break;
 
@@ -1864,7 +1864,7 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 				result[0].exec = tagop->exec;
 				result[0].tag = tagop->tag;
 			#ifdef DEBUG_EXECUTION
-                        printf("CALLSND TAG:%d  EXEC:%d  VAL:%d", result[0].tag, result[0].exec, result[0].value.i);
+                        printf("CALLSND TAG:%" PRIu64 "  EXEC:%d  VAL:%d", result[0].tag, result[0].exec, result[0].value.i);
                         #endif
 			if (getenv("DF_DEBUG_CALLRET")) {
 				fprintf(stderr, "[callret] callsnd imm=%d count=%d in_exec=%d out_exec=%d\n",
@@ -1883,7 +1883,7 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 				result[0].exec = tagop->exec;
 				
 			#ifdef DEBUG_EXECUTION
-			printf("RETSND TAG:%d EXEC:%d VAL:%d i:%d", result[0].tag, result[0].exec, result[0].value.i, instr->immed.i);
+			printf("RETSND TAG:%" PRIu64 " EXEC:%d VAL:%d i:%d", result[0].tag, result[0].exec, result[0].value.i, instr->immed.i);
 			#endif
 			if (getenv("DF_DEBUG_CALLRET")) {
 				fprintf(stderr, "[callret] retsnd imm=%d in_exec=%d out_exec=%d\n",
@@ -1898,28 +1898,29 @@ void eval(dispatch_t *disp, thread_args *pe_attr) {
 
 		case OP_TAGTOVAL:
 			result[0].value.li = (long int)oper[0]->tag;
-        		result[0].value.i = (int)result[0].value.li;
 			result[0].exec = oper[0]->exec;
 			result[0].tag = oper[0]->tag;
 			#ifdef DEBUG_EXECUTION
-                        printf("TAGVAL TAG:%d TAG:%d\n", result[0].value.i, oper[0]->tag);
+                        printf("TAGVAL TAG:%" PRIu64 " VAL:%ld\n", oper[0]->tag, result[0].value.li);
                         #endif	
 				
 		break;
 
 		case OP_VALTOTAG:
-			if (oper[1]->value.i < 0) {
-				result[0].tag = -oper[1]->value.i - 1;
+			if (oper[1]->value.li < 0) {
+				// exec-only sentinel: negative value encodes tag as -(tag+1)
+				result[0].tag = (uint64_t)(-oper[1]->value.li - 1);
 			} else {
-				result[0].tag = oper[1]->value.i;
+				// normal tag: use full 64-bit value from arithmetic chain
+				result[0].tag = (uint64_t)oper[1]->value.li;
 			}
 			result[0].value = oper[0]->value;
 			result[0].exec = oper[1]->exec;
 			#ifdef DEBUG_EXECUTION
-                        printf("VALTAG TAG:%d VALUE:%d\n", result[0].tag, result[0].value.i);
+                        printf("VALTAG TAG:%" PRIu64 " VALUE:%ld\n", result[0].tag, result[0].value.li);
                         #endif
 			if (getenv("DF_DEBUG_VALTAG")) {
-				fprintf(stderr, "[valtag] id=%d tag=%d exec=%d val=%lld\n",
+				fprintf(stderr, "[valtag] id=%d tag=%" PRIu64 " exec=%d val=%lld\n",
 				        instr->id, result[0].tag, result[0].exec, (long long)result[0].value.li);
 			}
 
@@ -2257,7 +2258,7 @@ void debug_oplists(thread_args *pe_attr) {
 					oper = match->op[j];	
 					while (oper != NULL) {
 					
-						fprintf(stderr, "Instr: %d (opcode: %d) Input: %d tag: %d spec: %d valor: %x\n", i, instr->opcode, j, oper->tag, oper->spec, oper->value.i);
+						fprintf(stderr, "Instr: %d (opcode: %d) Input: %d tag: %" PRIu64 " spec: %d valor: %x\n", i, instr->opcode, j, oper->tag, oper->spec, oper->value.i);
 
 						oper = oper->next;
 					
@@ -2284,7 +2285,7 @@ void debug_oplists(thread_args *pe_attr) {
 		for (j = 0; j < instr->n_src; j++) {
 			oper = instr->src[j];
 			while (oper != NULL) {
-				printf("Instr: %d (opcode: %d) Input: %d tag: %d spec: %d valor: %x\n", i, instr->opcode, j, oper->tag, oper->spec, oper->value.i);
+				printf("Instr: %d (opcode: %d) Input: %d tag: %" PRIu64 " spec: %d valor: %x\n", i, instr->opcode, j, oper->tag, oper->spec, oper->value.i);
 
 				//if (oper->cleanup != NULL)
 				//	printf("   dispatch: %lx\n" , (double)((dispandtx_t *)oper->value.p)->disp);
@@ -2498,7 +2499,7 @@ int get_notnull_spec(oper_t **oper, int len) {
 
 
 /*
-oper_t * get_oper(oper_t **oplist, unsigned int tag) {
+oper_t * get_oper(oper_t **oplist, uint64_t tag) {
 	//TODO; remove from list
 	oper_t *op_ptr, *op_ret=NULL, **prevptr;
 	
@@ -2523,7 +2524,7 @@ oper_t * get_oper(oper_t **oplist, unsigned int tag) {
 } 
 */
 /*
-oper_t ** get_oper(oper_t **oplist, unsigned int tag, int exectag) {
+oper_t ** get_oper(oper_t **oplist, uint64_t tag, int exectag) {
 	//returns the address of the pointer to the operand(if found), so the operand can be then removed from the list
 	//with just one step
 	oper_t **ptr;
@@ -2576,17 +2577,17 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 				printf("Propagarei para %d (spec %d - value %d) entrada %d -- pe: %d\n", target->opcode,result[i].spec, result[0].value.i, inputn, target->pe_id);
 				#endif
 				if (debug_produce) {
-					fprintf(stderr, "[prod ] id=%d op=%d -> id=%d op=%d port=%d tag=%d exec=%d val=%lld\n",
+					fprintf(stderr, "[prod ] id=%d op=%d -> id=%d op=%d port=%d tag=%" PRIu64 " exec=%d val=%lld\n",
 					        instr->id, instr->opcode, target->id, target->opcode, inputn, result[i].tag,
 					        result[i].exec, (long long)result[i].value.li);
 				}
 				if (debug_trace_id(target->id)) {
-					fprintf(stderr, "[trace] in id=%d op=%d port=%d tag=%d exec=%d val=%lld\n",
+					fprintf(stderr, "[trace] in id=%d op=%d port=%d tag=%" PRIu64 " exec=%d val=%lld\n",
 					        target->id, target->opcode, inputn, result[i].tag, result[i].exec,
 					        (long long)result[i].value.li);
 				}
 				if (debug_trace_port_match(target->id, inputn)) {
-					fprintf(stderr, "[trace-port] send id=%d op=%d port=%d tag=%d exec=%d val=%lld\n",
+					fprintf(stderr, "[trace-port] send id=%d op=%d port=%d tag=%" PRIu64 " exec=%d val=%lld\n",
 					        target->id, target->opcode, inputn, result[i].tag, result[i].exec,
 					        (long long)result[i].value.li);
 				}
@@ -2618,7 +2619,7 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 						debug_match_target_id = -1;
 						debug_match_target_op = -1;
 					}
-					unsigned int tag_exec = (ignore_tag_match ? 0 : result[i].tag);
+					uint64_t tag_exec = (ignore_tag_match ? 0 : result[i].tag);
 					int exec_exec = (ignore_exec_match ? 0 : result[i].exec);
 					if (target->opcode == OP_VALTOTAG && !ignore_tag_match) {
 						if (inputn == 1 && valtag_is_execonly_oper1(&result[i])) {
@@ -2645,7 +2646,7 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 }
 
 
-dispatch_t * can_exec(instr_t *instr, unsigned int tag, int exectag, thread_args *pe_attr) {
+dispatch_t * can_exec(instr_t *instr, uint64_t tag, int exectag, thread_args *pe_attr) {
 	int i;
 	dispatch_t *disp;
 	opmatch_t **matchptr = &(instr->opmatch), *match;
@@ -2671,7 +2672,7 @@ dispatch_t * can_exec(instr_t *instr, unsigned int tag, int exectag, thread_args
 		if ((tag == match->tag) && (exectag == match->exec))  {
 			if (match->count == instr->n_src) {
 				if (debug_ret && instr->opcode == OP_RET) {
-					fprintf(stderr, "[ret] exec id=%d tag=%d exec=%d count=%d n_src=%d\n",
+					fprintf(stderr, "[ret] exec id=%d tag=%" PRIu64 " exec=%d count=%d n_src=%d\n",
 					        instr->id, match->tag, match->exec, match->count, instr->n_src);
 				}
 				//printf("Deu match\n");
@@ -2699,7 +2700,7 @@ dispatch_t * can_exec(instr_t *instr, unsigned int tag, int exectag, thread_args
 		
 	}
 	if (debug_ret && instr->opcode == OP_RET) {
-		fprintf(stderr, "[ret] miss id=%d tag=%d exec=%d count=%d n_src=%d\n",
+		fprintf(stderr, "[ret] miss id=%d tag=%" PRIu64 " exec=%d count=%d n_src=%d\n",
 		        instr->id, match->tag, match->exec, match->count, instr->n_src);
 	}
 
@@ -2708,7 +2709,7 @@ dispatch_t * can_exec(instr_t *instr, unsigned int tag, int exectag, thread_args
 }
 
 /*
-dispatch_t * can_exec_old(instr_t *instr, unsigned int tag, int exectag) {
+dispatch_t * can_exec_old(instr_t *instr, uint64_t tag, int exectag) {
 
 	oper_t *op, **opptr[MAX_SOURCE]; //TODO: allocate dynamically??
 	int i, no_null_found = 1;
@@ -2813,7 +2814,7 @@ void add_to_match(opmatch_t *match, int inport, oper_t *oper, thread_args *pe_at
 	}
 
 }
-opmatch_t *create_opmatch(unsigned int tag, int exec, thread_args *pe_attr) {
+opmatch_t *create_opmatch(uint64_t tag, int exec, thread_args *pe_attr) {
 	opmatch_t *match = opmatch_alloc(pe_attr);
 	int i;
 
@@ -2830,7 +2831,7 @@ opmatch_t *create_opmatch(unsigned int tag, int exec, thread_args *pe_attr) {
 
 void bypass_oper(opmatch_t **matchptr, int inport, oper_t *opcopy, thread_args *pe_attr, int match_tag_override, int match_exec_override) {
 	opmatch_t *match = *matchptr, *prev = NULL, *newmatch;
-	int match_tag = (match_tag_override >= 0) ? match_tag_override : opcopy->tag;
+	uint64_t match_tag = (match_tag_override >= 0) ? (uint64_t)match_tag_override : opcopy->tag;
 	int match_exec = (match_exec_override >= 0) ? match_exec_override : opcopy->exec;
 	int debug_match = getenv("DF_DEBUG_MATCH") != NULL;
 	int dbg_id = debug_match_target_id;
@@ -2843,15 +2844,15 @@ void bypass_oper(opmatch_t **matchptr, int inport, oper_t *opcopy, thread_args *
 		//(*matchptr)->op[inport] = opcopy;
 		add_to_match(*matchptr, inport, opcopy, pe_attr);
 		if (debug_flow && (dbg_op == OP_STEER || dbg_op == OP_CALLSND || dbg_op == OP_VALTOTAG || dbg_op == OP_TAGTOVAL)) {
-			fprintf(stderr, "[flow] new id=%d op=%d port=%d tag=%d exec=%d val=%lld\n",
+			fprintf(stderr, "[flow] new id=%d op=%d port=%d tag=%" PRIu64 " exec=%d val=%lld\n",
 			        dbg_id, dbg_op, inport, match_tag, match_exec, (long long)opcopy->value.li);
 		}
 		if (debug_ret && dbg_op == OP_RET) {
-			fprintf(stderr, "[ret] newmatch id=%d port=%d tag=%d exec=%d val=%lld\n",
+			fprintf(stderr, "[ret] newmatch id=%d port=%d tag=%" PRIu64 " exec=%d val=%lld\n",
 			        dbg_id, inport, match_tag, match_exec, (long long)opcopy->value.li);
 		}
 		if (debug_match) {
-			fprintf(stderr, "[match] tgt=%d op=%d new tag=%d exec=%d port=%d\n",
+			fprintf(stderr, "[match] tgt=%d op=%d new tag=%" PRIu64 " exec=%d port=%d\n",
 			        dbg_id, dbg_op, match_tag, match_exec, inport);
 		}
 	} else {
@@ -2867,11 +2868,11 @@ void bypass_oper(opmatch_t **matchptr, int inport, oper_t *opcopy, thread_args *
 		if (match != NULL && ( (match_tag == match->tag) && (match_exec == match->exec) ) ) {
 			add_to_match(match, inport,  opcopy, pe_attr);
 			if (debug_ret && dbg_op == OP_RET) {
-				fprintf(stderr, "[ret] add id=%d port=%d tag=%d exec=%d val=%lld count=%d\n",
+				fprintf(stderr, "[ret] add id=%d port=%d tag=%" PRIu64 " exec=%d val=%lld count=%d\n",
 				        dbg_id, inport, match_tag, match_exec, (long long)opcopy->value.li, match->count);
 			}
 			if (debug_match) {
-				fprintf(stderr, "[match] tgt=%d op=%d add tag=%d exec=%d port=%d count=%d\n",
+				fprintf(stderr, "[match] tgt=%d op=%d add tag=%" PRIu64 " exec=%d port=%d count=%d\n",
 				        dbg_id, dbg_op, match_tag, match_exec, inport, match->count);
 			}
 		
@@ -2881,11 +2882,11 @@ void bypass_oper(opmatch_t **matchptr, int inport, oper_t *opcopy, thread_args *
 			
 			add_to_match(newmatch, inport, opcopy, pe_attr);
 			if (debug_ret && dbg_op == OP_RET) {
-				fprintf(stderr, "[ret] ins id=%d port=%d tag=%d exec=%d val=%lld\n",
+				fprintf(stderr, "[ret] ins id=%d port=%d tag=%" PRIu64 " exec=%d val=%lld\n",
 				        dbg_id, inport, match_tag, match_exec, (long long)opcopy->value.li);
 			}
 			if (debug_match) {
-				fprintf(stderr, "[match] tgt=%d op=%d ins tag=%d exec=%d port=%d\n",
+				fprintf(stderr, "[match] tgt=%d op=%d ins tag=%" PRIu64 " exec=%d port=%d\n",
 				        dbg_id, dbg_op, match_tag, match_exec, inport);
 			}
 			if (prev!=NULL) {
@@ -2915,7 +2916,7 @@ void bypass_oper_old(oper_t **oplist, oper_t oper) {
 	opcopy = (oper_t *)malloc(sizeof(oper_t));
 
 	*opcopy = oper; //each instruction has its own copy of the operands that are sent to it	
-	//printf("bypassando oper com tag: %d e value %d\n", oper.tag, oper.value);
+	//printf("bypassando oper com tag: %" PRIu64 " e value %d\n", oper.tag, oper.value);
 
 
 	if (ptr == NULL) 
