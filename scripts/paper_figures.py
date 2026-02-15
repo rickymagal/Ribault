@@ -444,7 +444,9 @@ def fig7_summary_barplot(data, outdir):
     ax.annotate("$P{=}8$", xy=(3 + width, 0), xytext=(0, -18),
                 textcoords='offset points', ha='center', fontsize=8,
                 color='gray')
-    ax.legend()
+    ax.legend(loc='lower center', fontsize=8, framealpha=0.9,
+              ncol=3, bbox_to_anchor=(0.5, -0.15))
+    fig.subplots_adjust(bottom=0.18)
     _save(outdir, "fig7_summary_barplot")
 
 

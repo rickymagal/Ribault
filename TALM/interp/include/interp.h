@@ -210,7 +210,9 @@ typedef struct {
 	pthread_cond_t cond;
 } combuff_t;
 
-typedef struct {
+typedef struct __attribute__((aligned(64))) {
+	/* ready_queue first — cache-line aligned due to struct alignment */
+	deque_t ready_queue;
 	int id;
 	int core;
 	instr_t *instrs;
@@ -218,7 +220,6 @@ typedef struct {
 	int n_instrs;
 	int n_edges;		//number of edges (threads that send/receive operands to/from this one)
 	int n_threads;
-	deque_t ready_queue;
 	optoken_t *optoken_free;
 	dispsnd_t *dispsnd_free;
 	dispatch_t *dispatch_free;

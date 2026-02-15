@@ -248,14 +248,18 @@ static uint64_t *sched_busy_iters = NULL;
 static uint64_t *sched_idle_iters = NULL;
 static uint64_t *sched_execs = NULL;
 static int *sched_max_ready = NULL;
+static double *sched_work_secs = NULL;  /* wall-clock seconds spent executing (not idle) */
 static __thread thread_args *tls_attr = NULL;
 
-static int treb_deque_heuristic(qelem elem) {
-	dispatch_t *disp = (dispatch_t *)elem;
-	if (disp->instr != 0) {
-		return (disp->instr->opcode >= OP_SUPER1);
-	}
-	return 0;
+/* Fast thread-local xorshift32 PRNG (avoids random()'s internal lock) */
+static __thread unsigned int steal_rng_state = 0;
+static inline unsigned int steal_rand(void) {
+	unsigned int x = steal_rng_state;
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	steal_rng_state = x;
+	return x;
 }
 
 static dispatch_t *try_steal(thread_args *attr) {
@@ -263,7 +267,7 @@ static dispatch_t *try_steal(thread_args *attr) {
 		return NULL;
 	}
 	int n_victims = g_n_threads;
-	int start = random() % n_victims;
+	int start = steal_rand() % n_victims;
 	for (int i = 0; i < n_victims; i++) {
 		int victim = (start + i) % n_victims;
 		if (victim == attr->id) continue;
@@ -762,12 +766,19 @@ qelem comm_recv(combuff_t *comm, int blocking) {
 	qelem elem = NULL;
 
 	queue_t *queue = &(comm->queue);
-	
-	pthread_mutex_lock(&(comm->mutex));
+
 	if (force_spin) {
 		blocking = 0;
 	}
-	//printf("Peguei mutex %x\n",&(comm->mutex));	
+
+	/* Fast path: lockless peek for non-blocking recv on empty queue.
+	 * Reading queue->count without mutex is safe as a hint — if we see 0
+	 * we skip; if a message arrives concurrently we'll catch it next call. */
+	if (!blocking && !HAS_ELEMENTS(queue)) {
+		return NULL;
+	}
+
+	pthread_mutex_lock(&(comm->mutex));
 	if (!HAS_ELEMENTS(queue) && blocking) {
 		comm->waiting = 1;
 		while (!HAS_ELEMENTS(queue)) {
@@ -787,11 +798,9 @@ qelem comm_recv(combuff_t *comm, int blocking) {
 		comm->waiting = 0;
 	}
 	if (HAS_ELEMENTS(queue)) {
-		elem = get_first(&(comm->queue));	
+		elem = get_first(&(comm->queue));
 	}
- 	
 
-	
 	pthread_mutex_unlock(&(comm->mutex));
 
 	return(elem);
@@ -999,7 +1008,8 @@ int main(int argc, char **argv) {
 		sched_idle_iters = (uint64_t *)calloc(n_threads, sizeof(uint64_t));
 		sched_execs = (uint64_t *)calloc(n_threads, sizeof(uint64_t));
 		sched_max_ready = (int *)calloc(n_threads, sizeof(int));
-		if (!sched_busy_iters || !sched_idle_iters || !sched_execs || !sched_max_ready) {
+		sched_work_secs = (double *)calloc(n_threads, sizeof(double));
+		if (!sched_busy_iters || !sched_idle_iters || !sched_execs || !sched_max_ready || !sched_work_secs) {
 			fprintf(stderr, "Error allocating scheduler profile buffers\n");
 			exit(1);
 		}
@@ -1058,20 +1068,29 @@ int main(int argc, char **argv) {
 			uint64_t total = busy + idle;
 			double busy_pct = total ? (100.0 * (double)busy / (double)total) : 0.0;
 			fprintf(stderr,
-				"[sched] pe=%d execs=%llu busy=%llu idle=%llu busy_pct=%.1f max_ready=%d\n",
+				"[sched] pe=%d execs=%llu busy=%llu idle=%llu busy_pct=%.1f work=%.3fs max_ready=%d\n",
 				i,
 				(unsigned long long)sched_execs[i],
 				(unsigned long long)busy,
 				(unsigned long long)idle,
 				busy_pct,
+				sched_work_secs[i],
 				sched_max_ready[i]);
 			total_execs += sched_execs[i];
 		}
-		fprintf(stderr, "[sched] total_execs=%llu\n", (unsigned long long)total_execs);
+		double max_work = 0.0, total_work = 0.0;
+		for (i = 0; i < n_threads; i++) {
+			total_work += sched_work_secs[i];
+			if (sched_work_secs[i] > max_work) max_work = sched_work_secs[i];
+		}
+		fprintf(stderr, "[sched] total_execs=%llu total_work=%.3fs max_pe_work=%.3fs imbalance=%.1f%%\n",
+			(unsigned long long)total_execs, total_work, max_work,
+			max_work > 0 ? 100.0 * (max_work * n_threads - total_work) / (max_work * n_threads) : 0.0);
 		free(sched_busy_iters);
 		free(sched_idle_iters);
 		free(sched_execs);
 		free(sched_max_ready);
+		free(sched_work_secs);
 	}
 	
 	#ifdef STAT_STM
@@ -1102,6 +1121,7 @@ void * pe_main(void *args) {
 	uint64_t idle_iters = 0;
 	uint64_t execs = 0;
 	int max_ready = 0;
+	double work_secs = 0.0;  /* cumulative wall-clock in eval */
 
 #ifdef SET_AFFINITY
 	{
@@ -1121,6 +1141,21 @@ void * pe_main(void *args) {
 	}
 
 	deque_t *readyq = &(attr->ready_queue);
+	/* Seed per-thread steal PRNG with a unique value */
+	steal_rng_state = (unsigned int)(attr->id * 2654435761u + 1);
+
+	/* Timed eval wrapper: accumulates wall-clock in work_secs when profiling */
+	#define TIMED_EVAL(d, a) do { \
+		if (sched_prof) { \
+			struct timespec _t0, _t1; \
+			clock_gettime(CLOCK_MONOTONIC, &_t0); \
+			eval((d), (a)); \
+			clock_gettime(CLOCK_MONOTONIC, &_t1); \
+			work_secs += (_t1.tv_sec - _t0.tv_sec) + (_t1.tv_nsec - _t0.tv_nsec) * 1e-9; \
+		} else { \
+			eval((d), (a)); \
+		} \
+	} while (0)
 
 	while (!attr->global_termination) {  //MAIN LOOP
 		/* Inner loop: drain own ready queue (owner pops from front) */
@@ -1134,7 +1169,7 @@ void * pe_main(void *args) {
 			#endif
 			if (sched_prof) { busy_iters++; execs++; }
 			instr = disp->instr;
-			eval(disp, attr);
+			TIMED_EVAL(disp, attr);
 			check_msgs_count--;
 			if (!check_msgs_count) {
 				treat_msgs(attr, 0);
@@ -1147,13 +1182,15 @@ void * pe_main(void *args) {
 			continue;
 		}
 		{
+			int steal_spins = 0;
 			int got_work = 0;
 			/* Spin trying to steal — never sleep while work exists */
 			for (;;) {
 				if (attr->global_termination) break;
-				/* Check for incoming messages (non-blocking) */
-				treat_msgs(attr, 0);
-				if (attr->global_termination) break;
+				if ((steal_spins & 63) == 0) {
+					treat_msgs(attr, 0);
+					if (attr->global_termination) break;
+				}
 				/* Try own queue first (messages may have added work) */
 				{
 					qelem pf = pop_first(readyq);
@@ -1162,7 +1199,7 @@ void * pe_main(void *args) {
 						attr->isidle = 0;
 						if (sched_prof) { busy_iters++; execs++; }
 						instr = disp->instr;
-						eval(disp, attr);
+						TIMED_EVAL(disp, attr);
 						got_work = 1;
 						break;
 					}
@@ -1173,11 +1210,19 @@ void * pe_main(void *args) {
 					attr->isidle = 0;
 					if (sched_prof) { busy_iters++; execs++; }
 					instr = disp->instr;
-					eval(disp, attr);
+					TIMED_EVAL(disp, attr);
 					got_work = 1;
 					break;
 				}
+				steal_spins++;
 				if (sched_prof) { idle_iters++; }
+				/* Backoff: pause briefly then usleep to free L3/bandwidth */
+				if (steal_spins < 4) {
+					for (int b = 0; b < (1 << steal_spins); b++)
+						__builtin_ia32_pause();
+				} else {
+					usleep(50); /* 50μs sleep frees cache/bandwidth */
+				}
 				/* Initiate termination detection if not already idle */
 				if (!HAS_ELEMENTS(commq) && !attr->isidle) {
 					attr->isidle = 1;
@@ -1213,6 +1258,7 @@ void * pe_main(void *args) {
 		sched_idle_iters[attr->id] = idle_iters;
 		sched_execs[attr->id] = execs;
 		sched_max_ready[attr->id] = max_ready;
+		sched_work_secs[attr->id] = work_secs;
 	}
 	return(NULL);
 
