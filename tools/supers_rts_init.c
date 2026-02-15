@@ -66,8 +66,8 @@ static void hs_startup(void) {
 
     char *argv[8];
     int argc = hs_rts_args(argv, 8);
-    char **pargv = argv;                 // hs_init quer char ***
-    hs_init(&argc, &pargv);              // inicializa o runtime do GHC
+    char **pargv = argv;
+    hs_init_with_rtsopts(&argc, &pargv); // permite -N grande
     hs_set_caps_from_env();
     if (supers_io_init) {
         supers_io_init();
@@ -89,7 +89,7 @@ void supers_hs_init(void) {
     char *argv[8];
     int argc = hs_rts_args(argv, 8);
     char **pargv = argv;
-    hs_init(&argc, &pargv);
+    hs_init_with_rtsopts(&argc, &pargv);
     hs_set_caps_from_env();
     if (supers_io_init) {
         supers_io_init();

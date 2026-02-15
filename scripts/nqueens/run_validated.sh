@@ -9,6 +9,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 OUTROOT="${1:-$REPO/results/nqueens}"
 mkdir -p "$OUTROOT"
+OUTROOT="$(cd "$OUTROOT" && pwd)"
 
 PY3="${PY3:-python3}"
 INTERP="$REPO/TALM/interp/interp"
@@ -20,13 +21,15 @@ GEN_STRAT="$REPO/scripts/nqueens/gen_hs_strategies.py"
 GEN_PARPSEQ="$REPO/scripts/nqueens/gen_hs_parpseq.py"
 
 OVERSUB=4
-REPS=3
-NS=(2 4 8 14)
-PS=(1 2 4 8)
+REPS=${REPS:-3}
+NS=(${NS:-2 4 8 14})
+PS=(${PS:-1 2 4 8})
 
 # Expected answers
 declare -A EXPECTED
-EXPECTED[2]=0; EXPECTED[4]=2; EXPECTED[8]=92; EXPECTED[14]=365596
+EXPECTED[2]=0; EXPECTED[3]=0; EXPECTED[4]=2; EXPECTED[5]=10; EXPECTED[6]=4; EXPECTED[7]=40
+EXPECTED[8]=92; EXPECTED[9]=352; EXPECTED[10]=724; EXPECTED[11]=2680
+EXPECTED[12]=14200; EXPECTED[13]=73712; EXPECTED[14]=365596; EXPECTED[15]=2279184
 
 # Detect HsFFI include
 GHC_BIN="${GHC:-ghc}"
@@ -107,6 +110,7 @@ for N in "${NS[@]}"; do
     fi
     TDIR="${TALM_BUILT[$TKEY]}"
 
+    # Assemble for this P
     # Assemble for this P
     pushd "$ASM_ROOT" >/dev/null
       "$PY3" assembler.py -a -n "$P" -o "$TDIR/nq_P${P}" "$TDIR/nq.fl" >/dev/null 2>&1

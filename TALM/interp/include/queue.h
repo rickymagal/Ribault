@@ -65,12 +65,15 @@ typedef union {
 
 
 typedef struct {
+	/* --- cache line 0: owner-written (pop_first writes first) --- */
 	int first;
-	deque_anchor_t last;
-
 	int allocsize;
 	qelem *elem;
-} deque_t; 
+	char _pad0[64 - sizeof(int) - sizeof(int) - sizeof(qelem *)];
+	/* --- cache line 1: CAS-contended (push_last/pop_last CAS last) --- */
+	deque_anchor_t last;
+	char _pad1[64 - sizeof(deque_anchor_t)];
+} deque_t;
 
 
 void enqueue(qelem x, queue_t *q);
