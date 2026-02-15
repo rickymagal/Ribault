@@ -7,11 +7,13 @@
 
 static int hs_is_inited = 0;
 static char hs_nopt_buf[32];
+static char hs_aopt_buf[32];
 
 static int hs_rts_args(char **argv, int max_args) {
     int argc = 0;
     const char *disable = getenv("SUPERS_RTS_DISABLE");
     const char *nopt = getenv("SUPERS_RTS_N");
+    const char *aopt = getenv("SUPERS_RTS_A");
 
     argv[argc++] = (char *)"libsupers";
     if (disable && disable[0] != '\0' && disable[0] != '0') {
@@ -24,6 +26,10 @@ static int hs_rts_args(char **argv, int max_args) {
         argv[argc++] = hs_nopt_buf;
     } else {
         argv[argc++] = (char *)"-N";
+    }
+    if (aopt && aopt[0] != '\0') {
+        snprintf(hs_aopt_buf, sizeof(hs_aopt_buf), "-A%s", aopt);
+        argv[argc++] = hs_aopt_buf;
     }
     argv[argc++] = (char *)"-RTS";
     argv[argc] = NULL;

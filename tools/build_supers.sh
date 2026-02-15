@@ -413,10 +413,16 @@ build_libsupers_so() {
 
     rm -f Supers.o supers_wrappers.o supers_aliases.o libsupers.so
 
+    # Extra GHC packages (space-separated, e.g. "bytestring containers")
+    local -a pkg_flags=()
+    for pkg in ${SUPERS_GHC_PACKAGES:-}; do
+      pkg_flags+=(-package "$pkg")
+    done
+
     if [[ "${SUPERS_THREADED:-1}" == "1" ]]; then
-      GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC -threaded -c Supers.hs -o Supers.o
+      GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC -threaded "${pkg_flags[@]}" -c Supers.hs -o Supers.o
     else
-      GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC -c Supers.hs -o Supers.o
+      GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC "${pkg_flags[@]}" -c Supers.hs -o Supers.o
     fi
 
     "$cc" $cflags -c supers_wrappers.c -o supers_wrappers.o
@@ -450,9 +456,9 @@ build_libsupers_so() {
     )
 
     if [[ "${SUPERS_THREADED:-1}" == "1" ]]; then
-      GHC_ENVIRONMENT=- "$ghc" -threaded "${ghc_link[@]}"
+      GHC_ENVIRONMENT=- "$ghc" -threaded "${pkg_flags[@]}" "${ghc_link[@]}"
     else
-      GHC_ENVIRONMENT=- "$ghc" "${ghc_link[@]}"
+      GHC_ENVIRONMENT=- "$ghc" "${pkg_flags[@]}" "${ghc_link[@]}"
     fi
 
     populate_ghc_deps "$out_dir/libsupers.so" "$out_dir/ghc-deps" "$rts_so"
@@ -480,6 +486,42 @@ generate_one() {
 
   normalize_hs_module "$out_hs"
   inject_hs_io_init "$out_hs"
+
+  # Optional: inject extra Haskell code from file.
+  # Import lines go after last existing import; declarations go before first 'foreign export'.
+  if [[ -n "${SUPERS_INJECT_FILE:-}" && -f "${SUPERS_INJECT_FILE}" ]]; then
+    local tmp="$out_hs.tmp"
+    awk -v inject="$SUPERS_INJECT_FILE" '
+      BEGIN {
+        # Split inject file into imports vs declarations
+        n_imp = 0; n_decl = 0
+        while ((getline line < inject) > 0) {
+          if (line ~ /^import /) { imps[n_imp++] = line }
+          else if (line ~ /^[[:space:]]*$/) { }  # skip blank
+          else { decls[n_decl++] = line }
+        }
+        close(inject)
+        last_import_done = 0; decls_done = 0
+      }
+      /^import / { print; next_is_import = 1; next }
+      {
+        # If previous line was import and this is not, inject extra imports here
+        if (next_is_import && $0 !~ /^import / && $0 !~ /^[[:space:]]+/) {
+          for (i = 0; i < n_imp; i++) print imps[i]
+          next_is_import = 0
+          last_import_done = 1
+        }
+        # Before first "foreign export", inject declarations
+        if (!decls_done && /^foreign export/) {
+          for (i = 0; i < n_decl; i++) print decls[i]
+          print ""
+          decls_done = 1
+        }
+        print
+      }
+    ' "$out_hs" >"$tmp"
+    mv -f "$tmp" "$out_hs"
+  fi
 
   gen_empty_aliases_c "$out_dir/supers_aliases.c"
   gen_super_wrappers_c "$out_dir/supers_wrappers.c" "$max"
