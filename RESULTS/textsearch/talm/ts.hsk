@@ -1,0 +1,145 @@
+-- textsearch.hsk  (auto-generated)
+-- N_FILES=50  KEYWORD="FINDME"  N_FUNCS=12
+-- Range packing: packed = lo * 65536 + hi
+
+pf0 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf1 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf2 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf3 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf4 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf5 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf6 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf7 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf8 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf9 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf10 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+pf11 packed =
+  super single input (packed) output (count)
+#BEGINSUPER
+    count = unsafePerformIO $ do
+      let loI = fromIntegral (packed `div` 65536) :: Int
+          hiI = fromIntegral (packed `mod` 65536) :: Int
+      tsProcessRange loI hiI
+#ENDSUPER
+
+print_result r =
+  super single input (r) output (out)
+#BEGINSUPER
+    out = unsafePerformIO (do putStrLn ("RESULT=" ++ show r); hFlush stdout; pure 0)
+#ENDSUPER
+
+main =
+  let r0 = pf0 4
+  in
+  let r1 = pf1 262152
+  in
+  let r2 = pf2 524300
+  in
+  let r3 = pf3 786448
+  in
+  let r4 = pf4 1048596
+  in
+  let r5 = pf5 1310745
+  in
+  let r6 = pf6 1638429
+  in
+  let r7 = pf7 1900577
+  in
+  let r8 = pf8 2162725
+  in
+  let r9 = pf9 2424873
+  in
+  let r10 = pf10 2687021
+  in
+  let r11 = pf11 2949170
+  in
+  let total = (((r0 + (r1 + r2)) + (r3 + (r4 + r5))) + ((r6 + (r7 + r8)) + (r9 + (r10 + r11))))
+  in print_result total

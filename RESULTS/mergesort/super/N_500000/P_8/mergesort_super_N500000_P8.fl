@@ -14,11 +14,11 @@ addi n4, init_super[1], 0
 super n5, 7, 1, n4
 ret init_super, n19, n17
 tagval n8, n2
-muli n9, n8, 9
+muli n9, n8, 16
 addi n10, n9, 2
 valtag n11, n2, n10
 tagval n12, n2
-muli n13, n12, 9
+muli n13, n12, 16
 addi n14, n13, 2
 valtag n15, n2, n14
 callsnd init_super[1], n15, n11, 0
@@ -26,7 +26,7 @@ retsnd n17, n11, n11, cg7
 tagval n18, n17
 valtag n19, n3, n18
 tagval n20, n19
-divi n21, n20, 9
+divi n21, n20, 16
 valtag n22, n19, n21
 const n23, 500000
 const n24, 8
@@ -73,11 +73,11 @@ addi n64, sort_leaf[1], 0
 super n65, 6, 1, n64
 ret sort_leaf, n79, n77
 tagval n68, s62.w
-muli n69, n68, 9
+muli n69, n68, 16
 addi n70, n69, 2
 valtag n71, s62.w, n70
 tagval n72, s62.w
-muli n73, n72, 9
+muli n73, n72, 16
 addi n74, n73, 2
 valtag n75, s62.w, n74
 callsnd sort_leaf[1], n75, n71, 0
@@ -85,7 +85,7 @@ retsnd n77, n71, n71, cg67
 tagval n78, n77
 valtag n79, n63, n78
 tagval n80, n79
-divi n81, n80, 9
+divi n81, n80, 16
 valtag n82, n79, n81
 tagval n83, s48.w
 valtag n84, n82, n83
@@ -123,19 +123,19 @@ tagval n115, n96
 valtag n116, s114.w, n115
 steer s117, n116, n96
 tagval n119, s103.w
-muli n120, n119, 9
+muli n120, n119, 16
 addi n121, n120, 2
 valtag n122, s103.w, n121
 tagval n123, s103.w
-muli n124, n123, 9
+muli n124, n123, 16
 addi n125, n124, 2
 valtag n126, s103.w, n125
 tagval n127, s110.w
-muli n128, n127, 9
+muli n128, n127, 16
 addi n129, n128, 2
 valtag n130, s110.w, n129
 tagval n131, s117.w
-muli n132, n131, 9
+muli n132, n131, 16
 addi n133, n132, 2
 valtag n134, s117.w, n133
 callsnd msort[1], n126, n122, 0
@@ -146,7 +146,7 @@ ret msort, [n141, n194, n258], [n138, n192, n256]
 tagval n140, n138
 valtag n141, n29, n140
 tagval n142, n141
-divi n143, n142, 9
+divi n143, n142, 16
 valtag n144, n141, n143
 sub n145, n86, n86
 addi n146, n145, 8
@@ -176,19 +176,19 @@ tagval n169, n150
 valtag n170, s168.w, n169
 steer s171, n170, n150
 tagval n173, s157.w
-muli n174, n173, 9
+muli n174, n173, 16
 addi n175, n174, 3
 valtag n176, s157.w, n175
 tagval n177, s157.w
-muli n178, n177, 9
+muli n178, n177, 16
 addi n179, n178, 3
 valtag n180, s157.w, n179
 tagval n181, s164.w
-muli n182, n181, 9
+muli n182, n181, 16
 addi n183, n182, 3
 valtag n184, s164.w, n183
 tagval n185, s171.w
-muli n186, n185, 9
+muli n186, n185, 16
 addi n187, n186, 3
 valtag n188, s171.w, n187
 callsnd msort[1], n180, n176, 0
@@ -198,7 +198,7 @@ retsnd n192, n176, n176, cg172
 tagval n193, n192
 valtag n194, n29, n193
 tagval n195, n194
-divi n196, n195, 9
+divi n196, n195, 16
 valtag n197, n194, n196
 sub n198, n86, n86
 tagval n199, n197
@@ -219,11 +219,11 @@ addi n213, merge_pair[1], 0
 super n214, 5, 1, n213
 ret merge_pair, n228, n226
 tagval n217, s211.w
-muli n218, n217, 9
+muli n218, n217, 16
 addi n219, n218, 2
 valtag n220, s211.w, n219
 tagval n221, s211.w
-muli n222, n221, 9
+muli n222, n221, 16
 addi n223, n222, 2
 valtag n224, s211.w, n223
 callsnd merge_pair[1], n224, n220, 0
@@ -231,26 +231,26 @@ retsnd n226, n220, n220, cg216
 tagval n227, n226
 valtag n228, n212, n227
 tagval n229, n228
-divi n230, n229, 9
+divi n230, n229, 16
 valtag n231, n228, n230
 tagval n232, s90.w
 valtag n233, n231, n232
 steer s234, n44, n84
 steer s235, n86, n233
 tagval n237, n22
-muli n238, n237, 9
+muli n238, n237, 16
 addi n239, n238, 4
 valtag n240, n22, n239
 tagval n241, n22
-muli n242, n241, 9
+muli n242, n241, 16
 addi n243, n242, 4
 valtag n244, n22, n243
 tagval n245, n26
-muli n246, n245, 9
+muli n246, n245, 16
 addi n247, n246, 4
 valtag n248, n26, n247
 tagval n249, n28
-muli n250, n249, 9
+muli n250, n249, 16
 addi n251, n250, 4
 valtag n252, n28, n251
 callsnd msort[1], n244, n240, 0
@@ -260,18 +260,18 @@ retsnd n256, n240, n240, cg236
 tagval n257, n256
 valtag n258, n29, n257
 tagval n259, n258
-divi n260, n259, 9
+divi n260, n259, 16
 valtag n261, n258, n260
 addi n262, n264, 0
 addi n263, verify_sorted[1], 0
 super n264, 4, 1, n263
 ret verify_sorted, n278, n276
 tagval n267, n261
-muli n268, n267, 9
+muli n268, n267, 16
 addi n269, n268, 2
 valtag n270, n261, n269
 tagval n271, n261
-muli n272, n271, 9
+muli n272, n271, 16
 addi n273, n272, 2
 valtag n274, n261, n273
 callsnd verify_sorted[1], n274, n270, 0
@@ -279,7 +279,7 @@ retsnd n276, n270, n270, cg266
 tagval n277, n276
 valtag n278, n262, n277
 tagval n279, n278
-divi n280, n279, 9
+divi n280, n279, 16
 valtag n281, n278, n280
 ret main, n281, z0
 const n283, 8

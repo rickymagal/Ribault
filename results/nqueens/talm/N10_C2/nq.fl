@@ -1,0 +1,1647 @@
+const z0, 0
+callgroup("cg62","solve_seq")
+callgroup("cg126","is_safe_super")
+callgroup("cg143","is_safe")
+callgroup("cg222","pack_queen_super")
+callgroup("cg239","pack_queen")
+callgroup("cg279","nqueens")
+callgroup("cg317","is_safe")
+callgroup("cg379","pack_queen")
+callgroup("cg419","nqueens")
+callgroup("cg457","is_safe")
+callgroup("cg519","pack_queen")
+callgroup("cg559","nqueens")
+callgroup("cg596","is_safe")
+callgroup("cg658","pack_queen")
+callgroup("cg698","nqueens")
+callgroup("cg735","is_safe")
+callgroup("cg797","pack_queen")
+callgroup("cg837","nqueens")
+callgroup("cg877","is_safe")
+callgroup("cg939","pack_queen")
+callgroup("cg979","nqueens")
+callgroup("cg1016","is_safe")
+callgroup("cg1078","pack_queen")
+callgroup("cg1118","nqueens")
+callgroup("cg1156","is_safe")
+callgroup("cg1218","pack_queen")
+callgroup("cg1258","nqueens")
+callgroup("cg1295","is_safe")
+callgroup("cg1357","pack_queen")
+callgroup("cg1397","nqueens")
+callgroup("cg1434","is_safe")
+callgroup("cg1496","pack_queen")
+callgroup("cg1536","nqueens")
+callgroup("cg1575","try_all")
+callgroup("cg1604","nqueens")
+callgroup("cg1629","print_result")
+const n0, 0
+const n1, 0
+addi n2, [s1603.w, s1602.w], 0
+addi n3, nqueens[1], 0
+addi n4, nqueens[2], 0
+const n5, 10
+sub n6, n3, n3
+addi n7, n6, 10
+gthan n8, n3, n7
+sub n9, n3, n3
+addi n10, n9, 10
+equal n11, n3, n10
+add n12, n8, n11
+sub n13, n12, n12
+gthan n14, n12, n13
+sub n15, n14, n14
+gthan n16, n14, n15
+const n17, 1
+sub n18, n16, n16
+addi n19, n18, 1
+steer s20, n16, n19
+sub n21, n16, n16
+addi n22, n21, 1
+tagval n23, s20.w
+valtag n24, n22, n23
+sub n25, n16, n16
+equal n26, n16, n25
+const n27, 1
+sub n28, n26, n26
+addi n29, n28, 1
+steer s30, n26, n29
+sub n31, n26, n26
+addi n32, n31, 2
+gthan n33, n3, n32
+equal n34, n3, n32
+add n35, n33, n34
+sub n36, n35, n35
+gthan n37, n35, n36
+sub n38, n37, n37
+gthan n39, n37, n38
+const n40, 1
+sub n41, n39, n39
+addi n42, n41, 1
+steer s43, n39, n42
+tagval n44, n39
+valtag n45, n26, n44
+band n46, n39, n45
+sub n47, n46, n46
+addi n48, n47, 16
+mul n49, n4, n48
+add n50, n49, n3
+const n51, 1
+sub n52, n46, n46
+addi n53, n52, 1
+steer s54, n46, n53
+tagval n55, n50
+valtag n56, s54.w, n55
+steer s57, n56, n50
+addi n58, n60, 0
+addi n59, solve_seq[1], 0
+super n60, 7, 1, n59
+ret solve_seq, n74, n72
+tagval n63, s57.w
+muli n64, n63, 16
+addi n65, n64, 2
+valtag n66, s57.w, n65
+tagval n67, s57.w
+muli n68, n67, 16
+addi n69, n68, 2
+valtag n70, s57.w, n69
+callsnd solve_seq[1], n70, n66, 0
+retsnd n72, n66, n66, cg62
+tagval n73, n72
+valtag n74, n58, n73
+tagval n75, n74
+divi n76, n75, 16
+valtag n77, n74, n76
+tagval n78, s43.w
+valtag n79, n77, n78
+sub n80, n39, n39
+equal n81, n39, n80
+const n82, 1
+sub n83, n81, n81
+addi n84, n83, 1
+steer s85, n81, n84
+tagval n86, n81
+valtag n87, n26, n86
+band n88, n81, n87
+const n89, 1
+sub n90, n88, n88
+addi n91, n90, 1
+steer s92, n88, n91
+tagval n93, n3
+valtag n94, s92.w, n93
+steer s95, n94, n3
+const n96, 1
+sub n97, n88, n88
+addi n98, n97, 1
+steer s99, n88, n98
+tagval n100, n4
+valtag n101, s99.w, n100
+steer s102, n101, n4
+addi n103, n1573, 0
+addi n104, try_all[1], 0
+addi n105, try_all[2], 0
+const n106, 0
+sub n107, n104, n104
+addi n108, n141, 0
+addi n109, is_safe[1], 0
+addi n110, is_safe[2], 0
+addi n111, is_safe[3], 0
+const n112, 256
+sub n113, n110, n110
+addi n114, n113, 256
+mul n115, n110, n114
+const n116, 16
+sub n117, n109, n109
+addi n118, n117, 16
+mul n119, n109, n118
+add n120, n115, n119
+add n121, n120, n111
+addi n122, n124, 0
+addi n123, is_safe_super[1], 0
+super n124, 5, 1, n123
+ret is_safe_super, n138, n136
+tagval n127, n121
+muli n128, n127, 16
+addi n129, n128, 2
+valtag n130, n121, n129
+tagval n131, n121
+muli n132, n131, 16
+addi n133, n132, 2
+valtag n134, n121, n133
+callsnd is_safe_super[1], n134, n130, 0
+retsnd n136, n130, n130, cg126
+tagval n137, n136
+valtag n138, n122, n137
+tagval n139, n138
+divi n140, n139, 16
+valtag n141, n138, n140
+ret is_safe, [n165, n339, n479, n618, n757, n899, n1038, n1178, n1317, n1456], [n163, n337, n477, n616, n755, n897, n1036, n1176, n1315, n1454]
+tagval n144, n104
+muli n145, n144, 16
+addi n146, n145, 2
+valtag n147, n104, n146
+tagval n148, n104
+muli n149, n148, 16
+addi n150, n149, 2
+valtag n151, n104, n150
+tagval n152, n105
+muli n153, n152, 16
+addi n154, n153, 2
+valtag n155, n105, n154
+tagval n156, n107
+muli n157, n156, 16
+addi n158, n157, 2
+valtag n159, n107, n158
+callsnd is_safe[1], n151, n147, 0
+callsnd is_safe[2], n155, n147, 0
+callsnd is_safe[3], n159, n147, 0
+retsnd n163, n147, n147, cg143
+tagval n164, n163
+valtag n165, n108, n164
+tagval n166, n165
+divi n167, n166, 16
+valtag n168, n165, n167
+const n169, 1
+sub n170, n168, n168
+addi n171, n170, 1
+equal n172, n168, n171
+sub n173, n172, n172
+gthan n174, n172, n173
+const n175, 1
+sub n176, n174, n174
+addi n177, n176, 1
+steer s178, n174, n177
+sub n179, n174, n174
+addi n180, n179, 1
+add n181, n104, n180
+sub n182, n174, n174
+const n183, 1
+sub n184, n174, n174
+addi n185, n184, 1
+steer s186, n174, n185
+tagval n187, n105
+valtag n188, s186.w, n187
+steer s189, n188, n105
+const n190, 1
+sub n191, n174, n174
+addi n192, n191, 1
+steer s193, n174, n192
+tagval n194, n104
+valtag n195, s193.w, n194
+steer s196, n195, n104
+const n197, 1
+sub n198, n174, n174
+addi n199, n198, 1
+steer s200, n174, n199
+tagval n201, n182
+valtag n202, s200.w, n201
+steer s203, n202, n182
+addi n204, n237, 0
+addi n205, pack_queen[1], 0
+addi n206, pack_queen[2], 0
+addi n207, pack_queen[3], 0
+const n208, 256
+sub n209, n205, n205
+addi n210, n209, 256
+mul n211, n205, n210
+const n212, 16
+sub n213, n206, n206
+addi n214, n213, 16
+mul n215, n206, n214
+add n216, n211, n215
+add n217, n216, n207
+addi n218, n220, 0
+addi n219, pack_queen_super[1], 0
+super n220, 4, 1, n219
+ret pack_queen_super, n234, n232
+tagval n223, n217
+muli n224, n223, 16
+addi n225, n224, 2
+valtag n226, n217, n225
+tagval n227, n217
+muli n228, n227, 16
+addi n229, n228, 2
+valtag n230, n217, n229
+callsnd pack_queen_super[1], n230, n226, 0
+retsnd n232, n226, n226, cg222
+tagval n233, n232
+valtag n234, n218, n233
+tagval n235, n234
+divi n236, n235, 16
+valtag n237, n234, n236
+ret pack_queen, [n261, n401, n541, n680, n819, n961, n1100, n1240, n1379, n1518], [n259, n399, n539, n678, n817, n959, n1098, n1238, n1377, n1516]
+tagval n240, s189.w
+muli n241, n240, 16
+addi n242, n241, 2
+valtag n243, s189.w, n242
+tagval n244, s189.w
+muli n245, n244, 16
+addi n246, n245, 2
+valtag n247, s189.w, n246
+tagval n248, s196.w
+muli n249, n248, 16
+addi n250, n249, 2
+valtag n251, s196.w, n250
+tagval n252, s203.w
+muli n253, n252, 16
+addi n254, n253, 2
+valtag n255, s203.w, n254
+callsnd pack_queen[1], n247, n243, 0
+callsnd pack_queen[2], n251, n243, 0
+callsnd pack_queen[3], n255, n243, 0
+retsnd n259, n243, n243, cg239
+tagval n260, n259
+valtag n261, n204, n260
+tagval n262, n261
+divi n263, n262, 16
+valtag n264, n261, n263
+const n265, 1
+sub n266, n174, n174
+addi n267, n266, 1
+steer s268, n174, n267
+tagval n269, n181
+valtag n270, s268.w, n269
+steer s271, n270, n181
+const n272, 1
+sub n273, n174, n174
+addi n274, n273, 1
+steer s275, n174, n274
+tagval n276, n264
+valtag n277, s275.w, n276
+steer s278, n277, n264
+tagval n280, s271.w
+muli n281, n280, 16
+addi n282, n281, 2
+valtag n283, s271.w, n282
+tagval n284, s271.w
+muli n285, n284, 16
+addi n286, n285, 2
+valtag n287, s271.w, n286
+tagval n288, s278.w
+muli n289, n288, 16
+addi n290, n289, 2
+valtag n291, s278.w, n290
+callsnd nqueens[1], n287, n283, 0
+callsnd nqueens[2], n291, n283, 0
+retsnd n294, n283, n283, cg279
+ret nqueens, [n297, n436, n576, n715, n854, n996, n1135, n1275, n1414, n1553, n1621], [n294, n434, n574, n713, n852, n994, n1133, n1273, n1412, n1551, n1619]
+tagval n296, n294
+valtag n297, n2, n296
+tagval n298, n297
+divi n299, n298, 16
+valtag n300, n297, n299
+tagval n301, s178.w
+valtag n302, n300, n301
+sub n303, n174, n174
+equal n304, n174, n303
+const n305, 1
+sub n306, n304, n304
+addi n307, n306, 1
+steer s308, n304, n307
+sub n309, n304, n304
+tagval n310, s308.w
+valtag n311, n309, n310
+steer s312, n174, n302
+steer s313, n304, n311
+const n314, 1
+sub n315, n104, n104
+addi n316, n315, 1
+tagval n318, n104
+muli n319, n318, 16
+addi n320, n319, 3
+valtag n321, n104, n320
+tagval n322, n104
+muli n323, n322, 16
+addi n324, n323, 3
+valtag n325, n104, n324
+tagval n326, n105
+muli n327, n326, 16
+addi n328, n327, 3
+valtag n329, n105, n328
+tagval n330, n316
+muli n331, n330, 16
+addi n332, n331, 3
+valtag n333, n316, n332
+callsnd is_safe[1], n325, n321, 0
+callsnd is_safe[2], n329, n321, 0
+callsnd is_safe[3], n333, n321, 0
+retsnd n337, n321, n321, cg317
+tagval n338, n337
+valtag n339, n108, n338
+tagval n340, n339
+divi n341, n340, 16
+valtag n342, n339, n341
+const n343, 1
+sub n344, n342, n342
+addi n345, n344, 1
+equal n346, n342, n345
+sub n347, n346, n346
+gthan n348, n346, n347
+const n349, 1
+sub n350, n348, n348
+addi n351, n350, 1
+steer s352, n348, n351
+sub n353, n348, n348
+addi n354, n353, 1
+add n355, n104, n354
+sub n356, n348, n348
+addi n357, n356, 1
+const n358, 1
+sub n359, n348, n348
+addi n360, n359, 1
+steer s361, n348, n360
+tagval n362, n105
+valtag n363, s361.w, n362
+steer s364, n363, n105
+const n365, 1
+sub n366, n348, n348
+addi n367, n366, 1
+steer s368, n348, n367
+tagval n369, n104
+valtag n370, s368.w, n369
+steer s371, n370, n104
+const n372, 1
+sub n373, n348, n348
+addi n374, n373, 1
+steer s375, n348, n374
+tagval n376, n357
+valtag n377, s375.w, n376
+steer s378, n377, n357
+tagval n380, s364.w
+muli n381, n380, 16
+addi n382, n381, 3
+valtag n383, s364.w, n382
+tagval n384, s364.w
+muli n385, n384, 16
+addi n386, n385, 3
+valtag n387, s364.w, n386
+tagval n388, s371.w
+muli n389, n388, 16
+addi n390, n389, 3
+valtag n391, s371.w, n390
+tagval n392, s378.w
+muli n393, n392, 16
+addi n394, n393, 3
+valtag n395, s378.w, n394
+callsnd pack_queen[1], n387, n383, 0
+callsnd pack_queen[2], n391, n383, 0
+callsnd pack_queen[3], n395, n383, 0
+retsnd n399, n383, n383, cg379
+tagval n400, n399
+valtag n401, n204, n400
+tagval n402, n401
+divi n403, n402, 16
+valtag n404, n401, n403
+const n405, 1
+sub n406, n348, n348
+addi n407, n406, 1
+steer s408, n348, n407
+tagval n409, n355
+valtag n410, s408.w, n409
+steer s411, n410, n355
+const n412, 1
+sub n413, n348, n348
+addi n414, n413, 1
+steer s415, n348, n414
+tagval n416, n404
+valtag n417, s415.w, n416
+steer s418, n417, n404
+tagval n420, s411.w
+muli n421, n420, 16
+addi n422, n421, 3
+valtag n423, s411.w, n422
+tagval n424, s411.w
+muli n425, n424, 16
+addi n426, n425, 3
+valtag n427, s411.w, n426
+tagval n428, s418.w
+muli n429, n428, 16
+addi n430, n429, 3
+valtag n431, s418.w, n430
+callsnd nqueens[1], n427, n423, 0
+callsnd nqueens[2], n431, n423, 0
+retsnd n434, n423, n423, cg419
+tagval n435, n434
+valtag n436, n2, n435
+tagval n437, n436
+divi n438, n437, 16
+valtag n439, n436, n438
+tagval n440, s352.w
+valtag n441, n439, n440
+sub n442, n348, n348
+equal n443, n348, n442
+const n444, 1
+sub n445, n443, n443
+addi n446, n445, 1
+steer s447, n443, n446
+sub n448, n443, n443
+tagval n449, s447.w
+valtag n450, n448, n449
+steer s451, n348, n441
+steer s452, n443, n450
+add n453, [s313.w, s312.w], [s452.w, s451.w]
+const n454, 2
+sub n455, n104, n104
+addi n456, n455, 2
+tagval n458, n104
+muli n459, n458, 16
+addi n460, n459, 4
+valtag n461, n104, n460
+tagval n462, n104
+muli n463, n462, 16
+addi n464, n463, 4
+valtag n465, n104, n464
+tagval n466, n105
+muli n467, n466, 16
+addi n468, n467, 4
+valtag n469, n105, n468
+tagval n470, n456
+muli n471, n470, 16
+addi n472, n471, 4
+valtag n473, n456, n472
+callsnd is_safe[1], n465, n461, 0
+callsnd is_safe[2], n469, n461, 0
+callsnd is_safe[3], n473, n461, 0
+retsnd n477, n461, n461, cg457
+tagval n478, n477
+valtag n479, n108, n478
+tagval n480, n479
+divi n481, n480, 16
+valtag n482, n479, n481
+const n483, 1
+sub n484, n482, n482
+addi n485, n484, 1
+equal n486, n482, n485
+sub n487, n486, n486
+gthan n488, n486, n487
+const n489, 1
+sub n490, n488, n488
+addi n491, n490, 1
+steer s492, n488, n491
+sub n493, n488, n488
+addi n494, n493, 1
+add n495, n104, n494
+sub n496, n488, n488
+addi n497, n496, 2
+const n498, 1
+sub n499, n488, n488
+addi n500, n499, 1
+steer s501, n488, n500
+tagval n502, n105
+valtag n503, s501.w, n502
+steer s504, n503, n105
+const n505, 1
+sub n506, n488, n488
+addi n507, n506, 1
+steer s508, n488, n507
+tagval n509, n104
+valtag n510, s508.w, n509
+steer s511, n510, n104
+const n512, 1
+sub n513, n488, n488
+addi n514, n513, 1
+steer s515, n488, n514
+tagval n516, n497
+valtag n517, s515.w, n516
+steer s518, n517, n497
+tagval n520, s504.w
+muli n521, n520, 16
+addi n522, n521, 4
+valtag n523, s504.w, n522
+tagval n524, s504.w
+muli n525, n524, 16
+addi n526, n525, 4
+valtag n527, s504.w, n526
+tagval n528, s511.w
+muli n529, n528, 16
+addi n530, n529, 4
+valtag n531, s511.w, n530
+tagval n532, s518.w
+muli n533, n532, 16
+addi n534, n533, 4
+valtag n535, s518.w, n534
+callsnd pack_queen[1], n527, n523, 0
+callsnd pack_queen[2], n531, n523, 0
+callsnd pack_queen[3], n535, n523, 0
+retsnd n539, n523, n523, cg519
+tagval n540, n539
+valtag n541, n204, n540
+tagval n542, n541
+divi n543, n542, 16
+valtag n544, n541, n543
+const n545, 1
+sub n546, n488, n488
+addi n547, n546, 1
+steer s548, n488, n547
+tagval n549, n495
+valtag n550, s548.w, n549
+steer s551, n550, n495
+const n552, 1
+sub n553, n488, n488
+addi n554, n553, 1
+steer s555, n488, n554
+tagval n556, n544
+valtag n557, s555.w, n556
+steer s558, n557, n544
+tagval n560, s551.w
+muli n561, n560, 16
+addi n562, n561, 4
+valtag n563, s551.w, n562
+tagval n564, s551.w
+muli n565, n564, 16
+addi n566, n565, 4
+valtag n567, s551.w, n566
+tagval n568, s558.w
+muli n569, n568, 16
+addi n570, n569, 4
+valtag n571, s558.w, n570
+callsnd nqueens[1], n567, n563, 0
+callsnd nqueens[2], n571, n563, 0
+retsnd n574, n563, n563, cg559
+tagval n575, n574
+valtag n576, n2, n575
+tagval n577, n576
+divi n578, n577, 16
+valtag n579, n576, n578
+tagval n580, s492.w
+valtag n581, n579, n580
+sub n582, n488, n488
+equal n583, n488, n582
+const n584, 1
+sub n585, n583, n583
+addi n586, n585, 1
+steer s587, n583, n586
+sub n588, n583, n583
+tagval n589, s587.w
+valtag n590, n588, n589
+steer s591, n488, n581
+steer s592, n583, n590
+const n593, 3
+sub n594, n104, n104
+addi n595, n594, 3
+tagval n597, n104
+muli n598, n597, 16
+addi n599, n598, 5
+valtag n600, n104, n599
+tagval n601, n104
+muli n602, n601, 16
+addi n603, n602, 5
+valtag n604, n104, n603
+tagval n605, n105
+muli n606, n605, 16
+addi n607, n606, 5
+valtag n608, n105, n607
+tagval n609, n595
+muli n610, n609, 16
+addi n611, n610, 5
+valtag n612, n595, n611
+callsnd is_safe[1], n604, n600, 0
+callsnd is_safe[2], n608, n600, 0
+callsnd is_safe[3], n612, n600, 0
+retsnd n616, n600, n600, cg596
+tagval n617, n616
+valtag n618, n108, n617
+tagval n619, n618
+divi n620, n619, 16
+valtag n621, n618, n620
+const n622, 1
+sub n623, n621, n621
+addi n624, n623, 1
+equal n625, n621, n624
+sub n626, n625, n625
+gthan n627, n625, n626
+const n628, 1
+sub n629, n627, n627
+addi n630, n629, 1
+steer s631, n627, n630
+sub n632, n627, n627
+addi n633, n632, 1
+add n634, n104, n633
+sub n635, n627, n627
+addi n636, n635, 3
+const n637, 1
+sub n638, n627, n627
+addi n639, n638, 1
+steer s640, n627, n639
+tagval n641, n105
+valtag n642, s640.w, n641
+steer s643, n642, n105
+const n644, 1
+sub n645, n627, n627
+addi n646, n645, 1
+steer s647, n627, n646
+tagval n648, n104
+valtag n649, s647.w, n648
+steer s650, n649, n104
+const n651, 1
+sub n652, n627, n627
+addi n653, n652, 1
+steer s654, n627, n653
+tagval n655, n636
+valtag n656, s654.w, n655
+steer s657, n656, n636
+tagval n659, s643.w
+muli n660, n659, 16
+addi n661, n660, 5
+valtag n662, s643.w, n661
+tagval n663, s643.w
+muli n664, n663, 16
+addi n665, n664, 5
+valtag n666, s643.w, n665
+tagval n667, s650.w
+muli n668, n667, 16
+addi n669, n668, 5
+valtag n670, s650.w, n669
+tagval n671, s657.w
+muli n672, n671, 16
+addi n673, n672, 5
+valtag n674, s657.w, n673
+callsnd pack_queen[1], n666, n662, 0
+callsnd pack_queen[2], n670, n662, 0
+callsnd pack_queen[3], n674, n662, 0
+retsnd n678, n662, n662, cg658
+tagval n679, n678
+valtag n680, n204, n679
+tagval n681, n680
+divi n682, n681, 16
+valtag n683, n680, n682
+const n684, 1
+sub n685, n627, n627
+addi n686, n685, 1
+steer s687, n627, n686
+tagval n688, n634
+valtag n689, s687.w, n688
+steer s690, n689, n634
+const n691, 1
+sub n692, n627, n627
+addi n693, n692, 1
+steer s694, n627, n693
+tagval n695, n683
+valtag n696, s694.w, n695
+steer s697, n696, n683
+tagval n699, s690.w
+muli n700, n699, 16
+addi n701, n700, 5
+valtag n702, s690.w, n701
+tagval n703, s690.w
+muli n704, n703, 16
+addi n705, n704, 5
+valtag n706, s690.w, n705
+tagval n707, s697.w
+muli n708, n707, 16
+addi n709, n708, 5
+valtag n710, s697.w, n709
+callsnd nqueens[1], n706, n702, 0
+callsnd nqueens[2], n710, n702, 0
+retsnd n713, n702, n702, cg698
+tagval n714, n713
+valtag n715, n2, n714
+tagval n716, n715
+divi n717, n716, 16
+valtag n718, n715, n717
+tagval n719, s631.w
+valtag n720, n718, n719
+sub n721, n627, n627
+equal n722, n627, n721
+const n723, 1
+sub n724, n722, n722
+addi n725, n724, 1
+steer s726, n722, n725
+sub n727, n722, n722
+tagval n728, s726.w
+valtag n729, n727, n728
+steer s730, n627, n720
+steer s731, n722, n729
+const n732, 4
+sub n733, n104, n104
+addi n734, n733, 4
+tagval n736, n104
+muli n737, n736, 16
+addi n738, n737, 6
+valtag n739, n104, n738
+tagval n740, n104
+muli n741, n740, 16
+addi n742, n741, 6
+valtag n743, n104, n742
+tagval n744, n105
+muli n745, n744, 16
+addi n746, n745, 6
+valtag n747, n105, n746
+tagval n748, n734
+muli n749, n748, 16
+addi n750, n749, 6
+valtag n751, n734, n750
+callsnd is_safe[1], n743, n739, 0
+callsnd is_safe[2], n747, n739, 0
+callsnd is_safe[3], n751, n739, 0
+retsnd n755, n739, n739, cg735
+tagval n756, n755
+valtag n757, n108, n756
+tagval n758, n757
+divi n759, n758, 16
+valtag n760, n757, n759
+const n761, 1
+sub n762, n760, n760
+addi n763, n762, 1
+equal n764, n760, n763
+sub n765, n764, n764
+gthan n766, n764, n765
+const n767, 1
+sub n768, n766, n766
+addi n769, n768, 1
+steer s770, n766, n769
+sub n771, n766, n766
+addi n772, n771, 1
+add n773, n104, n772
+sub n774, n766, n766
+addi n775, n774, 4
+const n776, 1
+sub n777, n766, n766
+addi n778, n777, 1
+steer s779, n766, n778
+tagval n780, n105
+valtag n781, s779.w, n780
+steer s782, n781, n105
+const n783, 1
+sub n784, n766, n766
+addi n785, n784, 1
+steer s786, n766, n785
+tagval n787, n104
+valtag n788, s786.w, n787
+steer s789, n788, n104
+const n790, 1
+sub n791, n766, n766
+addi n792, n791, 1
+steer s793, n766, n792
+tagval n794, n775
+valtag n795, s793.w, n794
+steer s796, n795, n775
+tagval n798, s782.w
+muli n799, n798, 16
+addi n800, n799, 6
+valtag n801, s782.w, n800
+tagval n802, s782.w
+muli n803, n802, 16
+addi n804, n803, 6
+valtag n805, s782.w, n804
+tagval n806, s789.w
+muli n807, n806, 16
+addi n808, n807, 6
+valtag n809, s789.w, n808
+tagval n810, s796.w
+muli n811, n810, 16
+addi n812, n811, 6
+valtag n813, s796.w, n812
+callsnd pack_queen[1], n805, n801, 0
+callsnd pack_queen[2], n809, n801, 0
+callsnd pack_queen[3], n813, n801, 0
+retsnd n817, n801, n801, cg797
+tagval n818, n817
+valtag n819, n204, n818
+tagval n820, n819
+divi n821, n820, 16
+valtag n822, n819, n821
+const n823, 1
+sub n824, n766, n766
+addi n825, n824, 1
+steer s826, n766, n825
+tagval n827, n773
+valtag n828, s826.w, n827
+steer s829, n828, n773
+const n830, 1
+sub n831, n766, n766
+addi n832, n831, 1
+steer s833, n766, n832
+tagval n834, n822
+valtag n835, s833.w, n834
+steer s836, n835, n822
+tagval n838, s829.w
+muli n839, n838, 16
+addi n840, n839, 6
+valtag n841, s829.w, n840
+tagval n842, s829.w
+muli n843, n842, 16
+addi n844, n843, 6
+valtag n845, s829.w, n844
+tagval n846, s836.w
+muli n847, n846, 16
+addi n848, n847, 6
+valtag n849, s836.w, n848
+callsnd nqueens[1], n845, n841, 0
+callsnd nqueens[2], n849, n841, 0
+retsnd n852, n841, n841, cg837
+tagval n853, n852
+valtag n854, n2, n853
+tagval n855, n854
+divi n856, n855, 16
+valtag n857, n854, n856
+tagval n858, s770.w
+valtag n859, n857, n858
+sub n860, n766, n766
+equal n861, n766, n860
+const n862, 1
+sub n863, n861, n861
+addi n864, n863, 1
+steer s865, n861, n864
+sub n866, n861, n861
+tagval n867, s865.w
+valtag n868, n866, n867
+steer s869, n766, n859
+steer s870, n861, n868
+add n871, [s731.w, s730.w], [s870.w, s869.w]
+add n872, [s592.w, s591.w], n871
+add n873, n453, n872
+const n874, 5
+sub n875, n104, n104
+addi n876, n875, 5
+tagval n878, n104
+muli n879, n878, 16
+addi n880, n879, 7
+valtag n881, n104, n880
+tagval n882, n104
+muli n883, n882, 16
+addi n884, n883, 7
+valtag n885, n104, n884
+tagval n886, n105
+muli n887, n886, 16
+addi n888, n887, 7
+valtag n889, n105, n888
+tagval n890, n876
+muli n891, n890, 16
+addi n892, n891, 7
+valtag n893, n876, n892
+callsnd is_safe[1], n885, n881, 0
+callsnd is_safe[2], n889, n881, 0
+callsnd is_safe[3], n893, n881, 0
+retsnd n897, n881, n881, cg877
+tagval n898, n897
+valtag n899, n108, n898
+tagval n900, n899
+divi n901, n900, 16
+valtag n902, n899, n901
+const n903, 1
+sub n904, n902, n902
+addi n905, n904, 1
+equal n906, n902, n905
+sub n907, n906, n906
+gthan n908, n906, n907
+const n909, 1
+sub n910, n908, n908
+addi n911, n910, 1
+steer s912, n908, n911
+sub n913, n908, n908
+addi n914, n913, 1
+add n915, n104, n914
+sub n916, n908, n908
+addi n917, n916, 5
+const n918, 1
+sub n919, n908, n908
+addi n920, n919, 1
+steer s921, n908, n920
+tagval n922, n105
+valtag n923, s921.w, n922
+steer s924, n923, n105
+const n925, 1
+sub n926, n908, n908
+addi n927, n926, 1
+steer s928, n908, n927
+tagval n929, n104
+valtag n930, s928.w, n929
+steer s931, n930, n104
+const n932, 1
+sub n933, n908, n908
+addi n934, n933, 1
+steer s935, n908, n934
+tagval n936, n917
+valtag n937, s935.w, n936
+steer s938, n937, n917
+tagval n940, s924.w
+muli n941, n940, 16
+addi n942, n941, 7
+valtag n943, s924.w, n942
+tagval n944, s924.w
+muli n945, n944, 16
+addi n946, n945, 7
+valtag n947, s924.w, n946
+tagval n948, s931.w
+muli n949, n948, 16
+addi n950, n949, 7
+valtag n951, s931.w, n950
+tagval n952, s938.w
+muli n953, n952, 16
+addi n954, n953, 7
+valtag n955, s938.w, n954
+callsnd pack_queen[1], n947, n943, 0
+callsnd pack_queen[2], n951, n943, 0
+callsnd pack_queen[3], n955, n943, 0
+retsnd n959, n943, n943, cg939
+tagval n960, n959
+valtag n961, n204, n960
+tagval n962, n961
+divi n963, n962, 16
+valtag n964, n961, n963
+const n965, 1
+sub n966, n908, n908
+addi n967, n966, 1
+steer s968, n908, n967
+tagval n969, n915
+valtag n970, s968.w, n969
+steer s971, n970, n915
+const n972, 1
+sub n973, n908, n908
+addi n974, n973, 1
+steer s975, n908, n974
+tagval n976, n964
+valtag n977, s975.w, n976
+steer s978, n977, n964
+tagval n980, s971.w
+muli n981, n980, 16
+addi n982, n981, 7
+valtag n983, s971.w, n982
+tagval n984, s971.w
+muli n985, n984, 16
+addi n986, n985, 7
+valtag n987, s971.w, n986
+tagval n988, s978.w
+muli n989, n988, 16
+addi n990, n989, 7
+valtag n991, s978.w, n990
+callsnd nqueens[1], n987, n983, 0
+callsnd nqueens[2], n991, n983, 0
+retsnd n994, n983, n983, cg979
+tagval n995, n994
+valtag n996, n2, n995
+tagval n997, n996
+divi n998, n997, 16
+valtag n999, n996, n998
+tagval n1000, s912.w
+valtag n1001, n999, n1000
+sub n1002, n908, n908
+equal n1003, n908, n1002
+const n1004, 1
+sub n1005, n1003, n1003
+addi n1006, n1005, 1
+steer s1007, n1003, n1006
+sub n1008, n1003, n1003
+tagval n1009, s1007.w
+valtag n1010, n1008, n1009
+steer s1011, n908, n1001
+steer s1012, n1003, n1010
+const n1013, 6
+sub n1014, n104, n104
+addi n1015, n1014, 6
+tagval n1017, n104
+muli n1018, n1017, 16
+addi n1019, n1018, 8
+valtag n1020, n104, n1019
+tagval n1021, n104
+muli n1022, n1021, 16
+addi n1023, n1022, 8
+valtag n1024, n104, n1023
+tagval n1025, n105
+muli n1026, n1025, 16
+addi n1027, n1026, 8
+valtag n1028, n105, n1027
+tagval n1029, n1015
+muli n1030, n1029, 16
+addi n1031, n1030, 8
+valtag n1032, n1015, n1031
+callsnd is_safe[1], n1024, n1020, 0
+callsnd is_safe[2], n1028, n1020, 0
+callsnd is_safe[3], n1032, n1020, 0
+retsnd n1036, n1020, n1020, cg1016
+tagval n1037, n1036
+valtag n1038, n108, n1037
+tagval n1039, n1038
+divi n1040, n1039, 16
+valtag n1041, n1038, n1040
+const n1042, 1
+sub n1043, n1041, n1041
+addi n1044, n1043, 1
+equal n1045, n1041, n1044
+sub n1046, n1045, n1045
+gthan n1047, n1045, n1046
+const n1048, 1
+sub n1049, n1047, n1047
+addi n1050, n1049, 1
+steer s1051, n1047, n1050
+sub n1052, n1047, n1047
+addi n1053, n1052, 1
+add n1054, n104, n1053
+sub n1055, n1047, n1047
+addi n1056, n1055, 6
+const n1057, 1
+sub n1058, n1047, n1047
+addi n1059, n1058, 1
+steer s1060, n1047, n1059
+tagval n1061, n105
+valtag n1062, s1060.w, n1061
+steer s1063, n1062, n105
+const n1064, 1
+sub n1065, n1047, n1047
+addi n1066, n1065, 1
+steer s1067, n1047, n1066
+tagval n1068, n104
+valtag n1069, s1067.w, n1068
+steer s1070, n1069, n104
+const n1071, 1
+sub n1072, n1047, n1047
+addi n1073, n1072, 1
+steer s1074, n1047, n1073
+tagval n1075, n1056
+valtag n1076, s1074.w, n1075
+steer s1077, n1076, n1056
+tagval n1079, s1063.w
+muli n1080, n1079, 16
+addi n1081, n1080, 8
+valtag n1082, s1063.w, n1081
+tagval n1083, s1063.w
+muli n1084, n1083, 16
+addi n1085, n1084, 8
+valtag n1086, s1063.w, n1085
+tagval n1087, s1070.w
+muli n1088, n1087, 16
+addi n1089, n1088, 8
+valtag n1090, s1070.w, n1089
+tagval n1091, s1077.w
+muli n1092, n1091, 16
+addi n1093, n1092, 8
+valtag n1094, s1077.w, n1093
+callsnd pack_queen[1], n1086, n1082, 0
+callsnd pack_queen[2], n1090, n1082, 0
+callsnd pack_queen[3], n1094, n1082, 0
+retsnd n1098, n1082, n1082, cg1078
+tagval n1099, n1098
+valtag n1100, n204, n1099
+tagval n1101, n1100
+divi n1102, n1101, 16
+valtag n1103, n1100, n1102
+const n1104, 1
+sub n1105, n1047, n1047
+addi n1106, n1105, 1
+steer s1107, n1047, n1106
+tagval n1108, n1054
+valtag n1109, s1107.w, n1108
+steer s1110, n1109, n1054
+const n1111, 1
+sub n1112, n1047, n1047
+addi n1113, n1112, 1
+steer s1114, n1047, n1113
+tagval n1115, n1103
+valtag n1116, s1114.w, n1115
+steer s1117, n1116, n1103
+tagval n1119, s1110.w
+muli n1120, n1119, 16
+addi n1121, n1120, 8
+valtag n1122, s1110.w, n1121
+tagval n1123, s1110.w
+muli n1124, n1123, 16
+addi n1125, n1124, 8
+valtag n1126, s1110.w, n1125
+tagval n1127, s1117.w
+muli n1128, n1127, 16
+addi n1129, n1128, 8
+valtag n1130, s1117.w, n1129
+callsnd nqueens[1], n1126, n1122, 0
+callsnd nqueens[2], n1130, n1122, 0
+retsnd n1133, n1122, n1122, cg1118
+tagval n1134, n1133
+valtag n1135, n2, n1134
+tagval n1136, n1135
+divi n1137, n1136, 16
+valtag n1138, n1135, n1137
+tagval n1139, s1051.w
+valtag n1140, n1138, n1139
+sub n1141, n1047, n1047
+equal n1142, n1047, n1141
+const n1143, 1
+sub n1144, n1142, n1142
+addi n1145, n1144, 1
+steer s1146, n1142, n1145
+sub n1147, n1142, n1142
+tagval n1148, s1146.w
+valtag n1149, n1147, n1148
+steer s1150, n1047, n1140
+steer s1151, n1142, n1149
+add n1152, [s1012.w, s1011.w], [s1151.w, s1150.w]
+const n1153, 7
+sub n1154, n104, n104
+addi n1155, n1154, 7
+tagval n1157, n104
+muli n1158, n1157, 16
+addi n1159, n1158, 9
+valtag n1160, n104, n1159
+tagval n1161, n104
+muli n1162, n1161, 16
+addi n1163, n1162, 9
+valtag n1164, n104, n1163
+tagval n1165, n105
+muli n1166, n1165, 16
+addi n1167, n1166, 9
+valtag n1168, n105, n1167
+tagval n1169, n1155
+muli n1170, n1169, 16
+addi n1171, n1170, 9
+valtag n1172, n1155, n1171
+callsnd is_safe[1], n1164, n1160, 0
+callsnd is_safe[2], n1168, n1160, 0
+callsnd is_safe[3], n1172, n1160, 0
+retsnd n1176, n1160, n1160, cg1156
+tagval n1177, n1176
+valtag n1178, n108, n1177
+tagval n1179, n1178
+divi n1180, n1179, 16
+valtag n1181, n1178, n1180
+const n1182, 1
+sub n1183, n1181, n1181
+addi n1184, n1183, 1
+equal n1185, n1181, n1184
+sub n1186, n1185, n1185
+gthan n1187, n1185, n1186
+const n1188, 1
+sub n1189, n1187, n1187
+addi n1190, n1189, 1
+steer s1191, n1187, n1190
+sub n1192, n1187, n1187
+addi n1193, n1192, 1
+add n1194, n104, n1193
+sub n1195, n1187, n1187
+addi n1196, n1195, 7
+const n1197, 1
+sub n1198, n1187, n1187
+addi n1199, n1198, 1
+steer s1200, n1187, n1199
+tagval n1201, n105
+valtag n1202, s1200.w, n1201
+steer s1203, n1202, n105
+const n1204, 1
+sub n1205, n1187, n1187
+addi n1206, n1205, 1
+steer s1207, n1187, n1206
+tagval n1208, n104
+valtag n1209, s1207.w, n1208
+steer s1210, n1209, n104
+const n1211, 1
+sub n1212, n1187, n1187
+addi n1213, n1212, 1
+steer s1214, n1187, n1213
+tagval n1215, n1196
+valtag n1216, s1214.w, n1215
+steer s1217, n1216, n1196
+tagval n1219, s1203.w
+muli n1220, n1219, 16
+addi n1221, n1220, 9
+valtag n1222, s1203.w, n1221
+tagval n1223, s1203.w
+muli n1224, n1223, 16
+addi n1225, n1224, 9
+valtag n1226, s1203.w, n1225
+tagval n1227, s1210.w
+muli n1228, n1227, 16
+addi n1229, n1228, 9
+valtag n1230, s1210.w, n1229
+tagval n1231, s1217.w
+muli n1232, n1231, 16
+addi n1233, n1232, 9
+valtag n1234, s1217.w, n1233
+callsnd pack_queen[1], n1226, n1222, 0
+callsnd pack_queen[2], n1230, n1222, 0
+callsnd pack_queen[3], n1234, n1222, 0
+retsnd n1238, n1222, n1222, cg1218
+tagval n1239, n1238
+valtag n1240, n204, n1239
+tagval n1241, n1240
+divi n1242, n1241, 16
+valtag n1243, n1240, n1242
+const n1244, 1
+sub n1245, n1187, n1187
+addi n1246, n1245, 1
+steer s1247, n1187, n1246
+tagval n1248, n1194
+valtag n1249, s1247.w, n1248
+steer s1250, n1249, n1194
+const n1251, 1
+sub n1252, n1187, n1187
+addi n1253, n1252, 1
+steer s1254, n1187, n1253
+tagval n1255, n1243
+valtag n1256, s1254.w, n1255
+steer s1257, n1256, n1243
+tagval n1259, s1250.w
+muli n1260, n1259, 16
+addi n1261, n1260, 9
+valtag n1262, s1250.w, n1261
+tagval n1263, s1250.w
+muli n1264, n1263, 16
+addi n1265, n1264, 9
+valtag n1266, s1250.w, n1265
+tagval n1267, s1257.w
+muli n1268, n1267, 16
+addi n1269, n1268, 9
+valtag n1270, s1257.w, n1269
+callsnd nqueens[1], n1266, n1262, 0
+callsnd nqueens[2], n1270, n1262, 0
+retsnd n1273, n1262, n1262, cg1258
+tagval n1274, n1273
+valtag n1275, n2, n1274
+tagval n1276, n1275
+divi n1277, n1276, 16
+valtag n1278, n1275, n1277
+tagval n1279, s1191.w
+valtag n1280, n1278, n1279
+sub n1281, n1187, n1187
+equal n1282, n1187, n1281
+const n1283, 1
+sub n1284, n1282, n1282
+addi n1285, n1284, 1
+steer s1286, n1282, n1285
+sub n1287, n1282, n1282
+tagval n1288, s1286.w
+valtag n1289, n1287, n1288
+steer s1290, n1187, n1280
+steer s1291, n1282, n1289
+const n1292, 8
+sub n1293, n104, n104
+addi n1294, n1293, 8
+tagval n1296, n104
+muli n1297, n1296, 16
+addi n1298, n1297, 10
+valtag n1299, n104, n1298
+tagval n1300, n104
+muli n1301, n1300, 16
+addi n1302, n1301, 10
+valtag n1303, n104, n1302
+tagval n1304, n105
+muli n1305, n1304, 16
+addi n1306, n1305, 10
+valtag n1307, n105, n1306
+tagval n1308, n1294
+muli n1309, n1308, 16
+addi n1310, n1309, 10
+valtag n1311, n1294, n1310
+callsnd is_safe[1], n1303, n1299, 0
+callsnd is_safe[2], n1307, n1299, 0
+callsnd is_safe[3], n1311, n1299, 0
+retsnd n1315, n1299, n1299, cg1295
+tagval n1316, n1315
+valtag n1317, n108, n1316
+tagval n1318, n1317
+divi n1319, n1318, 16
+valtag n1320, n1317, n1319
+const n1321, 1
+sub n1322, n1320, n1320
+addi n1323, n1322, 1
+equal n1324, n1320, n1323
+sub n1325, n1324, n1324
+gthan n1326, n1324, n1325
+const n1327, 1
+sub n1328, n1326, n1326
+addi n1329, n1328, 1
+steer s1330, n1326, n1329
+sub n1331, n1326, n1326
+addi n1332, n1331, 1
+add n1333, n104, n1332
+sub n1334, n1326, n1326
+addi n1335, n1334, 8
+const n1336, 1
+sub n1337, n1326, n1326
+addi n1338, n1337, 1
+steer s1339, n1326, n1338
+tagval n1340, n105
+valtag n1341, s1339.w, n1340
+steer s1342, n1341, n105
+const n1343, 1
+sub n1344, n1326, n1326
+addi n1345, n1344, 1
+steer s1346, n1326, n1345
+tagval n1347, n104
+valtag n1348, s1346.w, n1347
+steer s1349, n1348, n104
+const n1350, 1
+sub n1351, n1326, n1326
+addi n1352, n1351, 1
+steer s1353, n1326, n1352
+tagval n1354, n1335
+valtag n1355, s1353.w, n1354
+steer s1356, n1355, n1335
+tagval n1358, s1342.w
+muli n1359, n1358, 16
+addi n1360, n1359, 10
+valtag n1361, s1342.w, n1360
+tagval n1362, s1342.w
+muli n1363, n1362, 16
+addi n1364, n1363, 10
+valtag n1365, s1342.w, n1364
+tagval n1366, s1349.w
+muli n1367, n1366, 16
+addi n1368, n1367, 10
+valtag n1369, s1349.w, n1368
+tagval n1370, s1356.w
+muli n1371, n1370, 16
+addi n1372, n1371, 10
+valtag n1373, s1356.w, n1372
+callsnd pack_queen[1], n1365, n1361, 0
+callsnd pack_queen[2], n1369, n1361, 0
+callsnd pack_queen[3], n1373, n1361, 0
+retsnd n1377, n1361, n1361, cg1357
+tagval n1378, n1377
+valtag n1379, n204, n1378
+tagval n1380, n1379
+divi n1381, n1380, 16
+valtag n1382, n1379, n1381
+const n1383, 1
+sub n1384, n1326, n1326
+addi n1385, n1384, 1
+steer s1386, n1326, n1385
+tagval n1387, n1333
+valtag n1388, s1386.w, n1387
+steer s1389, n1388, n1333
+const n1390, 1
+sub n1391, n1326, n1326
+addi n1392, n1391, 1
+steer s1393, n1326, n1392
+tagval n1394, n1382
+valtag n1395, s1393.w, n1394
+steer s1396, n1395, n1382
+tagval n1398, s1389.w
+muli n1399, n1398, 16
+addi n1400, n1399, 10
+valtag n1401, s1389.w, n1400
+tagval n1402, s1389.w
+muli n1403, n1402, 16
+addi n1404, n1403, 10
+valtag n1405, s1389.w, n1404
+tagval n1406, s1396.w
+muli n1407, n1406, 16
+addi n1408, n1407, 10
+valtag n1409, s1396.w, n1408
+callsnd nqueens[1], n1405, n1401, 0
+callsnd nqueens[2], n1409, n1401, 0
+retsnd n1412, n1401, n1401, cg1397
+tagval n1413, n1412
+valtag n1414, n2, n1413
+tagval n1415, n1414
+divi n1416, n1415, 16
+valtag n1417, n1414, n1416
+tagval n1418, s1330.w
+valtag n1419, n1417, n1418
+sub n1420, n1326, n1326
+equal n1421, n1326, n1420
+const n1422, 1
+sub n1423, n1421, n1421
+addi n1424, n1423, 1
+steer s1425, n1421, n1424
+sub n1426, n1421, n1421
+tagval n1427, s1425.w
+valtag n1428, n1426, n1427
+steer s1429, n1326, n1419
+steer s1430, n1421, n1428
+const n1431, 9
+sub n1432, n104, n104
+addi n1433, n1432, 9
+tagval n1435, n104
+muli n1436, n1435, 16
+addi n1437, n1436, 11
+valtag n1438, n104, n1437
+tagval n1439, n104
+muli n1440, n1439, 16
+addi n1441, n1440, 11
+valtag n1442, n104, n1441
+tagval n1443, n105
+muli n1444, n1443, 16
+addi n1445, n1444, 11
+valtag n1446, n105, n1445
+tagval n1447, n1433
+muli n1448, n1447, 16
+addi n1449, n1448, 11
+valtag n1450, n1433, n1449
+callsnd is_safe[1], n1442, n1438, 0
+callsnd is_safe[2], n1446, n1438, 0
+callsnd is_safe[3], n1450, n1438, 0
+retsnd n1454, n1438, n1438, cg1434
+tagval n1455, n1454
+valtag n1456, n108, n1455
+tagval n1457, n1456
+divi n1458, n1457, 16
+valtag n1459, n1456, n1458
+const n1460, 1
+sub n1461, n1459, n1459
+addi n1462, n1461, 1
+equal n1463, n1459, n1462
+sub n1464, n1463, n1463
+gthan n1465, n1463, n1464
+const n1466, 1
+sub n1467, n1465, n1465
+addi n1468, n1467, 1
+steer s1469, n1465, n1468
+sub n1470, n1465, n1465
+addi n1471, n1470, 1
+add n1472, n104, n1471
+sub n1473, n1465, n1465
+addi n1474, n1473, 9
+const n1475, 1
+sub n1476, n1465, n1465
+addi n1477, n1476, 1
+steer s1478, n1465, n1477
+tagval n1479, n105
+valtag n1480, s1478.w, n1479
+steer s1481, n1480, n105
+const n1482, 1
+sub n1483, n1465, n1465
+addi n1484, n1483, 1
+steer s1485, n1465, n1484
+tagval n1486, n104
+valtag n1487, s1485.w, n1486
+steer s1488, n1487, n104
+const n1489, 1
+sub n1490, n1465, n1465
+addi n1491, n1490, 1
+steer s1492, n1465, n1491
+tagval n1493, n1474
+valtag n1494, s1492.w, n1493
+steer s1495, n1494, n1474
+tagval n1497, s1481.w
+muli n1498, n1497, 16
+addi n1499, n1498, 11
+valtag n1500, s1481.w, n1499
+tagval n1501, s1481.w
+muli n1502, n1501, 16
+addi n1503, n1502, 11
+valtag n1504, s1481.w, n1503
+tagval n1505, s1488.w
+muli n1506, n1505, 16
+addi n1507, n1506, 11
+valtag n1508, s1488.w, n1507
+tagval n1509, s1495.w
+muli n1510, n1509, 16
+addi n1511, n1510, 11
+valtag n1512, s1495.w, n1511
+callsnd pack_queen[1], n1504, n1500, 0
+callsnd pack_queen[2], n1508, n1500, 0
+callsnd pack_queen[3], n1512, n1500, 0
+retsnd n1516, n1500, n1500, cg1496
+tagval n1517, n1516
+valtag n1518, n204, n1517
+tagval n1519, n1518
+divi n1520, n1519, 16
+valtag n1521, n1518, n1520
+const n1522, 1
+sub n1523, n1465, n1465
+addi n1524, n1523, 1
+steer s1525, n1465, n1524
+tagval n1526, n1472
+valtag n1527, s1525.w, n1526
+steer s1528, n1527, n1472
+const n1529, 1
+sub n1530, n1465, n1465
+addi n1531, n1530, 1
+steer s1532, n1465, n1531
+tagval n1533, n1521
+valtag n1534, s1532.w, n1533
+steer s1535, n1534, n1521
+tagval n1537, s1528.w
+muli n1538, n1537, 16
+addi n1539, n1538, 11
+valtag n1540, s1528.w, n1539
+tagval n1541, s1528.w
+muli n1542, n1541, 16
+addi n1543, n1542, 11
+valtag n1544, s1528.w, n1543
+tagval n1545, s1535.w
+muli n1546, n1545, 16
+addi n1547, n1546, 11
+valtag n1548, s1535.w, n1547
+callsnd nqueens[1], n1544, n1540, 0
+callsnd nqueens[2], n1548, n1540, 0
+retsnd n1551, n1540, n1540, cg1536
+tagval n1552, n1551
+valtag n1553, n2, n1552
+tagval n1554, n1553
+divi n1555, n1554, 16
+valtag n1556, n1553, n1555
+tagval n1557, s1469.w
+valtag n1558, n1556, n1557
+sub n1559, n1465, n1465
+equal n1560, n1465, n1559
+const n1561, 1
+sub n1562, n1560, n1560
+addi n1563, n1562, 1
+steer s1564, n1560, n1563
+sub n1565, n1560, n1560
+tagval n1566, s1564.w
+valtag n1567, n1565, n1566
+steer s1568, n1465, n1558
+steer s1569, n1560, n1567
+add n1570, [s1430.w, s1429.w], [s1569.w, s1568.w]
+add n1571, [s1291.w, s1290.w], n1570
+add n1572, n1152, n1571
+add n1573, n873, n1572
+ret try_all, n1592, n1590
+tagval n1576, s95.w
+muli n1577, n1576, 16
+addi n1578, n1577, 2
+valtag n1579, s95.w, n1578
+tagval n1580, s95.w
+muli n1581, n1580, 16
+addi n1582, n1581, 2
+valtag n1583, s95.w, n1582
+tagval n1584, s102.w
+muli n1585, n1584, 16
+addi n1586, n1585, 2
+valtag n1587, s102.w, n1586
+callsnd try_all[1], n1583, n1579, 0
+callsnd try_all[2], n1587, n1579, 0
+retsnd n1590, n1579, n1579, cg1575
+tagval n1591, n1590
+valtag n1592, n103, n1591
+tagval n1593, n1592
+divi n1594, n1593, 16
+valtag n1595, n1592, n1594
+tagval n1596, s85.w
+valtag n1597, n1595, n1596
+steer s1598, n39, n79
+steer s1599, n81, n1597
+tagval n1600, s30.w
+valtag n1601, [s1599.w, s1598.w], n1600
+steer s1602, n16, n24
+steer s1603, n26, n1601
+tagval n1605, n0
+muli n1606, n1605, 16
+addi n1607, n1606, 12
+valtag n1608, n0, n1607
+tagval n1609, n0
+muli n1610, n1609, 16
+addi n1611, n1610, 12
+valtag n1612, n0, n1611
+tagval n1613, n1
+muli n1614, n1613, 16
+addi n1615, n1614, 12
+valtag n1616, n1, n1615
+callsnd nqueens[1], n1612, n1608, 0
+callsnd nqueens[2], n1616, n1608, 0
+retsnd n1619, n1608, n1608, cg1604
+tagval n1620, n1619
+valtag n1621, n2, n1620
+tagval n1622, n1621
+divi n1623, n1622, 16
+valtag n1624, n1621, n1623
+addi n1625, n1627, 0
+addi n1626, print_result[1], 0
+super n1627, 6, 1, n1626
+ret print_result, n1641, n1639
+tagval n1630, n1624
+muli n1631, n1630, 16
+addi n1632, n1631, 2
+valtag n1633, n1624, n1632
+tagval n1634, n1624
+muli n1635, n1634, 16
+addi n1636, n1635, 2
+valtag n1637, n1624, n1636
+callsnd print_result[1], n1637, n1633, 0
+retsnd n1639, n1633, n1633, cg1629
+tagval n1640, n1639
+valtag n1641, n1625, n1640
+tagval n1642, n1641
+divi n1643, n1642, 16
+valtag n1644, n1641, n1643
+ret main, n1644, z0
