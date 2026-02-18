@@ -127,6 +127,10 @@ for N in "${NS[@]}"; do
       [[ -z "$colors" ]] && colors="0"
 
       echo "[${RUN_NUM}/${TOTAL_RUNS}] N=${N} P=${P} rep=${rep} -> ${secs}s colors=${colors} valid=${valid} rc=${local_rc}"
+      if [[ "$local_rc" -ne 0 ]]; then
+        echo "FATAL: ${VARIANT} N=${N} P=${P} rep=${rep} failed with rc=${local_rc}"
+        exit 1
+      fi
       echo "${VARIANT},${N},${P},${EDGE_PROB},${SEED},${rep},${secs},${colors},${valid},${local_rc}" >> "$METRICS"
     done
   done

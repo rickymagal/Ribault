@@ -697,12 +697,12 @@ for N in $(seq "$START_N" "$STEP" "$N_MAX"); do
       done
 
       echo "variant=super, N=${N}, P=${P}, rep=${rep}, secs=${secs}, rc=${rc}"
-      echo "super,${N},${P},${rep},${secs},${rc}" >> "$METRICS_CSV"
-
-      if [[ "${LOG_ERR:-0}" -eq 1 && "$rc" -ne 0 ]]; then
-        echo "[err ] ${CASE_DIR}/logs/run.err"
-        sed -n '1,160p' "$CASE_DIR/logs/run.err" || true
+      if [[ "$rc" -ne 0 ]]; then
+        echo "FATAL: super N=${N} P=${P} rep=${rep} failed with rc=${rc}"
+        [[ -f "$CASE_DIR/logs/run.err" ]] && sed -n '1,40p' "$CASE_DIR/logs/run.err" || true
+        exit 1
       fi
+      echo "super,${N},${P},${rep},${secs},${rc}" >> "$METRICS_CSV"
     done
   done
 done

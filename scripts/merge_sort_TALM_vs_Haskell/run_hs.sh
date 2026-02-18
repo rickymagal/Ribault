@@ -112,6 +112,10 @@ while [[ "$N" -le "$N_MAX" ]]; do
       out="$(run_bin_time_rc "$BIN" "$P" "$CASE_DIR/logs")"
       read -r secs rc <<< "$out"
       echo "variant=ghc, N=${N}, P=${P}, rep=${rep}, secs=${secs}, rc=${rc}"
+      if [[ "$rc" -ne 0 ]]; then
+        echo "FATAL: ${VARIANT} N=${N} P=${P} rep=${rep} failed with rc=${rc}"
+        exit 1
+      fi
       echo "${VARIANT},${N},${P},${rep},${secs},${rc}" >> "$METRICS_CSV"
     done
   done

@@ -295,6 +295,14 @@ for N in "${NS[@]}"; do
       [[ "$valid" == "1" ]] && valid_str="True"
 
       echo "[${RUN_NUM}/${TOTAL_RUNS}] N=${N} P=${P} rep=${rep} -> ${secs}s colors=${colors} valid=${valid_str} rc=${rc}"
+      if [[ "$rc" -ne 0 ]]; then
+        echo "FATAL: super N=${N} P=${P} rep=${rep} failed with rc=${rc}"
+        exit 1
+      fi
+      if [[ "$valid_str" != "True" ]]; then
+        echo "FATAL: super N=${N} P=${P} rep=${rep} INVALID COLORING"
+        exit 1
+      fi
       echo "super,${N},${P},${EDGE_PROB},${SEED},${rep},${secs},${colors},${valid_str},${rc}" >> "$METRICS_CSV"
     done
   done
