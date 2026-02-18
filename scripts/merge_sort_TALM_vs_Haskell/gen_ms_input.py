@@ -401,8 +401,12 @@ main = verify_sorted (msort (init_super [__N__]) __N__ __NPARTS__);
 """
 
 
-def compute_nparts(n: int, p: int, min_grain: int = 50000) -> int:
-    """Adaptive nparts: only split when each leaf has enough work."""
+def compute_nparts(n: int, p: int, min_grain: int = 50000, fixed: int = 0) -> int:
+    """Compute nparts for array-based merge sort.
+    If fixed > 0, use that value directly (ensures consistent work across P values).
+    Otherwise, adaptive: start at p, halve while grains are too small."""
+    if fixed > 0:
+        return fixed
     nparts = p
     while nparts > 1 and n // nparts < min_grain:
         nparts //= 2
@@ -426,7 +430,7 @@ def make_vec(n: int, kind: str) -> str:
     raise SystemExit("vec must be 'range' or 'rand'")
 
 
-def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str) -> None:
+def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str, fixed_nparts: int = 0) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # Only generate inline vector for modes that need it (seq, asm)
     need_vec = mode in ("seq",) or (mode == "super" and os.getenv("MS_LEAF", "super").lower() == "asm")
@@ -434,7 +438,7 @@ def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str) -
     if mode == "seq":
         src = SEQ_TMPL.replace("__VEC__", vec)
     elif mode == "array":
-        nparts = compute_nparts(n, p)
+        nparts = compute_nparts(n, p, fixed=fixed_nparts)
         src = (
             ARRAY_SUPER_TMPL.replace("__P__", str(p))
             .replace("__N__", str(n))
@@ -486,8 +490,9 @@ def main() -> None:
     ap.add_argument("--vec", default="range", choices=["range", "rand"])
     ap.add_argument("--cutoff", type=int, default=256)
     ap.add_argument("--mode", default="super", choices=["super", "seq", "coarse", "array"])
+    ap.add_argument("--nparts", type=int, default=0, help="Fixed nparts for array mode (0=adaptive)")
     args = ap.parse_args()
-    emit_hsk(args.out, args.N, args.P, args.cutoff, args.vec, args.mode)
+    emit_hsk(args.out, args.N, args.P, args.cutoff, args.vec, args.mode, fixed_nparts=args.nparts)
 
 
 if __name__ == "__main__":

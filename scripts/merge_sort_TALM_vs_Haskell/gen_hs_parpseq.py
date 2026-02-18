@@ -32,7 +32,7 @@ msortSeq xs  =
   let (a,b) = split2 xs
   in merge (msortSeq a) (msortSeq b)
 
--- mergesort com par/pseq (sparks only above cutoff=256)
+-- mergesort com par/pseq (sparks only above cutoff)
 msort :: [Int] -> [Int]
 msort xs = msortGo (length xs) xs
 
@@ -40,7 +40,7 @@ msortGo :: Int -> [Int] -> [Int]
 msortGo _ []  = []
 msortGo _ [x] = [x]
 msortGo n xs
-  | n <= 256  = msortSeq xs
+  | n <= __CUTOFF__  = msortSeq xs
   | otherwise =
       let (a,b)  = split2 xs
           halfA  = (n + 1) `div` 2
@@ -81,21 +81,24 @@ def make_vec(n, kind):
     else:
         raise SystemExit("vec precisa ser 'range' ou 'rand'")
 
-def emit_hs(path, n, vec_kind):
+def emit_hs(path, n, vec_kind, cutoff=0):
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    if cutoff <= 0:
+        cutoff = max(256, n // 64)
     vec = make_vec(n, vec_kind)
-    src = HS_TMPL.replace("__VEC__", vec)
+    src = HS_TMPL.replace("__VEC__", vec).replace("__CUTOFF__", str(cutoff))
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[hs_gen_parpseq] wrote {path} (N={n}, vec={vec_kind})")
+    print(f"[hs_gen_parpseq] wrote {path} (N={n}, vec={vec_kind}, cutoff={cutoff})")
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--N", type=int, required=True)
     ap.add_argument("--vec", default="range", choices=["range","rand"])
+    ap.add_argument("--cutoff", type=int, default=0, help="Parallel cutoff (0=auto: N//64)")
     args = ap.parse_args()
-    emit_hs(args.out, args.N, args.vec)
+    emit_hs(args.out, args.N, args.vec, cutoff=args.cutoff)
 
 if __name__ == "__main__":
     main()
