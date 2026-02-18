@@ -25,8 +25,8 @@ CODEGEN="$REPO/codegen"
 PY3="${PY3:-python3}"
 
 # ── Shared parameters ──
-PS_CSV="1,2,4,8,12,16,20"        # comma-separated (mergesort, graph coloring)
-PS_SPACE="1 2 4 8 12 16 20"      # space-separated (nqueens, textsearch)
+PS_CSV="1,2,4,8,16,32"            # comma-separated (mergesort, graph coloring)
+PS_SPACE="1 2 4 8 16 32"          # space-separated (nqueens, textsearch)
 REPS=3
 
 # ── Per-benchmark parameters ──
