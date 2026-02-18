@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+// hs_init_with_rtsopts is declared in RtsAPI.h but NOT in HsFFI.h.
+// We need it to allow -N values larger than the number of cores.
+extern void hs_init_with_rtsopts(int *argc, char **argv[]);
+
 static int hs_is_inited = 0;
 static char hs_nopt_buf[32];
 static char hs_aopt_buf[32];
