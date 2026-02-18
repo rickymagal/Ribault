@@ -49,6 +49,7 @@ LEAF_MIN_LEAVES="${LEAF_MIN_LEAVES:-2}"
 SEQ_P1="${SEQ_P1:-0}"
 SUPERS_FIXED="${SUPERS_FIXED:-}"
 USE_SUPERS=1
+MS_NPARTS="${MS_NPARTS:-0}"
 
 usage(){
   cat <<EOF
@@ -157,7 +158,6 @@ echo "[hsk ] using generator: $GEN_PY"
 
 echo "[env ] MS_LEAF=${MS_LEAF}"
 
-rm -rf "$OUTROOT"
 mkdir -p "$OUTROOT"
 
 METRICS_CSV="$OUTROOT/metrics_${TAG}.csv"
@@ -378,8 +378,12 @@ PY
       cutoff=$(( ((cutoff + ROUND_Q - 1) / ROUND_Q) * ROUND_Q ))
     fi
   fi
-  echo "[gen ] generating HSK (N=${N}, P=${P})"
-  "$PY3" "$GEN_PY" --out "$out_hsk" --N "$N" --P "$P" --vec "$VEC_MODE" --cutoff "$cutoff" --mode "$mode"
+  local nparts_arg=""
+  if [[ "$MS_NPARTS" -gt 0 ]]; then
+    nparts_arg="--nparts $MS_NPARTS"
+  fi
+  echo "[gen ] generating HSK (N=${N}, P=${P}, nparts=${MS_NPARTS:-auto})"
+  "$PY3" "$GEN_PY" --out "$out_hsk" --N "$N" --P "$P" --vec "$VEC_MODE" --cutoff "$cutoff" --mode "$mode" $nparts_arg
 }
 
 build_fl() {
@@ -702,9 +706,5 @@ for N in $(seq "$START_N" "$STEP" "$N_MAX"); do
     done
   done
 done
-
-if [[ "$PLOTS" == "yes" ]]; then
-  "$PY3" "$PLOT_PY" --metrics "$METRICS_CSV" --outdir "$OUTROOT" --tag "$TAG"
-fi
 
 echo "[DONE] results in: $OUTROOT"

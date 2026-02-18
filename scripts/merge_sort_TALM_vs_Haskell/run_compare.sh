@@ -5,8 +5,8 @@ set -euo pipefail
 # merge_sort/run_compare.sh — TALM + GHC-strategies + GHC-par/pseq
 # ============================================================
 
-START_N=50000; STEP=50000; N_MAX=1000000; REPS=10
-PROCS_CSV="1,2,4,8"
+START_N=1000000; STEP=1000000; N_MAX=5000000; REPS=3
+PROCS_CSV="1,2,4,8,12,16"
 INTERP=""; ASM_ROOT=""; CODEGEN_ROOT=""
 OUTROOT=""; TAG="ms"
 PY2="${PY2:-python3}"
@@ -51,7 +51,7 @@ if [[ "$SKIP_TALM" -eq 1 && -f "$TALM_CSV" ]]; then
 else
   echo "=== TALM Merge Sort ==="
   PY2="$PY2" PY3="$PY3" \
-  MS_LEAF=array DF_LIST_BUILTIN=1 SUPERS_FORCE_PAR=1 \
+  MS_LEAF=array DF_LIST_BUILTIN=1 SUPERS_FORCE_PAR=1 MS_NPARTS=64 \
   bash "$SCRIPT_DIR/run.sh" \
     --start-N "$START_N" --step "$STEP" --n-max "$N_MAX" \
     --reps "$REPS" --procs "$PROCS_CSV" \
@@ -82,18 +82,6 @@ else
     --reps "$REPS" --procs "$PROCS_CSV" \
     --outroot "$OUTROOT" --vec range --tag "${TAG}_parpseq" \
     --gen "$SCRIPT_DIR/gen_hs_parpseq.py" --variant "parpseq"
-fi
-
-# ── Step 4: All plots ────────────────────────────────────
-echo "=== Generating all plots ==="
-PLOT_ARGS=("--outdir" "$OUTROOT" "--tag" "$TAG")
-METRICS_FILES=()
-[[ -f "$TALM_CSV" ]]    && METRICS_FILES+=("$TALM_CSV")
-[[ -f "$GHC_CSV" ]]     && METRICS_FILES+=("$GHC_CSV")
-[[ -f "$PARPSEQ_CSV" ]] && METRICS_FILES+=("$PARPSEQ_CSV")
-
-if [[ ${#METRICS_FILES[@]} -gt 0 ]]; then
-  "$PY3" "$SCRIPT_DIR/plot_all.py" --metrics "${METRICS_FILES[@]}" "${PLOT_ARGS[@]}"
 fi
 
 echo "[DONE] results in: $OUTROOT"

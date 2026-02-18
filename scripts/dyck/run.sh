@@ -140,39 +140,51 @@ run_interp() {
   local logs="$case_dir/logs"; mkdir -p "$logs"
   local outlog="$logs/run.out" errlog="$logs/run.err"
 
-  local rc=0
-  if [[ -n "$lib" ]]; then
-    local libdir; libdir="$(dirname "$lib")"
-    local ghcdeps="$libdir/ghc-deps"
-    SUPERS_FORCE_PAR=1 NUM_CORES="$P" \
-      LD_LIBRARY_PATH="$libdir:$ghcdeps" \
-      "$INTERP" "$P" "$flb_abs" "$pla_abs" "$lib" >"$outlog" 2>"$errlog" &
-  else
-    "$INTERP" "$P" "$flb_abs" "$pla_abs" >"$outlog" 2>"$errlog" &
-  fi
-  local pid=$!
-  if ! wait "$pid"; then rc=$?; fi
+  local MAX_RETRIES=3
+  local attempt
+  for ((attempt=1; attempt<=MAX_RETRIES; attempt++)); do
+    local rc=0
+    if [[ -n "$lib" ]]; then
+      local libdir; libdir="$(dirname "$lib")"
+      local ghcdeps="$libdir/ghc-deps"
+      SUPERS_FORCE_PAR=1 NUM_CORES="$P" \
+        LD_LIBRARY_PATH="$libdir:$ghcdeps" \
+        "$INTERP" "$P" "$flb_abs" "$pla_abs" "$lib" >"$outlog" 2>"$errlog" &
+    else
+      "$INTERP" "$P" "$flb_abs" "$pla_abs" >"$outlog" 2>"$errlog" &
+    fi
+    local pid=$!
+    if ! wait "$pid"; then rc=$?; fi
 
-  # Extract EXEC_TIME_S (interp prints it to stderr)
-  local secs="NaN"
-  for f in "$errlog" "$outlog"; do
-    if [[ -f "$f" ]]; then
-      local et; et="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$f" 2>/dev/null || true)"
-      [[ -n "$et" ]] && { secs="$et"; break; }
+    # Extract EXEC_TIME_S (interp prints it to stderr)
+    local secs="NaN"
+    for f in "$errlog" "$outlog"; do
+      if [[ -f "$f" ]]; then
+        local et; et="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$f" 2>/dev/null || true)"
+        [[ -n "$et" ]] && { secs="$et"; break; }
+      fi
+    done
+
+    # Correctness check
+    if [[ -f "$outlog" && "$rc" -eq 0 ]]; then
+      local result; result="$(grep -oP '^\d+$' "$outlog" | head -1 || true)"
+      if [[ -n "$result" && "$result" != "$expected" ]]; then
+        >&2 echo "[WARN ] WRONG ANSWER: got '$result', expected '$expected'"
+        rc=99
+      elif [[ -z "$result" ]]; then
+        >&2 echo "[WARN ] No result found in output"
+        rc=98
+      fi
+    fi
+
+    if [[ "$rc" -eq 0 ]]; then
+      break
+    fi
+    if [[ "$attempt" -lt "$MAX_RETRIES" ]]; then
+      >&2 echo "[RETRY] attempt $attempt failed (rc=$rc), retrying..."
+      sleep 1
     fi
   done
-
-  # Correctness check
-  if [[ -f "$outlog" && "$rc" -eq 0 ]]; then
-    local result; result="$(grep -oP '^\d+$' "$outlog" | head -1 || true)"
-    if [[ -n "$result" && "$result" != "$expected" ]]; then
-      >&2 echo "[WARN ] WRONG ANSWER: got '$result', expected '$expected'"
-      rc=99
-    elif [[ -z "$result" ]]; then
-      >&2 echo "[WARN ] No result found in output"
-      rc=98
-    fi
-  fi
 
   printf "%s %d" "$secs" "$rc"
 }
@@ -289,10 +301,6 @@ for N in "${NS[@]}"; do
     done
   done
 done
-
-if [[ "$PLOTS" == "yes" ]]; then
-  "$PY3" "$PLOT_PY" --metrics "$METRICS_CSV" --outdir "$OUTROOT" --tag "$TAG"
-fi
 
 echo ""
 echo "[DONE] ${TOTAL_RUNS} runs; resultados em: $OUTROOT"

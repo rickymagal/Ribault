@@ -78,16 +78,4 @@ else
     --gen "$SCRIPT_DIR/gen_hs_parpseq.py"
 fi
 
-# ── Step 4: All plots (runtime, speedup, efficiency per variant + comparison) ──
-echo "=== Generating all plots ==="
-PLOT_ARGS=("--outdir" "$OUTROOT" "--tag" "$TAG")
-METRICS_FILES=()
-[[ -f "$TALM_CSV" ]]    && METRICS_FILES+=("$TALM_CSV")
-[[ -f "$GHC_CSV" ]]     && METRICS_FILES+=("$GHC_CSV")
-[[ -f "$PARPSEQ_CSV" ]] && METRICS_FILES+=("$PARPSEQ_CSV")
-
-if [[ ${#METRICS_FILES[@]} -gt 0 ]]; then
-  "$PY3" "$SCRIPT_DIR/plot.py" --metrics "${METRICS_FILES[@]}" "${PLOT_ARGS[@]}"
-fi
-
 echo "[DONE] results in: $OUTROOT"

@@ -135,20 +135,4 @@ else
     --gen "$SCRIPT_DIR/gen_hs_parpseq.py" --variant "parpseq"
 fi
 
-# ── Step 4: Plots ────────────────────────────────────────
-echo "=== Generating plots ==="
-METRICS_FILES=()
-[[ -f "$SUPER_CSV" ]]   && METRICS_FILES+=("$SUPER_CSV")
-[[ -f "$GHC_CSV" ]]     && METRICS_FILES+=("$GHC_CSV")
-[[ -f "$PARPSEQ_CSV" ]] && METRICS_FILES+=("$PARPSEQ_CSV")
-
-if [[ ${#METRICS_FILES[@]} -eq 0 ]]; then
-  echo "[ERROR] No metrics CSV found"; exit 1
-fi
-
-"$PY3" "$SCRIPT_DIR/compare_best.py" \
-  --metrics "${METRICS_FILES[@]}" \
-  --outdir "$OUTROOT" \
-  --tag "$TAG"
-
 echo "[DONE] results in: $OUTROOT"

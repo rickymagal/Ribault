@@ -59,7 +59,9 @@ IFS=',' read -r -a PROCS <<< "$PROCS_CSV"
 # ----------------- helpers -----------------
 gen_hs() {
   local N="$1" out_hs="$2"
-  "$PY3" "$GEN_HS" --out "$out_hs" --N "$N" --vec "$VEC_MODE"
+  local cutoff=$(( N / 64 ))
+  if [[ "$cutoff" -lt 256 ]]; then cutoff=256; fi
+  "$PY3" "$GEN_HS" --out "$out_hs" --N "$N" --vec "$VEC_MODE" --cutoff "$cutoff"
 }
 
 build_bin() {
@@ -117,8 +119,3 @@ while [[ "$N" -le "$N_MAX" ]]; do
 done
 
 echo "[DONE] resultados em: $OUTROOT"
-echo "[plot] gerando graficos"
-"$PY3" "$MS_DIR/plot_hs.py" \
-  --metrics "$METRICS_CSV" \
-  --outdir "$OUTROOT" \
-  --tag "$TAG"

@@ -86,18 +86,4 @@ else
     --gen "$SCRIPT_DIR/gen_hs_parpseq.py" --variant "parpseq"
 fi
 
-# ── Step 3: Plots ─────────────────────────────────────────
-echo "=== Generating plots ==="
-PLOT_ARGS=("--outdir" "$OUTROOT" "--tag" "$TAG")
-METRICS_FILES=()
-[[ -f "$SUPER_CSV" ]]   && METRICS_FILES+=("$SUPER_CSV")
-[[ -f "$GHC_CSV" ]]     && METRICS_FILES+=("$GHC_CSV")
-[[ -f "$PARPSEQ_CSV" ]] && METRICS_FILES+=("$PARPSEQ_CSV")
-
-if [[ ${#METRICS_FILES[@]} -eq 0 ]]; then
-  echo "[ERRO] No metrics CSV found"; exit 1
-fi
-
-"$PY3" "$SCRIPT_DIR/plot.py" --metrics "${METRICS_FILES[@]}" "${PLOT_ARGS[@]}"
-
 echo "[DONE] results in: $OUTROOT"
