@@ -3,7 +3,8 @@
 
 Equivalent structure to TALM: K independent range tasks, each processing
 a contiguous range of files sequentially.  Top-level parallelism via
-parMap rdeepseq over the K ranges.
+GHC Strategies (parMap rdeepseq).  Each range task uses unsafePerformIO
+for readFile — the standard GHC approach for parallel IO.
 """
 
 import argparse, os
@@ -15,7 +16,6 @@ def emit_hs(path, n_files, keyword, corpus_dir, n_funcs=12):
     kw_bytes = list(keyword.encode("ascii"))
 
     n_funcs = min(n_funcs, n_files, 14)
-    # Compute ranges
     ranges = []
     for i in range(n_funcs):
         lo = i * n_files // n_funcs
@@ -29,6 +29,7 @@ def emit_hs(path, n_files, keyword, corpus_dir, n_funcs=12):
 {{-# LANGUAGE BangPatterns #-}}
 -- Auto-generated: text search (GHC Strategies)
 -- N_FILES={n_files}  KEYWORD="{keyword}"  N_FUNCS={len(ranges)}
+-- Uses parMap rdeepseq for top-level parallelism over K range tasks.
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as BSU
@@ -63,10 +64,12 @@ countOcc buf kw = go 0 0
       | BSU.unsafeIndex buf (off + k) /= BSU.unsafeIndex kw k = False
       | otherwise  = matchAt off (k + 1)
 
--- Process a range of files [lo, hi), returning sum of counts
+-- Process a range of files [lo, hi), returning sum of keyword counts.
+-- Uses unsafePerformIO so it can be used with parMap (pure interface).
 processRange :: (Int, Int) -> Int
 processRange (lo, hi) = unsafePerformIO $ go lo 0
   where
+    go :: Int -> Int -> IO Int
     go !i !acc
       | i >= hi   = return acc
       | otherwise = do

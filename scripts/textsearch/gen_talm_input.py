@@ -86,6 +86,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as BSU
 
 -- Text-search helpers (injected by gen_talm_input.py)
+-- Sequential readFile + countOcc per file (same as GHC variants).
+-- IO/compute overlap comes from TALM's OS-thread dispatch of supers.
 tsCorpusDir :: String
 tsCorpusDir = "{abs_corpus}"
 
@@ -111,7 +113,7 @@ tsCountOcc buf kw = go 0 0
       | BSU.unsafeIndex buf (off + k) /= BSU.unsafeIndex kw k = False
       | otherwise  = matchAt off (k + 1)
 
--- Process a range of files [lo, hi), returning sum of counts
+-- Process a range of files [lo, hi), returning sum of counts.
 tsProcessRange :: Int -> Int -> IO Int64
 tsProcessRange lo hi = go lo 0
   where

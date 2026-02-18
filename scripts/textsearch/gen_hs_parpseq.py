@@ -3,7 +3,8 @@
 
 Equivalent structure to TALM: K independent range tasks, each processing
 a contiguous range of files sequentially.  Top-level parallelism via
-par/pseq over the K ranges.
+explicit par/pseq.  Each range task uses unsafePerformIO for readFile —
+the standard GHC approach for parallel IO.
 """
 
 import argparse, os
@@ -15,7 +16,6 @@ def emit_hs(path, n_files, keyword, corpus_dir, n_funcs=12):
     kw_bytes = list(keyword.encode("ascii"))
 
     n_funcs = min(n_funcs, n_files, 14)
-    # Compute ranges
     ranges = []
     for i in range(n_funcs):
         lo = i * n_files // n_funcs
@@ -27,8 +27,9 @@ def emit_hs(path, n_files, keyword, corpus_dir, n_funcs=12):
 
     hs = f"""\
 {{-# LANGUAGE BangPatterns #-}}
--- Auto-generated: text search (par/pseq, NO Strategies)
+-- Auto-generated: text search (GHC par/pseq)
 -- N_FILES={n_files}  KEYWORD="{keyword}"  N_FUNCS={len(ranges)}
+-- Uses explicit par/pseq for top-level parallelism over K range tasks.
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as BSU
@@ -63,10 +64,12 @@ countOcc buf kw = go 0 0
       | BSU.unsafeIndex buf (off + k) /= BSU.unsafeIndex kw k = False
       | otherwise  = matchAt off (k + 1)
 
--- Process a range of files [lo, hi), returning sum of counts
+-- Process a range of files [lo, hi), returning sum of keyword counts.
+-- Uses unsafePerformIO so it can be used with par/pseq (pure interface).
 processRange :: (Int, Int) -> Int
 processRange (lo, hi) = unsafePerformIO $ go lo 0
   where
+    go :: Int -> Int -> IO Int
     go !i !acc
       | i >= hi   = return acc
       | otherwise = do
@@ -74,17 +77,18 @@ processRange (lo, hi) = unsafePerformIO $ go lo 0
           let !c = countOcc contents kwBytes
           go (i + 1) (acc + c)
 
-parSum :: [Int] -> Int
-parSum []     = 0
-parSum [x]    = x
-parSum (x:xs) = let s = parSum xs in x `par` s `pseq` (x + s)
+-- Parallel map using par/pseq.
+parMapPP :: (a -> b) -> [a] -> [b]
+parMapPP _ []     = []
+parMapPP f (x:xs) = let r = f x; rs = parMapPP f xs
+                    in r `par` rs `pseq` (r : rs)
 
 main :: IO ()
 main = do
   t0 <- getCurrentTime
   let ranges = {range_list}
-      results = map processRange ranges
-      !total = parSum results
+      results = parMapPP processRange ranges
+      !total = sum results
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn $ "RESULT=" ++ show total

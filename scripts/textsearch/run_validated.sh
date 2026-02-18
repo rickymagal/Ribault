@@ -120,7 +120,7 @@ echo ""
 echo "--- Building GHC Strategies ---"
 "$PY3" "$GEN_STRAT" --out "$GDIR/ts.hs" --n-files "$N_FILES" \
     --keyword "$KEYWORD" --corpus-dir "$CORPUS" --n-funcs "$N_FUNCS"
-"$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel -package bytestring \
+"$GHC_BIN" -O2 -threaded -rtsopts -package time -package bytestring -package parallel \
     -outputdir "$GDIR/obj" -o "$GDIR/ts" "$GDIR/ts.hs" >/dev/null 2>&1
 
 PDIR="$OUTROOT/parpseq"
@@ -129,7 +129,7 @@ echo ""
 echo "--- Building GHC par/pseq ---"
 "$PY3" "$GEN_PARPSEQ" --out "$PDIR/ts.hs" --n-files "$N_FILES" \
     --keyword "$KEYWORD" --corpus-dir "$CORPUS" --n-funcs "$N_FUNCS"
-"$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel -package bytestring \
+"$GHC_BIN" -O2 -threaded -rtsopts -package time -package bytestring -package parallel \
     -outputdir "$PDIR/obj" -o "$PDIR/ts" "$PDIR/ts.hs" >/dev/null 2>&1
 
 # ===== Run benchmarks =====
