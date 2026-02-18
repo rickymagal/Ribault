@@ -2,100 +2,153 @@
 set -euo pipefail
 
 # ============================================================
-# Run ALL benchmarks with the same parameters as RESULTS/.
-# Each benchmark calls its own run_compare / run_validated script.
+# run_all.sh — Unified benchmark runner
+#
+# Runs all 4 benchmarks sequentially, one run at a time:
+#   1. N-Queens
+#   2. MergeSort
+#   3. Text Search
+#   4. Graph Coloring
+#
+# Each rep is sequential. No parallel runs.
 # ============================================================
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-OUTROOT="${1:-$REPO/RESULTS}"
+OUTROOT="${1:-$REPO/RESULTS/run_all}"
 mkdir -p "$OUTROOT"
+OUTROOT="$(cd "$OUTROOT" && pwd)"
 
+# ── Shared infrastructure ──
 INTERP="$REPO/TALM/interp/interp"
 ASM_ROOT="$REPO/TALM/asm"
-CODEGEN="$REPO"   # for run_compare scripts that expect --codegen
+CODEGEN="$REPO/codegen"
+PY3="${PY3:-python3}"
+
+# ── Shared parameters ──
+PS_CSV="1,2,4,8,12,16,20"        # comma-separated (mergesort, graph coloring)
+PS_SPACE="1 2 4 8 12 16 20"      # space-separated (nqueens, textsearch)
+REPS=3
+
+# ── Per-benchmark parameters ──
+# N-Queens
+NQ_NS="8 9 10 11 12 13 14 15 16"
+
+# MergeSort
+MS_START_N=500000
+MS_STEP=500000
+MS_N_MAX=15000000
+
+# Text Search
+TS_N_FILES=50
+TS_FILE_SIZE=10000000
+TS_KEYWORD=FINDME
+TS_DENSITY=0.002
+TS_N_FUNCS=14
+TS_TALM_RTS_A=64m
+
+# Graph Coloring
+GC_NS="1000,5000"
+GC_PROBS="0.1 0.2 0.3 0.4 0.5"
+GC_SEED=42
 
 echo "============================================================"
-echo " RUNNING ALL BENCHMARKS"
-echo " Output: $OUTROOT"
+echo "  UNIFIED BENCHMARK RUNNER"
+echo "  Output: $OUTROOT"
+echo "  P: $PS_CSV   reps: $REPS"
 echo "============================================================"
 
-# ── 1. Merge Sort ────────────────────────────────────────────
+T0=$(date +%s)
+
+# ============================================================
+# 1. N-QUEENS
+# ============================================================
 echo ""
 echo "############################################################"
-echo "# 1/7  MERGE SORT"
+echo "#  1/4  N-QUEENS"
 echo "############################################################"
+NQ_OUT="$OUTROOT/nqueens"
+NS="$NQ_NS" PS="$PS_SPACE" REPS="$REPS" \
+  bash "$REPO/scripts/nqueens/run_validated.sh" "$NQ_OUT"
+
+echo ""
+echo "[OK] N-Queens complete -> $NQ_OUT/metrics.csv"
+
+# ============================================================
+# 2. MERGESORT
+# ============================================================
+echo ""
+echo "############################################################"
+echo "#  2/4  MERGESORT"
+echo "############################################################"
+MS_OUT="$OUTROOT/mergesort"
+MS_LEAF=array DF_LIST_BUILTIN=1 SUPERS_FORCE_PAR=1 MS_NPARTS=64 \
+PY3="$PY3" \
 bash "$REPO/scripts/merge_sort_TALM_vs_Haskell/run_compare.sh" \
-  --start-N 50000 --step 50000 --n-max 1000000 \
-  --reps 10 --procs "1,2,4,8" \
-  --interp "$INTERP" --asm-root "$ASM_ROOT" --codegen "$CODEGEN" \
-  --outroot "$OUTROOT/mergesort" --tag ms
+  --start-N "$MS_START_N" --step "$MS_STEP" --n-max "$MS_N_MAX" \
+  --reps "$REPS" --procs "$PS_CSV" \
+  --interp "$INTERP" --asm-root "$ASM_ROOT" --codegen "$REPO" \
+  --outroot "$MS_OUT" --tag "ms"
 
-# ── 2. Matrix Multiply ──────────────────────────────────────
+echo ""
+echo "[OK] MergeSort complete -> $MS_OUT/"
+
+# ============================================================
+# 3. TEXT SEARCH
+# ============================================================
 echo ""
 echo "############################################################"
-echo "# 2/7  MATRIX MULTIPLY"
+echo "#  3/4  TEXT SEARCH"
 echo "############################################################"
-bash "$REPO/scripts/matmul/run_compare.sh" \
-  --N "50,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800,850,900,950,1000" \
-  --reps 10 --procs "1,2,4,8" \
-  --interp "$INTERP" --asm-root "$ASM_ROOT" --codegen "$CODEGEN" \
-  --outroot "$OUTROOT/matmul" --tag matmul
+TS_OUT="$OUTROOT/textsearch"
+N_FILES="$TS_N_FILES" FILE_SIZE="$TS_FILE_SIZE" \
+KEYWORD="$TS_KEYWORD" DENSITY="$TS_DENSITY" N_FUNCS="$TS_N_FUNCS" \
+TALM_RTS_A="$TS_TALM_RTS_A" \
+PS="$PS_SPACE" REPS="$REPS" \
+  bash "$REPO/scripts/textsearch/run_validated.sh" "$TS_OUT"
 
-# ── 3. Fibonacci ────────────────────────────────────────────
+echo ""
+echo "[OK] Text Search complete -> $TS_OUT/metrics.csv"
+
+# ============================================================
+# 4. GRAPH COLORING (loop over edge probs)
+# ============================================================
 echo ""
 echo "############################################################"
-echo "# 3/7  FIBONACCI"
+echo "#  4/4  GRAPH COLORING"
 echo "############################################################"
-bash "$REPO/scripts/fibonacci/run_compare.sh" \
-  --N "35" --cutoff "15,20,25,30" \
-  --reps 3 --procs "1,2,4,8" \
-  --interp "$INTERP" --asm-root "$ASM_ROOT" --codegen "$CODEGEN" \
-  --outroot "$OUTROOT/fibonacci" --tag fib
+for PROB in $GC_PROBS; do
+  PROB_TAG="prob_$(echo "$PROB" | tr '.' '_')"
+  GC_OUT="$OUTROOT/graph_coloring/$PROB_TAG"
+  echo ""
+  echo "--- Graph Coloring: edge_prob=$PROB ---"
+  PY3="$PY3" \
+  bash "$REPO/scripts/graph_coloring/run_compare.sh" \
+    --N "$GC_NS" --reps "$REPS" --procs "$PS_CSV" \
+    --edge-prob "$PROB" --seed "$GC_SEED" \
+    --interp "$INTERP" --asm-root "$ASM_ROOT" --codegen "$REPO" \
+    --outroot "$GC_OUT" --tag "gc_${PROB_TAG}"
+done
 
-# ── 4. Dyck N/Imbalance Sweep ───────────────────────────────
 echo ""
-echo "############################################################"
-echo "# 4/7  DYCK SEQUENCE (N × imbalance sweep)"
-echo "############################################################"
-bash "$REPO/scripts/dyck/run_compare.sh" \
-  --N "50000,100000,150000,200000,250000,300000,350000,400000,450000,500000,550000,600000,650000,700000,750000,800000,850000,900000,950000,1000000" \
-  --reps 3 --procs "1,2,4,8" \
-  --imb "0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100" \
-  --delta "0" \
-  --interp "$INTERP" --asm-root "$ASM_ROOT" --codegen "$CODEGEN" \
-  --outroot "$OUTROOT/dyck_N_IMB_sweep" --tag dyck
+echo "[OK] Graph Coloring complete -> $OUTROOT/graph_coloring/"
 
-# ── 5. Graph Coloring ───────────────────────────────────────
-echo ""
-echo "############################################################"
-echo "# 5/7  GRAPH COLORING"
-echo "############################################################"
-bash "$REPO/scripts/graph_coloring/run_compare.sh" \
-  --N "50,100,150,200,250,300,350,400,450,500,550,600,650,700,750,800,850,900,950,1000" \
-  --reps 3 --procs "1,2,4,8" \
-  --edge-prob 0.01 --seed 42 \
-  --interp "$INTERP" --asm-root "$ASM_ROOT" --codegen "$CODEGEN" \
-  --outroot "$OUTROOT/graph_coloring" --tag gc
-
-# ── 6. N-Queens ─────────────────────────────────────────────
-echo ""
-echo "############################################################"
-echo "# 6/7  N-QUEENS (validated)"
-echo "############################################################"
-NS="8 9 10 11 12 13 14 15" PS="1 2 4 8 12 16 20 24" REPS=3 \
-  bash "$REPO/scripts/nqueens/run_validated.sh" "$OUTROOT/nqueens"
-
-# ── 7. Text Search ──────────────────────────────────────────
-echo ""
-echo "############################################################"
-echo "# 7/7  TEXT SEARCH (validated)"
-echo "############################################################"
-N_FILES=50 FILE_SIZE=5000000 N_FUNCS=12 \
-  PS="1 2 4 8 12 16 24" REPS=3 \
-  bash "$REPO/scripts/textsearch/run_validated.sh" "$OUTROOT/textsearch"
+# ============================================================
+# Summary
+# ============================================================
+T1=$(date +%s)
+ELAPSED=$(( T1 - T0 ))
+HOURS=$(( ELAPSED / 3600 ))
+MINS=$(( (ELAPSED % 3600) / 60 ))
+SECS=$(( ELAPSED % 60 ))
 
 echo ""
 echo "============================================================"
-echo " ALL BENCHMARKS COMPLETE"
-echo " Results: $OUTROOT"
+echo "  ALL BENCHMARKS COMPLETE"
+echo "  Total time: ${HOURS}h ${MINS}m ${SECS}s"
+echo ""
+echo "  Results:"
+echo "    N-Queens:       $NQ_OUT/metrics.csv"
+echo "    MergeSort:      $MS_OUT/"
+echo "    Text Search:    $TS_OUT/metrics.csv"
+echo "    Graph Coloring: $OUTROOT/graph_coloring/"
 echo "============================================================"
