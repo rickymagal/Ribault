@@ -150,29 +150,168 @@ Each CSV contains one row per (variant, parameter combination, P, repetition). T
 
 ## Running Individual Benchmarks
 
-Each benchmark can also be run independently:
+Each benchmark can be run independently with full control over its parameters.
+
+### N-Queens
 
 ```bash
-# N-Queens
-NS="8 10 12" PS="1 2 4 8" REPS=3 bash scripts/nqueens/run_validated.sh ./my_output
+NS="8 10 12" PS="1 2 4 8" REPS=3 \
+  bash scripts/nqueens/run_validated.sh ./results/nqueens
+```
 
-# Text Search
-N_FILES=50 FILE_SIZE=10000000 PS="1 2 4 8" REPS=3 \
-  bash scripts/textsearch/run_validated.sh ./my_output
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `NS` | Board sizes (space-separated) | `"8 10 12 14 16"` |
+| `PS` | Number of processors (space-separated) | `"1 2 4 8 12 16 20"` |
+| `REPS` | Repetitions per configuration | `3` |
 
-# MergeSort
+The cutoff is computed automatically per (N, P) pair using `ceil(log(OVERSUB * P) / log(N))` with OVERSUB=4. Results are validated against known solution counts.
+
+```bash
+# Only large boards, many cores
+NS="14 15 16" PS="4 8 12 16 20" REPS=5 \
+  bash scripts/nqueens/run_validated.sh ./results/nqueens_large
+
+# Quick smoke test
+NS="8" PS="1 2" REPS=1 \
+  bash scripts/nqueens/run_validated.sh /tmp/nq_smoke
+```
+
+### MergeSort
+
+```bash
 bash scripts/merge_sort_TALM_vs_Haskell/run_compare.sh \
   --start-N 500000 --step 500000 --n-max 5000000 \
   --reps 3 --procs "1,2,4,8" \
   --interp TALM/interp/interp --asm-root TALM/asm --codegen . \
-  --outroot ./my_output --tag "ms"
+  --outroot ./results/mergesort --tag "ms"
+```
 
-# Graph Coloring
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--start-N` | Smallest array size | `500000` |
+| `--step` | Increment between sizes | `500000` |
+| `--n-max` | Largest array size | `15000000` |
+| `--reps` | Repetitions per configuration | `3` |
+| `--procs` | Processors (comma-separated) | `"1,2,4,8,12,16,20"` |
+| `--interp` | Path to TALM interpreter | `TALM/interp/interp` |
+| `--asm-root` | Path to TALM assembler dir | `TALM/asm` |
+| `--codegen` | Path to repo root (contains `codegen`) | `.` |
+| `--outroot` | Output directory | `./results/mergesort` |
+| `--tag` | Tag for CSV filenames | `"ms"` |
+
+Environment variables for TALM configuration:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MS_LEAF` | Leaf implementation (`array` or `asm`) | `array` |
+| `MS_NPARTS` | Number of parallel partitions | `64` |
+| `DF_LIST_BUILTIN` | Use builtin list operations | `1` |
+| `SUPERS_FORCE_PAR` | Force parallel superinstructions | `1` |
+| `SKIP_TALM` | Skip TALM runs (reuse CSV) | `0` |
+| `SKIP_GHC` | Skip GHC Strategies runs | `0` |
+| `SKIP_PARPSEQ` | Skip GHC par/pseq runs | `0` |
+
+```bash
+# Large arrays, many cores
+MS_LEAF=array DF_LIST_BUILTIN=1 SUPERS_FORCE_PAR=1 MS_NPARTS=64 \
+bash scripts/merge_sort_TALM_vs_Haskell/run_compare.sh \
+  --start-N 1000000 --step 1000000 --n-max 20000000 \
+  --reps 5 --procs "1,2,4,8,12,16,20,24" \
+  --interp TALM/interp/interp --asm-root TALM/asm --codegen . \
+  --outroot ./results/ms_heavy --tag "ms"
+
+# Only GHC (skip TALM)
+SKIP_TALM=1 \
+bash scripts/merge_sort_TALM_vs_Haskell/run_compare.sh \
+  --start-N 500000 --step 500000 --n-max 5000000 \
+  --reps 3 --procs "1,2,4,8" \
+  --interp TALM/interp/interp --asm-root TALM/asm --codegen . \
+  --outroot ./results/ms_ghc_only --tag "ms"
+```
+
+### Text Search
+
+```bash
+N_FILES=50 FILE_SIZE=10000000 PS="1 2 4 8 12 16 20" REPS=3 \
+  bash scripts/textsearch/run_validated.sh ./results/textsearch
+```
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `N_FILES` | Number of corpus files | `50` |
+| `FILE_SIZE` | Size of each file in bytes | `10000000` (10 MB) |
+| `KEYWORD` | Keyword to search for | `"FINDME"` |
+| `DENSITY` | Keyword insertion density | `0.002` |
+| `N_FUNCS` | Number of parallel range tasks | `14` |
+| `PS` | Number of processors (space-separated) | `"1 2 4 8 12 16 20"` |
+| `REPS` | Repetitions per configuration | `3` |
+| `TALM_RTS_A` | GHC RTS allocation area for TALM supers | `64m` |
+
+```bash
+# 20 MB files
+N_FILES=50 FILE_SIZE=20000000 PS="1 2 4 8 12 16 20" REPS=3 \
+  bash scripts/textsearch/run_validated.sh ./results/ts_20mb
+
+# Many small files
+N_FILES=200 FILE_SIZE=50000 PS="1 2 4 8" REPS=3 \
+  bash scripts/textsearch/run_validated.sh ./results/ts_many_small
+
+# Quick smoke test
+N_FILES=5 FILE_SIZE=1000 PS="1 2" REPS=1 \
+  bash scripts/textsearch/run_validated.sh /tmp/ts_smoke
+```
+
+### Graph Coloring
+
+```bash
 bash scripts/graph_coloring/run_compare.sh \
-  --N "1000,5000" --reps 3 --procs "1,2,4,8" \
+  --N "1000,5000" --reps 3 --procs "1,2,4,8,12,16,20" \
   --edge-prob 0.1 --seed 42 \
   --interp TALM/interp/interp --asm-root TALM/asm --codegen . \
-  --outroot ./my_output --tag "gc"
+  --outroot ./results/gc_prob01 --tag "gc"
+```
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--N` | Graph sizes (comma-separated) | `"1000,5000"` |
+| `--reps` | Repetitions per configuration | `3` |
+| `--procs` | Processors (comma-separated) | `"1,2,4,8,12,16,20"` |
+| `--edge-prob` | Edge probability (graph density) | `0.1` |
+| `--seed` | Random seed for graph generation | `42` |
+| `--interp` | Path to TALM interpreter | `TALM/interp/interp` |
+| `--asm-root` | Path to TALM assembler dir | `TALM/asm` |
+| `--codegen` | Path to repo root | `.` |
+| `--outroot` | Output directory | `./results/gc` |
+| `--tag` | Tag for CSV filenames | `"gc"` |
+
+Environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SKIP_SUPER` | Skip TALM runs | `0` |
+| `SKIP_GHC` | Skip GHC Strategies runs | `0` |
+| `SKIP_PARPSEQ` | Skip GHC par/pseq runs | `0` |
+
+Note: `--edge-prob` takes a single value. To sweep over multiple probabilities, run the script multiple times:
+
+```bash
+# Sweep over edge probabilities
+for prob in 0.01 0.05 0.1 0.2 0.5; do
+  tag="gc_p$(echo $prob | tr '.' '_')"
+  bash scripts/graph_coloring/run_compare.sh \
+    --N "1000,5000,10000" --reps 3 --procs "1,2,4,8,12,16,20" \
+    --edge-prob "$prob" --seed 42 \
+    --interp TALM/interp/interp --asm-root TALM/asm --codegen . \
+    --outroot "./results/gc/$tag" --tag "$tag"
+done
+
+# Dense graphs, large N
+bash scripts/graph_coloring/run_compare.sh \
+  --N "5000,10000" --reps 5 --procs "1,2,4,8,16,20" \
+  --edge-prob 0.5 --seed 42 \
+  --interp TALM/interp/interp --asm-root TALM/asm --codegen . \
+  --outroot ./results/gc_dense --tag "gc_dense"
 ```
 
 ## Notes
