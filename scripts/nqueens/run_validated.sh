@@ -51,12 +51,14 @@ if [[ -z "$SUPERS_CFLAGS" ]]; then
 fi
 
 # Compute cutoff
+# NOTE: cutoff capped at 1 to avoid a known race condition in the
+# interpreter that produces incorrect results for N>=16 with cutoff>=2.
 compute_cutoff() {
   "$PY3" -c "
 import math
 N, P, K = $1, $2, $OVERSUB
-target = K * max(P, 1)
-print(max(1, math.ceil(math.log(target) / math.log(N)))) if N > 1 else print(1)
+raw = max(1, math.ceil(math.log(K * max(P, 1)) / math.log(N))) if N > 1 else 1
+print(min(raw, 1))
 "
 }
 
