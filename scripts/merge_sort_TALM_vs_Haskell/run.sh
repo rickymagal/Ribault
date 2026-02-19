@@ -677,9 +677,9 @@ for N in $(seq "$START_N" "$STEP" "$N_MAX"); do
     # Round-robin PLA rewrite: the autoplacer puts ~220/279 instructions
     # on PE0, creating a serial bottleneck.  Redistribute evenly.
     if [[ "${MS_PLA_RR:-0}" -eq 1 && "$P" -gt 1 ]]; then
-      local rr_pla="${PREFIX}_rr.pla"
-      awk -v P="$P" 'NR==1{print; next} {print (NR-2)%P}' "$PLA_USED" > "$rr_pla"
-      PLA_USED="$rr_pla"
+      RR_PLA="${PREFIX}_rr.pla"
+      awk -v P="$P" 'NR==1{print; next} {print (NR-2)%P}' "$PLA_USED" > "$RR_PLA"
+      PLA_USED="$RR_PLA"
       echo "[pla ] rewrote placement -> round-robin (P=${P})"
     fi
 
