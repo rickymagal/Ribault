@@ -81,7 +81,7 @@ echo "############################################################"
 echo "#  2/4  MERGESORT"
 echo "############################################################"
 MS_OUT="$OUTROOT/mergesort"
-MS_LEAF=array DF_LIST_BUILTIN=1 SUPERS_FORCE_PAR=1 MS_NPARTS=64 \
+MS_LEAF=array DF_LIST_BUILTIN=1 SUPERS_FORCE_PAR=1 \
 PY3="$PY3" \
 bash "$REPO/scripts/merge_sort_TALM_vs_Haskell/run_compare.sh" \
   --start-N "$MS_START_N" --step "$MS_STEP" --n-max "$MS_N_MAX" \

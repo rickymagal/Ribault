@@ -1216,12 +1216,12 @@ void * pe_main(void *args) {
 				}
 				steal_spins++;
 				if (sched_prof) { idle_iters++; }
-				/* Backoff: pause briefly then usleep to free L3/bandwidth */
-				if (steal_spins < 4) {
-					for (int b = 0; b < (1 << steal_spins); b++)
+				/* Backoff: spin-pause then yield to free L3/bandwidth */
+				if (steal_spins < 64) {
+					for (int b = 0; b < (1 << (steal_spins > 6 ? 6 : steal_spins)); b++)
 						__builtin_ia32_pause();
 				} else {
-					usleep(50); /* 50μs sleep frees cache/bandwidth */
+					usleep(10); /* 10μs sleep frees cache/bandwidth */
 				}
 				/* Initiate termination detection if not already idle */
 				if (!HAS_ELEMENTS(commq) && !attr->isidle) {

@@ -77,7 +77,7 @@ class IntIns:
                 # Accept leading-zero literals like "05" (Python 3 rejects them in eval).
                 if isinstance(tk, (int, float)):
                         return int(tk)
-                if isinstance(tk, str) and re.fullmatch(r"0[0-9]+", tk):
+                if isinstance(tk, str) and re.match(r"^0[0-9]+$", tk):
                         return int(tk, 10)
                 #return int(tk, 0)
                 return int(eval(tk))

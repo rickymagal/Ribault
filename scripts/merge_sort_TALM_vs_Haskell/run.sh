@@ -378,11 +378,21 @@ PY
       cutoff=$(( ((cutoff + ROUND_Q - 1) / ROUND_Q) * ROUND_Q ))
     fi
   fi
-  local nparts_arg=""
-  if [[ "$MS_NPARTS" -gt 0 ]]; then
-    nparts_arg="--nparts $MS_NPARTS"
+  # Compute nparts: scale with P but ensure leaves are large enough
+  local nparts="$MS_NPARTS"
+  if [[ "$nparts" -le 0 ]]; then
+    # Dynamic: P * oversub, but ensure each leaf >= 50000 elements
+    local min_grain=50000
+    nparts=$(( P * 8 ))
+    [[ "$nparts" -lt 4 ]] && nparts=4
+    # Reduce nparts if leaves would be too small
+    while [[ "$nparts" -gt "$P" && $(( N / nparts )) -lt "$min_grain" ]]; do
+      nparts=$(( nparts / 2 ))
+    done
+    [[ "$nparts" -lt 1 ]] && nparts=1
   fi
-  echo "[gen ] generating HSK (N=${N}, P=${P}, nparts=${MS_NPARTS:-auto})"
+  local nparts_arg="--nparts $nparts"
+  echo "[gen ] generating HSK (N=${N}, P=${P}, nparts=${nparts})"
   "$PY3" "$GEN_PY" --out "$out_hsk" --N "$N" --P "$P" --vec "$VEC_MODE" --cutoff "$cutoff" --mode "$mode" $nparts_arg
 }
 
