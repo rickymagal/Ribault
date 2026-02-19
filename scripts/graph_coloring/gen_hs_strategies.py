@@ -73,9 +73,6 @@ colorChunk (!start, !count) =
       nColored = length coloring
   in maxColor `seq` nColored `seq` (maxColor, nColored)
 
-instance NFData (Int, Int) where
-  rnf (!a, !b) = ()
-
 -- Partition N vertices into P chunks
 computeChunks :: Int -> Int -> [(Int, Int)]
 computeChunks n p =
