@@ -42,7 +42,7 @@ EDGE_PROB="0.001"; SEED="42"
 GEN_OVERRIDE=""
 VARIANT="ghc"
 GHC="${GHC:-ghc}"
-GHC_PKGS="${GHC_PKGS:--hide-package containers-0.6.7 -package time -package deepseq -package parallel}"
+GHC_PKGS="${GHC_PKGS:--package containers -package time -package deepseq -package parallel}"
 PY3="${PY3:-python3}"
 
 usage(){
