@@ -108,9 +108,6 @@ void s5(int64_t *in, int64_t *out) {
     }
     while (i < lsize) merged[k++] = lptr[i++];
     while (j < rsize) merged[k++] = rptr[j++];
-    /* Free input arrays (arr_alloc'd: raw pointer is ptr-1) */
-    free(lptr - 1);
-    free(rptr - 1);
     out[0] = (int64_t)merged;
 }
 

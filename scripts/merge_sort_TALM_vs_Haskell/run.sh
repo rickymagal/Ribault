@@ -378,15 +378,18 @@ PY
       cutoff=$(( ((cutoff + ROUND_Q - 1) / ROUND_Q) * ROUND_Q ))
     fi
   fi
-  # Compute nparts: scale with P but ensure leaves are large enough
+  # Compute nparts: must balance parallelism vs DF graph overhead.
+  # The DF graph uses recursive dataflow — all control-flow instructions
+  # live on PE0 (autoplacer).  With nparts=K, PE0 handles ~K*6 dynamic
+  # instruction firings.  Too many → PE0 becomes the serial bottleneck.
+  # Sweet spot: 2–4 leaves per core, capped at 64 to limit DF overhead.
   local nparts="$MS_NPARTS"
   if [[ "$nparts" -le 0 ]]; then
-    # Dynamic: P * oversub, but ensure each leaf >= 50000 elements
-    local min_grain=50000
-    nparts=$(( P * 8 ))
+    nparts=$(( P * 4 ))
     [[ "$nparts" -lt 4 ]] && nparts=4
-    # Reduce nparts if leaves would be too small
-    while [[ "$nparts" -gt "$P" && $(( N / nparts )) -lt "$min_grain" ]]; do
+    [[ "$nparts" -gt 64 ]] && nparts=64
+    # Reduce if leaves would be too small (< 50K elements)
+    while [[ "$nparts" -gt "$P" && $(( N / nparts )) -lt 50000 ]]; do
       nparts=$(( nparts / 2 ))
     done
     [[ "$nparts" -lt 1 ]] && nparts=1
