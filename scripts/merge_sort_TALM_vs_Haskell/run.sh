@@ -386,7 +386,7 @@ PY
   local nparts="$MS_NPARTS"
   if [[ "$nparts" -le 0 ]]; then
     nparts=$(( P * 4 ))
-    [[ "$nparts" -lt 4 ]] && nparts=4
+    [[ "$nparts" -lt 8 ]] && nparts=8
     [[ "$nparts" -gt 64 ]] && nparts=64
     # Reduce if leaves would be too small (< 50K elements)
     while [[ "$nparts" -gt "$P" && $(( N / nparts )) -lt 50000 ]]; do
