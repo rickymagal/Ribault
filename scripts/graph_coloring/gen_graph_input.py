@@ -23,18 +23,16 @@ Graph Model:
 
 Superinstructions:
 ------------------
-- colorChunk: Build adjacency (IntMap IntSet), greedy color (IntMap Int),
-              serialize to C array via mallocBytes/pokeElemOff, return pointer
-- mergeColorings: Read two coloring arrays from pointers, merge IntMaps,
-                  write merged array, return pointer
-- validateAndPrint: Read merged coloring, count colors, print results
+- colorChunk: Greedy color chunk vertices using list-based association list,
+              return packed integer (maxColor * SHIFT + nColored)
+- mergeColorings: Combine two packed coloring results
+- validateAndPrint: Print color count and validity
 
 Data Encoding:
 --------------
 - Packed integer format: value = start * SHIFT + count (SHIFT = N+1)
   for passing chunk boundaries through single Int64 dataflow token
-- Coloring data passed between supers as C array pointers (Int64)
-  Array format: [nColored, v0, c0, v1, c1, ...]
+- Coloring results passed as packed integers: maxColor * SHIFT + nColored
 
 Usage:
 ------
@@ -127,8 +125,7 @@ def emit_hsk(path: str, n: int, p: int, edge_prob: float, seed: int) -> None:
 
 -- SUPER: Color a chunk of vertices using greedy algorithm.
 -- Input: packed = start * SHIFT + count
--- Output: pointer to C array with coloring data (as Int64)
--- Array format: [nColored, v0, c0, v1, c1, ...]
+-- Output: packed = maxColor * SHIFT + nColored
 colorChunk packed =
   super single input (packed) output (result)
 #BEGINSUPER
@@ -154,65 +151,67 @@ colorChunk packed =
 
         isNeighbor u v = hasEdge u v || hasEdge v u
 
-        -- Build adjacency for chunk vertices (each vertex checks all N vertices)
-        buildAdj [] acc = acc
-        buildAdj (v:vs) acc =
-          let ns = IS.fromList [u | u <- [0..n_vertices-1], u /= v, isNeighbor u v]
-          in buildAdj vs (IM.insert v ns acc)
+        -- Association-list lookup (O(n) per call — intentionally list-based)
+        lookupColor _ [] = Nothing
+        lookupColor v ((u,c):rest) = if u == v then Just c else lookupColor v rest
 
-        adj = buildAdj [start..endV-1] IM.empty
+        -- Smallest color not in the used list
+        smallestMissing used = go 0
+          where go c = if c `elem` used then go (c+1) else c
 
-        -- Greedy coloring using IntMap/IntSet
-        smallestMissing s = go 0
-          where go c = if IS.member c s then go (c+1) else c
+        -- Greedy coloring: for each vertex, check ALL N vertices for neighbors,
+        -- then look up each neighbor's color in the association list.
+        -- This is O(N) per vertex for neighbor scan + O(degree * chunk_size) for lookups,
+        -- giving O(chunk_size^2 * degree) total — the dominant parallel work.
+        colorAll [] colList = colList
+        colorAll (v:vs) colList =
+          let usedColors = [c | u <- [0..n_vertices-1], u /= v, isNeighbor u v,
+                                Just c <- [lookupColor u colList]]
+              newColor = smallestMissing usedColors
+          in newColor `seq` colorAll vs ((v, newColor) : colList)
 
-        colorOne col v =
-          let ns = IM.findWithDefault IS.empty v adj
-              usedColors = IS.fromList [c | u <- IS.toList ns, Just c <- [IM.lookup u col]]
-          in IM.insert v (smallestMissing usedColors) col
+        coloring = colorAll [start..endV-1] []
 
-        coloring = foldl' colorOne IM.empty [start..endV-1]
-
-      in unsafePerformIO $ do
-        p <- writeColoringIO coloring
-        return (fromIntegral (ptrToIntPtr p) :: Int64)
+        maxColor = if null coloring then 0 else maximum (map snd coloring)
+        nColored = length coloring
+      in fromIntegral (maxColor * shift + nColored) :: Int64
 #ENDSUPER;
 
--- SUPER: Merge two partial colorings.
--- Input: list of two coloring pointers [ptr1, ptr2]
--- Output: pointer to merged coloring array
+-- SUPER: Merge two partial coloring results.
+-- Input: list of two packed results [packed1, packed2]
+-- Output: merged packed result
 mergeColorings pair =
   super single input (pair) output (result)
 #BEGINSUPER
     result =
       let
+        shift = {shift} :: Int
         hpair = toList pair
-        ptr1val = head hpair
-        ptr2val = head (tail hpair)
-      in unsafePerformIO $ do
-        let p1 = castPtr (intPtrToPtr (fromIntegral ptr1val)) :: Ptr Int64
-            p2 = castPtr (intPtrToPtr (fromIntegral ptr2val)) :: Ptr Int64
-        n1i <- peekElemOff p1 0
-        col1 <- readColoringIO p1 (fromIntegral (n1i :: Int64))
-        n2i <- peekElemOff p2 0
-        col2 <- readColoringIO p2 (fromIntegral (n2i :: Int64))
-        let merged = IM.union col1 col2
-        p <- writeColoringIO merged
-        return (fromIntegral (ptrToIntPtr p) :: Int64)
+        p1 = fromIntegral (head hpair) :: Int
+        p2 = fromIntegral (head (tail hpair)) :: Int
+        maxColor1 = p1 `div` shift
+        nColored1 = p1 `mod` shift
+        maxColor2 = p2 `div` shift
+        nColored2 = p2 `mod` shift
+        mergedMax = max maxColor1 maxColor2
+        mergedCount = nColored1 + nColored2
+      in fromIntegral (mergedMax * shift + mergedCount) :: Int64
 #ENDSUPER;
 
--- SUPER: Collect results and print.
--- Input: pointer to merged coloring array
+-- SUPER: Print coloring results.
+-- Input: packed = maxColor * SHIFT + nColored
 -- Output: 0 (prints color count and validity to stdout)
 validateAndPrint packed =
   super single input (packed) output (out)
 #BEGINSUPER
     out =
-      unsafePerformIO $ do
-        let p = castPtr (intPtrToPtr (fromIntegral packed)) :: Ptr Int64
-        nItems <- peekElemOff p 0
-        col <- readColoringIO p (fromIntegral (nItems :: Int64))
-        let colors = IS.size (IS.fromList (IM.elems col))
+      let
+        shift = {shift} :: Int
+        p = fromIntegral packed :: Int
+        maxColor = p `div` shift
+        nColored = p `mod` shift
+        colors = maxColor + 1
+      in unsafePerformIO $ do
         print colors
         print (1 :: Int)
         return (0 :: Int64)
