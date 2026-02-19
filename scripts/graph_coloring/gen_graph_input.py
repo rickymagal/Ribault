@@ -197,8 +197,6 @@ mergeColorings pair =
         col1 <- readColoringIO p1 (fromIntegral (n1i :: Int64))
         n2i <- peekElemOff p2 0
         col2 <- readColoringIO p2 (fromIntegral (n2i :: Int64))
-        free p1
-        free p2
         let merged = IM.union col1 col2
         p <- writeColoringIO merged
         return (fromIntegral (ptrToIntPtr p) :: Int64)
@@ -269,7 +267,6 @@ validateAndPrint packed =
         let p = castPtr (intPtrToPtr (fromIntegral packed)) :: Ptr Int64
         nItems <- peekElemOff p 0
         col <- readColoringIO p (fromIntegral (nItems :: Int64))
-        free p
         let resolved = resolveConflicts col
             valid = validateColoring resolved
             colors = countColors resolved
