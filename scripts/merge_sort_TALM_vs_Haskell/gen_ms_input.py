@@ -401,6 +401,93 @@ main = verify_sorted (msort (init_super [__N__]) __N__ __NPARTS__);
 """
 
 
+def gen_unrolled_array_hsk(n: int, p: int, nparts: int) -> str:
+    """Generate HSK with the merge-sort tree fully unrolled (no recursion).
+
+    Instead of a recursive msort function, we emit explicit sort_leaf calls
+    for each partition and merge_pair calls for the merge tree.  This produces
+    one static DF instruction per call, allowing the autoplacer to distribute
+    heavy supers across PEs and eliminating the PE0 serial bottleneck caused
+    by recursive DF control-flow."""
+
+    # --- compute leaf partitions (mirrors recursive halving) ---
+    def partitions(offset: int, size: int, k: int):
+        """Yield (byte_offset, elem_count) for each leaf."""
+        if k <= 1:
+            yield (offset, size)
+            return
+        lsize = size // 2
+        rsize = size - lsize
+        yield from partitions(offset, lsize, k // 2)
+        yield from partitions(offset + lsize * 8, rsize, k - k // 2)
+
+    parts = list(partitions(0, n, nparts))
+
+    lines = [
+        "-- Array-based parallel merge sort – UNROLLED (no recursion).",
+        f"-- nparts={nparts}, N={n}, P={p}",
+        "",
+        f"p = {p};",
+        "",
+        "init_super inp =",
+        "  super single input (inp) output (result)",
+        "#BEGINSUPER",
+        "    result = inp",
+        "#ENDSUPER;",
+        "",
+        "sort_leaf info =",
+        "  super single input (info) output (result)",
+        "#BEGINSUPER",
+        "    result = info",
+        "#ENDSUPER;",
+        "",
+        "merge_pair pair =",
+        "  super single input (pair) output (result)",
+        "#BEGINSUPER",
+        "    result = pair",
+        "#ENDSUPER;",
+        "",
+        "verify_sorted arr =",
+        "  super single input (arr) output (out)",
+        "#BEGINSUPER",
+        "    out = arr",
+        "#ENDSUPER;",
+        "",
+    ]
+
+    # Build let-bindings: base, leaves, merge tree
+    lines.append("main =")
+    lines.append(f"  let base = init_super [{n}]")
+
+    # Leaf sort_leaf calls
+    leaf_names = []
+    for i, (off, sz) in enumerate(parts):
+        name = f"s{i}"
+        leaf_names.append(name)
+        if off == 0:
+            lines.append(f"      {name} = sort_leaf (base : {sz} : [])")
+        else:
+            lines.append(f"      {name} = sort_leaf (base + {off} : {sz} : [])")
+
+    # Merge tree (bottom-up)
+    level = leaf_names
+    merge_id = 0
+    while len(level) > 1:
+        next_level = []
+        for i in range(0, len(level), 2):
+            if i + 1 < len(level):
+                name = f"m{merge_id}"
+                merge_id += 1
+                lines.append(f"      {name} = merge_pair ({level[i]} : {level[i+1]} : [])")
+                next_level.append(name)
+            else:
+                next_level.append(level[i])
+        level = next_level
+
+    lines.append(f"  in verify_sorted {level[0]};")
+    return "\n".join(lines) + "\n"
+
+
 def compute_nparts(n: int, p: int, min_grain: int = 50000, fixed: int = 0) -> int:
     """Compute nparts for array-based merge sort.
     If fixed > 0, use that value directly (ensures consistent work across P values).
@@ -439,11 +526,14 @@ def emit_hsk(path: str, n: int, p: int, cutoff: int, vec_kind: str, mode: str, f
         src = SEQ_TMPL.replace("__VEC__", vec)
     elif mode == "array":
         nparts = compute_nparts(n, p, fixed=fixed_nparts)
-        src = (
-            ARRAY_SUPER_TMPL.replace("__P__", str(p))
-            .replace("__N__", str(n))
-            .replace("__NPARTS__", str(nparts))
-        )
+        if os.getenv("MS_UNROLL", "0") not in ("0", ""):
+            src = gen_unrolled_array_hsk(n, p, nparts)
+        else:
+            src = (
+                ARRAY_SUPER_TMPL.replace("__P__", str(p))
+                .replace("__N__", str(n))
+                .replace("__NPARTS__", str(nparts))
+            )
     elif mode == "coarse":
         depth = compute_depth(n, cutoff)
         super_par = os.getenv("MS_SUPER_PAR", "0")
