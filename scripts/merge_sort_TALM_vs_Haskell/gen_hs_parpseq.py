@@ -1,104 +1,127 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generate par/pseq Merge Sort .hs (no Strategies, only Control.Parallel)."""
+"""Generate par/pseq Merge Sort .hs using STUArray (array-based)."""
 
-import argparse, os, random
+import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: parallel Merge Sort (par/pseq, NO Strategies)
+HS_TMPL = r"""-- Auto-generated: parallel Merge Sort (par/pseq, Array-based)
 {-# LANGUAGE BangPatterns #-}
+module Main where
+
 import Control.Parallel (par, pseq)
-import Control.DeepSeq
+import Control.DeepSeq (force, NFData(..))
+import Control.Monad.ST (ST, runST)
+import Data.Array.ST (STUArray, newArray_, readArray, writeArray, runSTUArray)
+import Data.Array.Unboxed (UArray, listArray, elems, bounds, (!))
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 
--- split em duas metades
-split2 :: [Int] -> ([Int],[Int])
-split2 []         = ([],[])
-split2 [x]        = ([x],[])
-split2 (x:y:zs)   = let (xs,ys) = split2 zs in (x:xs, y:ys)
+instance NFData (UArray Int Int) where
+  rnf a = a `seq` ()
 
--- merge (estável)
-merge :: [Int] -> [Int] -> [Int]
-merge xs [] = xs
-merge [] ys = ys
-merge (x:xs) (y:ys)
-  | x <= y    = x : merge xs (y:ys)
-  | otherwise = y : merge (x:xs) ys
+-- In-place mergesort on STUArray, returns UArray
+sortLeaf :: UArray Int Int -> Int -> Int -> UArray Int Int
+sortLeaf src lo len = runSTUArray $ do
+  arr <- newArray_ (0, len-1) :: ST s (STUArray s Int Int)
+  tmp <- newArray_ (0, len-1) :: ST s (STUArray s Int Int)
+  -- copy slice
+  let copyIn i | i >= len  = return ()
+               | otherwise = do writeArray arr i (src ! (lo + i)); copyIn (i+1)
+  copyIn 0
+  msortRec arr tmp 0 len
+  return arr
 
--- sequential mergesort (below cutoff)
-msortSeq :: [Int] -> [Int]
-msortSeq []  = []
-msortSeq [x] = [x]
-msortSeq xs  =
-  let (a,b) = split2 xs
-  in merge (msortSeq a) (msortSeq b)
+msortRec :: STUArray s Int Int -> STUArray s Int Int -> Int -> Int -> ST s ()
+msortRec arr tmp lo hi
+  | hi - lo <= 1 = return ()
+  | otherwise = do
+      let mid = lo + (hi - lo) `div` 2
+      msortRec arr tmp lo mid
+      msortRec arr tmp mid hi
+      mergeImpl arr tmp lo mid hi
 
--- mergesort com par/pseq (sparks only above cutoff)
-msort :: [Int] -> [Int]
-msort xs = msortGo (length xs) xs
+mergeImpl :: STUArray s Int Int -> STUArray s Int Int -> Int -> Int -> Int -> ST s ()
+mergeImpl arr tmp lo mid hi = do
+  let go i j k
+        | i >= mid && j >= hi = return ()
+        | i >= mid  = do x <- readArray arr j; writeArray tmp k x; go i (j+1) (k+1)
+        | j >= hi   = do x <- readArray arr i; writeArray tmp k x; go (i+1) j (k+1)
+        | otherwise = do
+            a <- readArray arr i
+            b <- readArray arr j
+            if a <= b
+              then do writeArray tmp k a; go (i+1) j (k+1)
+              else do writeArray tmp k b; go i (j+1) (k+1)
+  go lo mid lo
+  -- copy back
+  let copy i | i >= hi   = return ()
+             | otherwise = do x <- readArray tmp i; writeArray arr i x; copy (i+1)
+  copy lo
 
-msortGo :: Int -> [Int] -> [Int]
-msortGo _ []  = []
-msortGo _ [x] = [x]
-msortGo n xs
-  | n <= __CUTOFF__  = msortSeq xs
+-- Merge two sorted UArrays into one
+mergePair :: UArray Int Int -> UArray Int Int -> UArray Int Int
+mergePair !left !right = runSTUArray $ do
+  let (_, lhi) = bounds left;  lsize = lhi + 1
+      (_, rhi) = bounds right; rsize = rhi + 1
+  merged <- newArray_ (0, lsize + rsize - 1) :: ST s (STUArray s Int Int)
+  let go i j k
+        | i >= lsize && j >= rsize = return ()
+        | i >= lsize = do writeArray merged k (right ! j); go i (j+1) (k+1)
+        | j >= rsize = do writeArray merged k (left ! i); go (i+1) j (k+1)
+        | otherwise  = do
+            let a = left ! i; b = right ! j
+            if a <= b
+              then do writeArray merged k a; go (i+1) j (k+1)
+              else do writeArray merged k b; go i (j+1) (k+1)
+  go 0 0 0
+  return merged
+
+-- Parallel mergesort with par/pseq
+msortGo :: Int -> UArray Int Int -> Int -> Int -> UArray Int Int
+msortGo cutoff src lo len
+  | len <= 1      = sortLeaf src lo len
+  | len <= cutoff = sortLeaf src lo len
   | otherwise =
-      let (a,b)  = split2 xs
-          halfA  = (n + 1) `div` 2
-          halfB  = n `div` 2
-          goA    = force (msortGo halfA a)
-          goB    = force (msortGo halfB b)
-      in goA `par` goB `pseq` merge goA goB
-
--- garante avaliação total
-forceList :: NFData a => [a] -> ()
-forceList xs = xs `deepseq` ()
-
--- entrada (gerada pelo script)
-xsInput :: [Int]
-xsInput = __VEC__
+      let mid    = len `div` 2
+          leftA  = msortGo cutoff src lo mid
+          rightA = msortGo cutoff src (lo + mid) (len - mid)
+          goA    = force leftA
+          goB    = force rightA
+      in goA `par` goB `pseq` mergePair goA goB
 
 main :: IO ()
 main = do
-  let !_ = length xsInput  -- force spine
+  let n = __N__
+      !v = listArray (0, n-1) [n, n-1 .. 1] :: UArray Int Int
   t0 <- getCurrentTime
-  let ys = msort xsInput
-  forceList ys `seq` return ()
+  let !ys = force (msortGo __CUTOFF__ v 0 n)
   t1 <- getCurrentTime
-  let secs = realToFrac (diffUTCTime t1 t0) :: Double
-  let sorted = and (zipWith (<=) ys (tail ys))
+  let secs    = realToFrac (diffUTCTime t1 t0) :: Double
+      (_, hi) = bounds ys
+      nout    = hi + 1
+      sorted  = nout <= 1 || and [ys ! i <= ys ! (i+1) | i <- [0..nout-2]]
   putStrLn $ "SORTED=" ++ show sorted
-  putStrLn $ "SORTED_HEAD=" ++ show (take 10 ys)
+  putStrLn $ "SORTED_HEAD=" ++ show [ys ! i | i <- [0..min 9 (nout-1)]]
+  putStrLn $ "N_OUT=" ++ show nout
   putStrLn $ "RUNTIME_SEC=" ++ show secs
 """
 
-def make_vec(n, kind):
-    if kind == "range":
-        return f"[{n}, {n-1} .. 1]"
-    elif kind == "rand":
-        rnd = random.Random(1337)
-        xs = [rnd.randint(0, n*2) for _ in range(n)]
-        return "[" + ",".join(map(str, xs)) + "]"
-    else:
-        raise SystemExit("vec precisa ser 'range' ou 'rand'")
-
-def emit_hs(path, n, vec_kind, cutoff=0):
+def emit_hs(path, n, cutoff=0):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if cutoff <= 0:
         cutoff = max(256, n // 64)
-    vec = make_vec(n, vec_kind)
-    src = HS_TMPL.replace("__VEC__", vec).replace("__CUTOFF__", str(cutoff))
+    src = HS_TMPL.replace("__N__", str(n)).replace("__CUTOFF__", str(cutoff))
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[hs_gen_parpseq] wrote {path} (N={n}, vec={vec_kind}, cutoff={cutoff})")
+    print(f"[hs_gen_parpseq] wrote {path} (N={n}, cutoff={cutoff})")
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--N", type=int, required=True)
-    ap.add_argument("--vec", default="range", choices=["range","rand"])
+    ap.add_argument("--vec", default="range", choices=["range", "rand"])
     ap.add_argument("--cutoff", type=int, default=0, help="Parallel cutoff (0=auto: N//64)")
     args = ap.parse_args()
-    emit_hs(args.out, args.N, args.vec, cutoff=args.cutoff)
+    emit_hs(args.out, args.N, cutoff=args.cutoff)
 
 if __name__ == "__main__":
     main()

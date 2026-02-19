@@ -122,6 +122,10 @@ for N in "${NS[@]}"; do
           >&2 echo "[ERR ] INVALID COLORING at N=${N} P=${P} rep=${rep}"
           local_rc=99
         fi
+        # External validation
+        if [[ "$local_rc" -eq 0 && -f "$SCRIPT_DIR/validate.py" ]]; then
+          "$PY3" "$SCRIPT_DIR/validate.py" "$VARIANT" "$outlog" || local_rc=97
+        fi
       fi
       [[ -z "$secs" ]] && secs="NaN"
       [[ -z "$colors" ]] && colors="0"

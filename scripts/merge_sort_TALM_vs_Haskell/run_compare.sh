@@ -64,7 +64,7 @@ if [[ "$SKIP_GHC" -eq 1 && -f "$GHC_CSV" ]]; then
   echo "=== Skipping GHC Strategies (SKIP_GHC=1) ==="
 else
   echo "=== GHC Strategies Merge Sort ==="
-  GHC_PKGS="-package time -package deepseq -package parallel" \
+  GHC_PKGS="-package time -package deepseq -package parallel -package array" \
   bash "$SCRIPT_DIR/run_hs.sh" \
     --start-N "$START_N" --step "$STEP" --n-max "$N_MAX" \
     --reps "$REPS" --procs "$PROCS_CSV" \
@@ -76,7 +76,7 @@ if [[ "$SKIP_PARPSEQ" -eq 1 && -f "$PARPSEQ_CSV" ]]; then
   echo "=== Skipping GHC par/pseq (SKIP_PARPSEQ=1) ==="
 else
   echo "=== GHC par/pseq Merge Sort ==="
-  GHC_PKGS="-package time -package deepseq -package parallel" \
+  GHC_PKGS="-package time -package deepseq -package parallel -package array" \
   bash "$SCRIPT_DIR/run_hs.sh" \
     --start-N "$START_N" --step "$STEP" --n-max "$N_MAX" \
     --reps "$REPS" --procs "$PROCS_CSV" \

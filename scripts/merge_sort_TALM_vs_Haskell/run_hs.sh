@@ -42,6 +42,7 @@ command -v "$GHC" >/dev/null || { echo "[ERRO] GHC não encontrado: $GHC"; exit 
 echo "[env ] GHC=${GHC} ; PY3=${PY3} ; GHC_PKGS=${GHC_PKGS}"
 
 MS_DIR="$(cd "$(dirname "$0")" && pwd)"
+VALIDATE="$MS_DIR/validate.py"
 if [[ -n "$GEN_OVERRIDE" ]]; then
   GEN_HS="$GEN_OVERRIDE"
 else
@@ -67,7 +68,7 @@ gen_hs() {
 build_bin() {
   local hs="$1" bin="$2"
   echo "[ghc ] compiling $hs -> $bin"
-  "$GHC" $GHC_PKGS -threaded -rtsopts -o "$bin" "$hs" >/dev/null
+  "$GHC" -O2 -dynamic $GHC_PKGS -threaded -rtsopts -o "$bin" "$hs" >/dev/null
 }
 
 run_bin_time_rc() {
@@ -111,6 +112,10 @@ while [[ "$N" -le "$N_MAX" ]]; do
     for ((rep=1; rep<=REPS; rep++)); do
       out="$(run_bin_time_rc "$BIN" "$P" "$CASE_DIR/logs")"
       read -r secs rc <<< "$out"
+      # External validation
+      if [[ "$rc" -eq 0 && -f "$VALIDATE" ]]; then
+        "$PY3" "$VALIDATE" "$CASE_DIR/logs/run.out" "$N" || rc=98
+      fi
       echo "variant=ghc, N=${N}, P=${P}, rep=${rep}, secs=${secs}, rc=${rc}"
       if [[ "$rc" -ne 0 ]]; then
         echo "FATAL: ${VARIANT} N=${N} P=${P} rep=${rep} failed with rc=${rc}"

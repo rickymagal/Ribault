@@ -294,6 +294,11 @@ for N in "${NS[@]}"; do
       valid_str="False"
       [[ "$valid" == "1" ]] && valid_str="True"
 
+      # External validation
+      if [[ "$rc" -eq 0 && "$valid_str" == "True" && -f "$SCRIPT_DIR/validate.py" ]]; then
+        "$PY3" "$SCRIPT_DIR/validate.py" super "$CASE_DIR/logs/run.out" || { rc=97; valid_str="False"; }
+      fi
+
       echo "[${RUN_NUM}/${TOTAL_RUNS}] N=${N} P=${P} rep=${rep} -> ${secs}s colors=${colors} valid=${valid_str} rc=${rc}"
       if [[ "$rc" -ne 0 ]]; then
         echo "FATAL: super N=${N} P=${P} rep=${rep} failed with rc=${rc}"
