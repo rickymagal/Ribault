@@ -424,7 +424,7 @@ def gen_unrolled_array_hsk(n: int, p: int, nparts: int) -> str:
     parts = list(partitions(0, n, nparts))
 
     lines = [
-        "-- Array-based parallel merge sort – UNROLLED (no recursion).",
+        "-- Array-based parallel merge sort - UNROLLED (no recursion).",
         f"-- nparts={nparts}, N={n}, P={p}",
         "",
         f"p = {p};",
