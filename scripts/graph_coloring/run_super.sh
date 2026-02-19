@@ -98,6 +98,47 @@ mkdir -p "$OUTROOT"
 METRICS_CSV="$OUTROOT/metrics_${TAG}.csv"
 echo "variant,N,P,edge_prob,seed,rep,seconds,colors,valid,rc" > "$METRICS_CSV"
 
+# ---------- supers inject file (IntMap/IntSet + Foreign for pointer-based coloring) ----------
+GC_INJECT_FILE="$OUTROOT/gc_inject.hs"
+cat > "$GC_INJECT_FILE" <<'INJECT_EOF'
+import qualified Data.IntMap.Strict as IM
+import qualified Data.IntSet as IS
+import Data.List (foldl')
+import Foreign.Marshal.Alloc (mallocBytes, free)
+import Foreign.Ptr (Ptr, castPtr, intPtrToPtr, ptrToIntPtr)
+import Foreign.Storable (peekElemOff, pokeElemOff)
+-- Helper: read coloring from C array [nColored, v0, c0, v1, c1, ...]
+readColoringIO :: Ptr Int64 -> Int -> IO (IM.IntMap Int)
+readColoringIO p n = go 1 IM.empty
+  where
+    go i acc
+      | i > 2 * n = return acc
+      | otherwise = do
+          v <- fmap fromIntegral (peekElemOff p i :: IO Int64)
+          c <- fmap fromIntegral (peekElemOff p (i+1) :: IO Int64)
+          go (i+2) (IM.insert v c acc)
+-- Helper: write coloring IntMap to C array, return pointer
+writeColoringIO :: IM.IntMap Int -> IO (Ptr Int64)
+writeColoringIO col = do
+  let pairs = IM.toAscList col
+      nItems = length pairs
+      byteSize = (1 + 2 * nItems) * 8
+  ptr <- mallocBytes byteSize
+  let p = castPtr ptr :: Ptr Int64
+  pokeElemOff p 0 (fromIntegral nItems :: Int64)
+  let writePairs [] _ = return ()
+      writePairs ((v,c):rest) i = do
+        pokeElemOff p i (fromIntegral v :: Int64)
+        pokeElemOff p (i+1) (fromIntegral c :: Int64)
+        writePairs rest (i+2)
+  writePairs pairs 1
+  return p
+INJECT_EOF
+export SUPERS_INJECT_FILE="$(cd "$(dirname "$GC_INJECT_FILE")" && pwd)/$(basename "$GC_INJECT_FILE")"
+export SUPERS_GHC_PACKAGES="containers"
+echo "[sup ] inject file: $SUPERS_INJECT_FILE"
+echo "[sup ] GHC packages: $SUPERS_GHC_PACKAGES"
+
 # ---------- helpers ----------
 abspath(){ local d b; d="$(cd "$(dirname "$1")" && pwd)"; b="$(basename "$1")"; printf "%s/%s" "$d" "$b"; }
 

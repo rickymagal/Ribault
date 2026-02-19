@@ -23,14 +23,19 @@ Graph Model:
 
 Superinstructions:
 ------------------
-- colorChunk: Greedy coloring of vertex range [start, start+count)
-- mergeColorings: Combine two partial colorings (max colors, sum counts)
-- validateAndPrint: Recompute full coloring and validate correctness
+- colorChunk: Build adjacency (IntMap IntSet), greedy color (IntMap Int),
+              serialize to C array via mallocBytes/pokeElemOff, return pointer
+- mergeColorings: Read two coloring arrays from pointers, merge IntMaps,
+                  write merged array, return pointer
+- validateAndPrint: Read coloring, rebuild full adjacency, resolve conflicts,
+                    validate, print results
 
 Data Encoding:
 --------------
 - Packed integer format: value = start * SHIFT + count (SHIFT = N+1)
-- Enables passing multiple values through single Int64 dataflow token
+  for passing chunk boundaries through single Int64 dataflow token
+- Coloring data passed between supers as C array pointers (Int64)
+  Array format: [nColored, v0, c0, v1, c1, ...]
 
 Usage:
 ------
@@ -123,134 +128,154 @@ def emit_hsk(path: str, n: int, p: int, edge_prob: float, seed: int) -> None:
 
 -- SUPER: Color a chunk of vertices using greedy algorithm.
 -- Input: packed = start * SHIFT + count
--- Output: packed coloring info (colors_used * COLORS_SHIFT + valid_flag)
--- The coloring is stored internally and used for conflict resolution.
+-- Output: pointer to C array with coloring data (as Int64)
+-- Array format: [nColored, v0, c0, v1, c1, ...]
 colorChunk packed =
   super single input (packed) output (result)
 #BEGINSUPER
     result =
       let
-        shift = {shift}
-        n_vertices = {n}
-        edge_prob_scaled = {int(edge_prob * 1000000)}  -- scaled by 1e6
-        rng_seed = {seed}
+        shift = {shift} :: Int
+        n_vertices = {n} :: Int
+        edge_prob_scaled = {int(edge_prob * 1000000)} :: Int
+        rng_seed = {seed} :: Int
 
-        start = packed `div` shift
-        count = packed `mod` shift
-        endV = start + count
+        start = fromIntegral packed `div` shift :: Int
+        count = fromIntegral packed `mod` shift :: Int
+        endV = start + count :: Int
 
         -- LCG RNG for deterministic graph generation
-        lcgA = 6364136223846793005
-        lcgC = 1442695040888963407
-        lcgNext r = (lcgA * r + lcgC) `mod` (2^63)
-        lcgValue r = (r `div` (2^33)) `mod` 1000000  -- 0 to 999999
-
-        -- Check if edge exists between u and v (u < v)
         hasEdge u v =
-          let r0 = rng_seed + u * 31337 + v * 7919
-              rVal = lcgValue (lcgNext (fromIntegral r0))
-          in rVal < edge_prob_scaled
+          let r0 = toInteger rng_seed + toInteger u * 31337 + toInteger v * 7919
+              lcgA = 6364136223846793005 :: Integer
+              lcgC = 1442695040888963407 :: Integer
+              r' = (lcgA * r0 + lcgC) `mod` (2^(63 :: Int))
+              rVal = (r' `div` (2^(33 :: Int))) `mod` 1000000
+          in rVal < toInteger edge_prob_scaled
 
-        -- Get neighbors of vertex v (only neighbors < v for greedy)
-        neighborsLess v = [u | u <- [0..v-1], hasEdge u v || hasEdge v u]
+        isNeighbor u v = hasEdge u v || hasEdge v u
 
-        -- Find smallest color not in use by neighbors
-        smallestMissing used = go 0
-          where go c = if c `elem` used then go (c + 1) else c
+        -- Build adjacency for chunk vertices (each vertex checks all N vertices)
+        buildAdj [] acc = acc
+        buildAdj (v:vs) acc =
+          let ns = IS.fromList [u | u <- [0..n_vertices-1], u /= v, isNeighbor u v]
+          in buildAdj vs (IM.insert v ns acc)
 
-        -- Greedy color vertices in range [start, endV)
-        colorRange coloring v
-          | v >= endV = coloring
-          | otherwise =
-              let neighborColors = [c | (u, c) <- coloring, u `elem` neighborsLess v]
-                  myColor = smallestMissing neighborColors
-              in colorRange ((v, myColor) : coloring) (v + 1)
+        adj = buildAdj [start..endV-1] IM.empty
 
-        coloring = colorRange [] start
-        maxColor = if null coloring then 0 else maximum (map snd coloring)
-        nColored = length coloring
-      in
-        -- Pack result: maxColor * (n+1) + nColored
-        fromIntegral (maxColor * (n_vertices + 1) + nColored)
+        -- Greedy coloring using IntMap/IntSet
+        smallestMissing s = go 0
+          where go c = if IS.member c s then go (c+1) else c
+
+        colorOne col v =
+          let ns = IM.findWithDefault IS.empty v adj
+              usedColors = IS.fromList [c | u <- IS.toList ns, Just c <- [IM.lookup u col]]
+          in IM.insert v (smallestMissing usedColors) col
+
+        coloring = foldl' colorOne IM.empty [start..endV-1]
+
+      in unsafePerformIO $ do
+        p <- writeColoringIO coloring
+        return (fromIntegral (ptrToIntPtr p) :: Int64)
 #ENDSUPER;
 
--- SUPER: Merge two partial colorings and resolve conflicts.
--- Input: list of two packed colorings [c1, c2]
--- Output: merged packed coloring
+-- SUPER: Merge two partial colorings.
+-- Input: list of two coloring pointers [ptr1, ptr2]
+-- Output: pointer to merged coloring array
 mergeColorings pair =
   super single input (pair) output (result)
 #BEGINSUPER
     result =
       let
         hpair = toList pair
-        c1 = head hpair
-        c2 = head (tail hpair)
-        n_vertices = {n}
-
-        -- Unpack: packed = maxColor * (n+1) + nColored
-        unpack p = (p `div` (n_vertices + 1), p `mod` (n_vertices + 1))
-
-        (max1, n1) = unpack c1
-        (max2, n2) = unpack c2
-
-        -- Merged: max of maxColors, sum of counts
-        maxColor = if max1 > max2 then max1 else max2
-        nColored = n1 + n2
-      in
-        fromIntegral (maxColor * (n_vertices + 1) + nColored)
+        ptr1val = head hpair
+        ptr2val = head (tail hpair)
+      in unsafePerformIO $ do
+        let p1 = castPtr (intPtrToPtr (fromIntegral ptr1val)) :: Ptr Int64
+            p2 = castPtr (intPtrToPtr (fromIntegral ptr2val)) :: Ptr Int64
+        n1i <- peekElemOff p1 0
+        col1 <- readColoringIO p1 (fromIntegral (n1i :: Int64))
+        n2i <- peekElemOff p2 0
+        col2 <- readColoringIO p2 (fromIntegral (n2i :: Int64))
+        free p1
+        free p2
+        let merged = IM.union col1 col2
+        p <- writeColoringIO merged
+        return (fromIntegral (ptrToIntPtr p) :: Int64)
 #ENDSUPER;
 
 -- SUPER: Validate the coloring and print results.
--- Input: packed coloring
+-- Input: pointer to coloring array
 -- Output: 0 (prints results to stdout)
 validateAndPrint packed =
   super single input (packed) output (out)
 #BEGINSUPER
     out =
       let
-        n_vertices = {n}
-        edge_prob_scaled = {int(edge_prob * 1000000)}
-        rng_seed = {seed}
+        n_vertices = {n} :: Int
+        edge_prob_scaled = {int(edge_prob * 1000000)} :: Int
+        rng_seed = {seed} :: Int
 
-        maxColor = packed `div` (n_vertices + 1)
-        nColored = packed `mod` (n_vertices + 1)
-
-        -- Recompute the full coloring to validate
-        lcgA = 6364136223846793005
-        lcgC = 1442695040888963407
-        lcgNext r = (lcgA * r + lcgC) `mod` (2^63)
-        lcgValue r = (r `div` (2^33)) `mod` 1000000
-
+        -- LCG edge test (using Integer to match GHC)
         hasEdge u v =
-          let r0 = rng_seed + u * 31337 + v * 7919
-              rVal = lcgValue (lcgNext (fromIntegral r0))
-          in rVal < edge_prob_scaled
-
-        smallestMissing used = go 0
-          where go c = if c `elem` used then go (c + 1) else c
+          let r0 = toInteger rng_seed + toInteger u * 31337 + toInteger v * 7919
+              lcgA = 6364136223846793005 :: Integer
+              lcgC = 1442695040888963407 :: Integer
+              r' = (lcgA * r0 + lcgC) `mod` (2^(63 :: Int))
+              rVal = (r' `div` (2^(33 :: Int))) `mod` 1000000
+          in rVal < toInteger edge_prob_scaled
 
         isNeighbor u v = hasEdge u v || hasEdge v u
 
-        computeColor coloring v
-          | v >= n_vertices = coloring
-          | otherwise =
-              let neighborColors = [c | (u, c) <- coloring, isNeighbor u v]
-                  myColor = smallestMissing neighborColors
-              in computeColor ((v, myColor) : coloring) (v + 1)
+        -- Build full symmetric adjacency graph
+        buildFullAdj = go 0 IM.empty
+          where
+            go v acc
+              | v >= n_vertices = acc
+              | otherwise =
+                  let ns = IS.fromList [u | u <- [v+1..n_vertices-1], isNeighbor v u]
+                      acc1 = IM.insertWith IS.union v ns acc
+                      acc2 = IS.foldl' (\\a u -> IM.insertWith IS.union u (IS.singleton v) a) acc1 ns
+                  in go (v+1) acc2
 
-        fullColoring = computeColor [] 0
+        fullAdj = buildFullAdj
 
-        -- Validate: no two adjacent vertices have same color
-        isValid = and [not (isNeighbor u v) || cu /= cv
-                      | (u, cu) <- fullColoring, (v, cv) <- fullColoring, u < v]
+        smallestMissing s = go 0
+          where go c = if IS.member c s then go (c+1) else c
 
-        colors = if null fullColoring then 0 else maximum (map snd fullColoring) + 1
-        valid = if isValid then 1 else 0
-      in
-        unsafePerformIO $ do
-          print colors
-          print valid
-          pure (0 :: Int64)
+        greedyRecolor col v =
+          let ns = IM.findWithDefault IS.empty v fullAdj
+              usedColors = IS.fromList [c | u <- IS.toList ns, Just c <- [IM.lookup u col]]
+          in smallestMissing usedColors
+
+        -- Resolve cross-chunk conflicts
+        resolveConflicts col = foldl' fix col [0..n_vertices-1]
+          where
+            fix c v =
+              let myC = IM.findWithDefault (-1) v c
+                  ns = IM.findWithDefault IS.empty v fullAdj
+                  bad = any (\\u -> IM.lookup u c == Just myC) (IS.toList ns)
+              in if bad then IM.insert v (greedyRecolor c v) c else c
+
+        -- Validate: no adjacent vertices share a color
+        validateColoring col =
+          IM.foldlWithKey' (\\acc v ns ->
+            acc && all (\\u -> IM.lookup u col /= Just (IM.findWithDefault (-1) v col)) (IS.toList ns)
+          ) True fullAdj
+
+        countColors col = IS.size (IS.fromList (IM.elems col))
+
+      in unsafePerformIO $ do
+        let p = castPtr (intPtrToPtr (fromIntegral packed)) :: Ptr Int64
+        nItems <- peekElemOff p 0
+        col <- readColoringIO p (fromIntegral (nItems :: Int64))
+        free p
+        let resolved = resolveConflicts col
+            valid = validateColoring resolved
+            colors = countColors resolved
+        print colors
+        print (if valid then 1 else 0 :: Int)
+        return (0 :: Int64)
 #ENDSUPER;
 
 -- Main: {n_chunks} parallel chunk colorings + merge tree

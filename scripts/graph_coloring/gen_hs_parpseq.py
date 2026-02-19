@@ -119,10 +119,9 @@ countColors col = IS.size (IS.fromList (IM.elems col))
 
 main :: IO ()
 main = do
+  t0 <- getCurrentTime
   let !g = force (buildGraph numVertices)
   g `deepseq` return ()
-
-  t0 <- getCurrentTime
   let !coloring = force (parallelColor g numProcs [0..numVertices-1])
   coloring `deepseq` return ()
   t1 <- getCurrentTime
