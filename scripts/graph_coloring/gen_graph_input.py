@@ -151,7 +151,7 @@ colorChunk packed =
 
         isNeighbor u v = hasEdge u v || hasEdge v u
 
-        -- Association-list lookup (O(n) per call — intentionally list-based)
+        -- Association-list lookup (O(n) per call --intentionally list-based)
         lookupColor _ [] = Nothing
         lookupColor v ((u,c):rest) = if u == v then Just c else lookupColor v rest
 
@@ -162,7 +162,7 @@ colorChunk packed =
         -- Greedy coloring: for each vertex, check ALL N vertices for neighbors,
         -- then look up each neighbor's color in the association list.
         -- This is O(N) per vertex for neighbor scan + O(degree * chunk_size) for lookups,
-        -- giving O(chunk_size^2 * degree) total — the dominant parallel work.
+        -- giving O(chunk_size^2 * degree) total --the dominant parallel work.
         colorAll [] colList = colList
         colorAll (v:vs) colList =
           let usedColors = [c | u <- [0..n_vertices-1], u /= v, isNeighbor u v,
