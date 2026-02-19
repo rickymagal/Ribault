@@ -75,6 +75,7 @@ void placeinsts(FILE *fp, int n, instr_t **instaddrs, int placement[], thread_ar
 		for (k = 0; k < MAX_DEST; k++)
 			instr->dst_len[k]=0;
 		instr->pe_id = placement[i];
+		instr->match_lock = 0;
 		instr->call_count = 0;
 	//	instr->bool_input = 0;	
 		/* ------------------------*/

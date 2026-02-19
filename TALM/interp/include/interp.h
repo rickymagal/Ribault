@@ -136,7 +136,7 @@ struct instr {
 
 	char speculative;
 	int pe_id;
-		
+	volatile int match_lock; /* per-instruction spinlock for cross-PE propagation */
 };
 
 

@@ -242,7 +242,19 @@ static long comm_wait_usec = -1;
 static int comm_wait_env_set = 0;
 static int force_spin = 0;
 static int force_spin_env_set = 0;
+static int direct_prop = 0; /* cross-PE direct propagation (DIRECT_PROP=1) */
 static deque_t **global_deques = NULL;
+
+/* Per-instruction spinlock for cross-PE result propagation */
+static inline void instr_lock(instr_t *instr) {
+	while (__sync_lock_test_and_set(&instr->match_lock, 1)) {
+		while (instr->match_lock)
+			__builtin_ia32_pause();
+	}
+}
+static inline void instr_unlock(instr_t *instr) {
+	__sync_lock_release(&instr->match_lock);
+}
 static int sched_prof = 0;
 static uint64_t *sched_busy_iters = NULL;
 static uint64_t *sched_idle_iters = NULL;
@@ -882,6 +894,10 @@ int main(int argc, char **argv) {
 	if (force_env && force_env[0] != '\0') {
 		force_spin = (force_env[0] != '0');
 		force_spin_env_set = 1;
+	}
+	const char *dp_env = getenv("DIRECT_PROP");
+	if (dp_env && dp_env[0] != '\0' && dp_env[0] != '0') {
+		direct_prop = 1;
 	}
 	const char *df_list_env = getenv("DF_LIST_BUILTIN");
 	if (df_list_env && df_list_env[0] != '\0') {
@@ -2532,8 +2548,9 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 					        target->id, target->opcode, inputn, result[i].tag, result[i].exec,
 					        (long long)result[i].value.li);
 				}
-				if (target->pe_id == pe_attr->id) {
-					//bypass_oper(target->src+inputn, result[i]);	
+				if (target->pe_id == pe_attr->id || direct_prop) {
+					/* Local propagation (or cross-PE direct propagation with lock) */
+					if (direct_prop) instr_lock(target);
 					{
 						oper_t *opcopy = oper_alloc(pe_attr);
 						*opcopy = result[i];
@@ -2575,7 +2592,7 @@ void propagate_oper(instr_t *instr, oper_t result[], thread_args *pe_attr) {
 					                         pe_attr))) {
 						push_last((qelem)dispatch, &pe_attr->ready_queue);
 						}
-			
+					if (direct_prop) instr_unlock(target);
 				} else {
 					inter_pe_send(target->pe_id, target, inputn, result[i], pe_attr);
 				}
