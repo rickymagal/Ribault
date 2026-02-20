@@ -9,14 +9,14 @@ This avoids packing large subset indices into a single 32-bit constant
 (the assembler's const instruction is limited to 32-bit signed integers).
 
 Tag safety:
-  - tagRadix = 16 → max 15 unique call sites per function
-  - K ≤ 14 from main: K range calls + 1 print_result ≤ 15
+  - tagRadix = 64 in codegen → max 63 unique call sites per function
+  - K ≤ 62 from main: K range calls + 1 print_result ≤ 63
 """
 
 import argparse, os
 
 
-MAX_CALL_SITES = 14
+MAX_CALL_SITES = 63  # tagRadix=64 in codegen → up to 63 call sites per function
 
 
 def _balanced_max(vars):
