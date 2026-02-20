@@ -1,4 +1,0 @@
-const c0, 1
-const c1, 5
-testemacro("nome")
-addi nome, c1, 1
