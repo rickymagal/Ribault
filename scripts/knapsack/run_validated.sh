@@ -24,7 +24,7 @@ GEN_PARPSEQ="$REPO/scripts/knapsack/gen_hs_parpseq.py"
 
 REPS=${REPS:-3}
 SEED=${SEED:-42}
-N_FUNCS=${N_FUNCS:-14}
+N_FUNCS=${N_FUNCS:-32}
 # 10 N values: total ~1h on 48-core server with all 3 strategies
 NS=(${NS:-20 21 22 23 24 25 26 27 28 29})
 PS=(${PS:-1 2 4 8 16 32})

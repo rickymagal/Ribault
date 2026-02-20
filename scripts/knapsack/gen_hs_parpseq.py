@@ -22,7 +22,7 @@ def emit_hs(path, items_dir, n_items, n_funcs=14):
         capacity = int(f.read().strip())
 
     total_subsets = 2 ** n_items
-    n_funcs = min(n_funcs, 14, total_subsets)
+    n_funcs = min(n_funcs, total_subsets)
 
     items_literal = "[" + ", ".join(f"({w},{v})" for w, v in items) + "]"
 
