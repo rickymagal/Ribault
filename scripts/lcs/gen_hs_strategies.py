@@ -12,9 +12,11 @@ HS_TMPL = r"""-- Auto-generated: LCS benchmark (GHC Strategies)
 module Main where
 
 import Control.Parallel.Strategies (parMap, rseq)
-import Data.Bits (shiftR)
+import Data.Word (Word64)
+import Data.Bits ((.&.), shiftR)
 import Data.Array.ST (STUArray, newArray, readArray, writeArray)
-import Data.Array.Unboxed (UArray, listArray, (!))
+import Data.Array.Unboxed (UArray, bounds, (!))
+import Data.Array.Unsafe (unsafeFreeze)
 import Control.Monad.ST (ST, runST)
 import Data.STRef (newSTRef, readSTRef, writeSTRef)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
@@ -33,36 +35,41 @@ lcsAlphabetSize = __ALPHABET__
 lcsNFuncs :: Int
 lcsNFuncs = __N_FUNCS__
 
-lcsSeed :: Integer
+lcsSeed :: Word64
 lcsSeed = __SEED__
 
--- ===== LCG PRNG (matches Python gen_input.py) =====
+-- ===== LCG PRNG (Word64, zero GMP allocation) =====
 
-lcsNextRng :: Integer -> Integer
-lcsNextRng r = (6364136223846793005 * r + 1442695040888963407) `mod` (2^63)
+lcsNextRng :: Word64 -> Word64
+lcsNextRng r = (6364136223846793005 * r + 1442695040888963407) .&. 0x7FFFFFFFFFFFFFFF
 
-lcsSkipRng :: Integer -> Int -> Integer
+lcsSkipRng :: Word64 -> Int -> Word64
 lcsSkipRng !r 0 = r
 lcsSkipRng !r n = lcsSkipRng (lcsNextRng r) (n - 1)
 
-lcsGenString :: Integer -> Int -> Int -> ([Int], Integer)
-lcsGenString !rng 0 _ = ([], rng)
-lcsGenString !rng len_ alpha =
-  let !rng' = lcsNextRng rng
-      !c    = fromIntegral ((rng' `shiftR` 33) `mod` fromIntegral alpha)
-      (rest, rng'') = lcsGenString rng' (len_ - 1) alpha
-  in (c : rest, rng'')
+-- Generate string directly into UArray (no list allocation)
+lcsGenArray :: Word64 -> Int -> Int -> (UArray Int Int, Word64)
+lcsGenArray !rng0 len_ alpha = runST $ do
+  arr <- newArray (0, len_ - 1) 0 :: ST s (STUArray s Int Int)
+  let go !i !r
+        | i >= len_ = return r
+        | otherwise = do
+            let !r' = lcsNextRng r
+                !c  = fromIntegral ((r' `shiftR` 33) `mod` fromIntegral alpha)
+            writeArray arr i c
+            go (i + 1) r'
+  rng' <- go 0 rng0
+  frozen <- unsafeFreeze arr
+  return (frozen, rng')
 
 -- ===== LCS DP (STUArray, zero GC pressure) =====
 
-lcsLen :: [Int] -> [Int] -> Int
-lcsLen [] _ = 0
-lcsLen _ [] = 0
-lcsLen xs ys = runST $ do
-  let !m = length xs
-      !n = length ys
-      !xarr = listArray (0, m-1) xs :: UArray Int Int
-      !yarr = listArray (0, n-1) ys :: UArray Int Int
+lcsLen :: UArray Int Int -> UArray Int Int -> Int
+lcsLen xarr yarr = runST $ do
+  let (_, mx) = bounds xarr
+      (_, my) = bounds yarr
+      !m = mx + 1
+      !n = my + 1
   a0 <- newArray (0, n) 0 :: ST s (STUArray s Int Int)
   a1 <- newArray (0, n) 0 :: ST s (STUArray s Int Int)
   pRef <- newSTRef a0
@@ -99,8 +106,8 @@ computeChunk chunkIdx =
       rng0 = lcsSkipRng lcsSeed (lo * 2 * lcsStrLen)
       go !_ 0 !acc = acc
       go !rng np !acc =
-        let (a, rng1) = lcsGenString rng  lcsStrLen lcsAlphabetSize
-            (b, rng2) = lcsGenString rng1 lcsStrLen lcsAlphabetSize
+        let (a, rng1) = lcsGenArray rng  lcsStrLen lcsAlphabetSize
+            (b, rng2) = lcsGenArray rng1 lcsStrLen lcsAlphabetSize
             !l        = lcsLen a b
         in go rng2 (np - 1) (acc + l)
   in go rng0 (hi - lo) 0
