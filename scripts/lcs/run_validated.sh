@@ -106,6 +106,7 @@ for N in "${NS[@]}"; do
 
   INJECT_FILE="$TDIR/supers_inject.hs"
   SUPERS_INJECT_FILE="$INJECT_FILE" \
+      SUPERS_GHC_PACKAGES="array" \
       CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/lcs.hsk" "$TDIR/supers/Supers.hs"
 
   LIBSUP="$TDIR/supers/libsupers.so"
