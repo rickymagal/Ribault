@@ -13,7 +13,10 @@ module Main where
 
 import Control.Parallel (par, pseq)
 import Data.Bits (shiftR)
-import Data.List (foldl')
+import Data.Array.ST (STUArray, newArray, readArray, writeArray)
+import Data.Array.Unboxed (UArray, listArray, (!))
+import Control.Monad.ST (ST, runST)
+import Data.STRef (newSTRef, readSTRef, writeSTRef)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 
 -- ===== Constants =====
@@ -50,19 +53,42 @@ lcsGenString !rng len_ alpha =
       (rest, rng'') = lcsGenString rng' (len_ - 1) alpha
   in (c : rest, rng'')
 
--- ===== LCS DP (same algorithm as TALM inject) =====
+-- ===== LCS DP (STUArray, zero GC pressure) =====
 
 lcsLen :: [Int] -> [Int] -> Int
 lcsLen [] _ = 0
 lcsLen _ [] = 0
-lcsLen xs ys =
-  let !n  = length ys
-      row0 = replicate (n + 1) (0 :: Int)
-      step prev x = scanl f 0 (zip ys (zip prev (tail prev)))
-        where f !left (y, (diag, above))
-                | x == y    = diag + 1
-                | otherwise = max left above
-  in last (foldl' step row0 xs)
+lcsLen xs ys = runST $ do
+  let !m = length xs
+      !n = length ys
+      !xarr = listArray (0, m-1) xs :: UArray Int Int
+      !yarr = listArray (0, n-1) ys :: UArray Int Int
+  a0 <- newArray (0, n) 0 :: ST s (STUArray s Int Int)
+  a1 <- newArray (0, n) 0 :: ST s (STUArray s Int Int)
+  pRef <- newSTRef a0
+  cRef <- newSTRef a1
+  let outer !i
+        | i >= m    = do p <- readSTRef pRef; readArray p n
+        | otherwise = do
+            p <- readSTRef pRef
+            c <- readSTRef cRef
+            writeArray c 0 0
+            let !xi = xarr ! i
+            let inner !j
+                  | j >= n    = return ()
+                  | otherwise = do
+                      if xi == yarr ! j
+                        then do !d <- readArray p j
+                                writeArray c (j+1) (d + 1)
+                        else do !a <- readArray p (j+1)
+                                !l <- readArray c j
+                                writeArray c (j+1) (max a l)
+                      inner (j+1)
+            inner 0
+            writeSTRef pRef c
+            writeSTRef cRef p
+            outer (i+1)
+  outer 0
 
 -- ===== Chunk computation =====
 

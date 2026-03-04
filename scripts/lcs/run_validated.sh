@@ -117,7 +117,7 @@ for N in "${NS[@]}"; do
   mkdir -p "$GDIR/obj"
   "$PY3" "$GEN_STRAT" --out "$GDIR/lcs.hs" --input-dir "$INPUT_DIR" \
       --n-funcs "$N_FUNCS"
-  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel \
+  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel -package array \
       -outputdir "$GDIR/obj" -o "$GDIR/lcs" "$GDIR/lcs.hs" >/dev/null 2>&1
 
   # ===== Build GHC par/pseq =====
@@ -125,7 +125,7 @@ for N in "${NS[@]}"; do
   mkdir -p "$PDIR/obj"
   "$PY3" "$GEN_PARPSEQ" --out "$PDIR/lcs.hs" --input-dir "$INPUT_DIR" \
       --n-funcs "$N_FUNCS"
-  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel \
+  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel -package array \
       -outputdir "$PDIR/obj" -o "$PDIR/lcs" "$PDIR/lcs.hs" >/dev/null 2>&1
 
   # ===== Run benchmarks =====
