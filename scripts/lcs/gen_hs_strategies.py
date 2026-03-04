@@ -12,6 +12,7 @@ HS_TMPL = r"""-- Auto-generated: LCS benchmark (GHC Strategies)
 module Main where
 
 import Control.Parallel.Strategies (parMap, rseq)
+import Data.Bits (shiftR)
 import Data.List (foldl')
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 
@@ -45,7 +46,7 @@ lcsGenString :: Integer -> Int -> Int -> ([Int], Integer)
 lcsGenString !rng 0 _ = ([], rng)
 lcsGenString !rng len_ alpha =
   let !rng' = lcsNextRng rng
-      !c    = fromIntegral (rng' `mod` fromIntegral alpha)
+      !c    = fromIntegral ((rng' `shiftR` 33) `mod` fromIntegral alpha)
       (rest, rng'') = lcsGenString rng' (len_ - 1) alpha
   in (c : rest, rng'')
 

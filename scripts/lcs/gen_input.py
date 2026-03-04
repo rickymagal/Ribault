@@ -23,8 +23,9 @@ def lcg_stream(seed):
 
 
 def gen_string(rng, length, alphabet_size):
-    """Generate a string as a list of ints in [0, alphabet_size)."""
-    return [next(rng) % alphabet_size for _ in range(length)]
+    """Generate a string as a list of ints in [0, alphabet_size).
+    Uses high bits (>> 33) to avoid LCG low-bit periodicity."""
+    return [(next(rng) >> 33) % alphabet_size for _ in range(length)]
 
 
 def lcs_dp(xs, ys):

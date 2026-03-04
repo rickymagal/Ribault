@@ -94,6 +94,7 @@ def emit_hsk(path, input_dir, n_funcs):
     inject_path = os.path.join(os.path.dirname(path) or ".", "supers_inject.hs")
 
     inject = f"""import Data.List (foldl')
+import Data.Bits (shiftR)
 
 -- LCS benchmark helpers (injected by gen_talm_input.py)
 -- Computes LCS for batches of deterministic string pairs.
@@ -127,7 +128,7 @@ lcsGenString :: Integer -> Int -> Int -> ([Int], Integer)
 lcsGenString !rng 0 _ = ([], rng)
 lcsGenString !rng len_ alpha =
   let !rng' = lcsNextRng rng
-      !c    = fromIntegral (rng' `mod` fromIntegral alpha)
+      !c    = fromIntegral ((rng' `shiftR` 33) `mod` fromIntegral alpha)
       (rest, rng'') = lcsGenString rng' (len_ - 1) alpha
   in (c : rest, rng'')
 
