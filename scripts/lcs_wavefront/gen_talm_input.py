@@ -54,7 +54,7 @@ def emit_hsk(path, input_dir, dim):
 
     # block_super: compute one block
     lines.append("block_super dep blockIdx =")
-    lines.append("  super single input (dep) output (result)")
+    lines.append("  super single input (dep, blockIdx) output (result)")
     lines.append("#BEGINSUPER")
     lines.append("    result = unsafePerformIO (lcsBlock (fromIntegral blockIdx))")
     lines.append("#ENDSUPER")
