@@ -27,10 +27,9 @@ def emit_hsk(path, input_dir, dim):
         alphabet = int(parts[1])
         seed = int(parts[2])
 
-    # DIM must not exceed MAX_CALL_SITES (we have 3 super types,
-    # but each block_super call is a separate call site)
+    # Each block is its own super type, plus init + result
     n_blocks = dim * dim
-    # We need: 1 (init) + n_blocks (block) + 1 (result) call sites
+    # We need: 1 (init) + n_blocks (one per block) + 1 (result) call sites
     if n_blocks + 2 > MAX_CALL_SITES:
         # Reduce dim to fit
         import math
@@ -52,13 +51,16 @@ def emit_hsk(path, input_dir, dim):
     lines.append("#ENDSUPER")
     lines.append("")
 
-    # block_super: compute one block
-    lines.append("block_super dep blockIdx =")
-    lines.append("  super single input (dep, blockIdx) output (result)")
-    lines.append("#BEGINSUPER")
-    lines.append("    result = unsafePerformIO (lcsBlock (fromIntegral blockIdx))")
-    lines.append("#ENDSUPER")
-    lines.append("")
+    # Per-block supers: each has the block index hardcoded
+    for i in range(dim):
+        for j in range(dim):
+            idx = i * dim + j
+            lines.append(f"block_{idx}_super dep =")
+            lines.append(f"  super single input (dep) output (result)")
+            lines.append(f"#BEGINSUPER")
+            lines.append(f"    result = unsafePerformIO (lcsBlock {idx})")
+            lines.append(f"#ENDSUPER")
+            lines.append(f"")
 
     # result_super: read and print final score
     lines.append("result_super dep =")
@@ -81,14 +83,14 @@ def emit_hsk(path, input_dir, dim):
             idx = i * dim + j
             bn = bname(i, j)
             if i == 0 and j == 0:
-                lines.append(f"      {bn} = block_super s {idx}")
+                lines.append(f"      {bn} = block_{idx}_super s")
             elif i == 0:
-                lines.append(f"      {bn} = block_super {bname(i, j-1)} {idx}")
+                lines.append(f"      {bn} = block_{idx}_super {bname(i, j-1)}")
             elif j == 0:
-                lines.append(f"      {bn} = block_super {bname(i-1, j)} {idx}")
+                lines.append(f"      {bn} = block_{idx}_super {bname(i-1, j)}")
             else:
                 # Join two dependencies via +
-                lines.append(f"      {bn} = block_super ({bname(i-1, j)} + {bname(i, j-1)}) {idx}")
+                lines.append(f"      {bn} = block_{idx}_super ({bname(i-1, j)} + {bname(i, j-1)})")
 
     last = bname(dim - 1, dim - 1)
     lines.append(f"  in result_super {last}")
