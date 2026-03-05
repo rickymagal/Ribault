@@ -7,13 +7,13 @@ blocks within each anti-diagonal.
 
 import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (GHC Strategies)
+HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (GHC forkIO)
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
-import Control.Parallel.Strategies (parMap, rseq)
-import Control.DeepSeq (force)
-import Control.Exception (evaluate)
+import Control.Concurrent (forkIO)
+import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar)
+import Control.Monad (forM_, forM)
 import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
 import Data.Array.IO (IOUArray, newArray, readArray, writeArray)
@@ -24,8 +24,6 @@ import qualified Data.Array.ST as ST
 import Control.Monad.ST (ST, runST)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout)
-import System.IO.Unsafe (unsafePerformIO)
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 
 -- ===== Constants =====
 
@@ -60,30 +58,11 @@ lcsGenSeq !rng0 len_ alpha = runST $ do
   frozen <- unsafeFreeze arr
   return (frozen, rng')
 
--- ===== Global shared state =====
-
-data LCSGlobal = LCSGlobal
-  { lcsA :: !(UArray Int Int)
-  , lcsB :: !(UArray Int Int)
-  , lcsMat :: !(IOUArray (Int,Int) Int)
-  }
-
-{-# NOINLINE globalLCS #-}
-globalLCS :: IORef (Maybe LCSGlobal)
-globalLCS = unsafePerformIO (newIORef Nothing)
-
-initLCS :: IO ()
-initLCS = do
-  let (seqA, rng1) = lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
-      (seqB, _)    = lcsGenSeq rng1    lcsSeqLen lcsAlpha
-  mat <- newArray ((0,0), (lcsSeqLen, lcsSeqLen)) 0
-  writeIORef globalLCS (Just (LCSGlobal seqA seqB mat))
-
 -- ===== Block computation =====
 
-computeBlock :: Int -> Int -> IO ()
-computeBlock !bi !bj = do
-  Just g <- readIORef globalLCS
+computeBlock :: UArray Int Int -> UArray Int Int -> IOUArray (Int,Int) Int
+             -> Int -> Int -> IO ()
+computeBlock !sa !sb !mat !bi !bj = do
   let !n = lcsSeqLen
       !chunkR = n `div` lcsDim
       !chunkC = n `div` lcsDim
@@ -91,9 +70,6 @@ computeBlock !bi !bj = do
       !rowEnd   = if bi == lcsDim - 1 then n else (bi + 1) * chunkR
       !colStart = bj * chunkC + 1
       !colEnd   = if bj == lcsDim - 1 then n else (bj + 1) * chunkC
-      !sa = lcsA g
-      !sb = lcsB g
-      !mat = lcsMat g
   let outerLoop !i
         | i > rowEnd = return ()
         | otherwise = do
@@ -115,25 +91,24 @@ computeBlock !bi !bj = do
             outerLoop (i + 1)
   outerLoop rowStart
 
--- Force block computation (for use with parMap)
-forceBlock :: (Int, Int) -> ()
-forceBlock (!bi, !bj) = unsafePerformIO $ do
-  computeBlock bi bj
-  return ()
-{-# NOINLINE forceBlock #-}
+-- ===== Wavefront with forkIO + MVar =====
 
--- ===== Wavefront with Strategies =====
-
-wavefront :: IO ()
-wavefront = do
-  -- Process anti-diagonals: diag d has blocks (i, d-i) where
-  -- max(0, d-dim+1) <= i <= min(d, dim-1)
+wavefront :: UArray Int Int -> UArray Int Int -> IOUArray (Int,Int) Int -> IO ()
+wavefront !sa !sb !mat = do
   let !dim = lcsDim
   let loop !d
         | d >= 2 * dim - 1 = return ()
         | otherwise = do
             let blocks = [(i, d - i) | i <- [max 0 (d - dim + 1) .. min d (dim - 1)]]
-            evaluate $ force $ parMap rseq forceBlock blocks
+            -- Fork one thread per block in this anti-diagonal
+            dones <- forM blocks $ \(!bi, !bj) -> do
+              mv <- newEmptyMVar
+              forkIO $ do
+                computeBlock sa sb mat bi bj
+                putMVar mv ()
+              return mv
+            -- Wait for all blocks in this diagonal to finish
+            forM_ dones takeMVar
             loop (d + 1)
   loop 0
 
@@ -141,11 +116,12 @@ wavefront = do
 
 main :: IO ()
 main = do
-  initLCS
+  let (seqA, rng1) = lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
+      (seqB, _)    = lcsGenSeq rng1    lcsSeqLen lcsAlpha
+  mat <- newArray ((0,0), (lcsSeqLen, lcsSeqLen)) 0
   t0 <- getCurrentTime
-  wavefront
-  Just g <- readIORef globalLCS
-  !score <- readArray (lcsMat g) (lcsSeqLen, lcsSeqLen)
+  wavefront seqA seqB mat
+  !score <- readArray mat (lcsSeqLen, lcsSeqLen)
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn $ "RESULT=" ++ show score

@@ -7,12 +7,13 @@ Uses par/pseq for blocks within each anti-diagonal.
 
 import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (par/pseq)
+HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (GHC forkOS)
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
-import Control.Parallel (par, pseq)
-import Control.Exception (evaluate)
+import Control.Concurrent (forkOS)
+import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar)
+import Control.Monad (forM_, forM)
 import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
 import Data.Array.IO (IOUArray, newArray, readArray, writeArray)
@@ -23,8 +24,6 @@ import qualified Data.Array.ST as ST
 import Control.Monad.ST (ST, runST)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout)
-import System.IO.Unsafe (unsafePerformIO)
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 
 -- ===== Constants =====
 
@@ -59,30 +58,11 @@ lcsGenSeq !rng0 len_ alpha = runST $ do
   frozen <- unsafeFreeze arr
   return (frozen, rng')
 
--- ===== Global shared state =====
-
-data LCSGlobal = LCSGlobal
-  { lcsA :: !(UArray Int Int)
-  , lcsB :: !(UArray Int Int)
-  , lcsMat :: !(IOUArray (Int,Int) Int)
-  }
-
-{-# NOINLINE globalLCS #-}
-globalLCS :: IORef (Maybe LCSGlobal)
-globalLCS = unsafePerformIO (newIORef Nothing)
-
-initLCS :: IO ()
-initLCS = do
-  let (seqA, rng1) = lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
-      (seqB, _)    = lcsGenSeq rng1    lcsSeqLen lcsAlpha
-  mat <- newArray ((0,0), (lcsSeqLen, lcsSeqLen)) 0
-  writeIORef globalLCS (Just (LCSGlobal seqA seqB mat))
-
 -- ===== Block computation =====
 
-computeBlock :: Int -> Int -> IO ()
-computeBlock !bi !bj = do
-  Just g <- readIORef globalLCS
+computeBlock :: UArray Int Int -> UArray Int Int -> IOUArray (Int,Int) Int
+             -> Int -> Int -> IO ()
+computeBlock !sa !sb !mat !bi !bj = do
   let !n = lcsSeqLen
       !chunkR = n `div` lcsDim
       !chunkC = n `div` lcsDim
@@ -90,9 +70,6 @@ computeBlock !bi !bj = do
       !rowEnd   = if bi == lcsDim - 1 then n else (bi + 1) * chunkR
       !colStart = bj * chunkC + 1
       !colEnd   = if bj == lcsDim - 1 then n else (bj + 1) * chunkC
-      !sa = lcsA g
-      !sb = lcsB g
-      !mat = lcsMat g
   let outerLoop !i
         | i > rowEnd = return ()
         | otherwise = do
@@ -114,31 +91,22 @@ computeBlock !bi !bj = do
             outerLoop (i + 1)
   outerLoop rowStart
 
--- Force block computation
-forceBlock :: (Int, Int) -> ()
-forceBlock (!bi, !bj) = unsafePerformIO $ do
-  computeBlock bi bj
-  return ()
-{-# NOINLINE forceBlock #-}
+-- ===== Wavefront with forkOS + MVar =====
 
--- ===== Wavefront with par/pseq =====
-
-parForceAll :: [(Int, Int)] -> ()
-parForceAll [] = ()
-parForceAll [x] = forceBlock x
-parForceAll (x:xs) =
-  let !a = forceBlock x
-      !b = parForceAll xs
-  in a `par` (b `pseq` ())
-
-wavefront :: IO ()
-wavefront = do
+wavefront :: UArray Int Int -> UArray Int Int -> IOUArray (Int,Int) Int -> IO ()
+wavefront !sa !sb !mat = do
   let !dim = lcsDim
   let loop !d
         | d >= 2 * dim - 1 = return ()
         | otherwise = do
             let blocks = [(i, d - i) | i <- [max 0 (d - dim + 1) .. min d (dim - 1)]]
-            evaluate $ parForceAll blocks
+            dones <- forM blocks $ \(!bi, !bj) -> do
+              mv <- newEmptyMVar
+              forkOS $ do
+                computeBlock sa sb mat bi bj
+                putMVar mv ()
+              return mv
+            forM_ dones takeMVar
             loop (d + 1)
   loop 0
 
@@ -146,11 +114,12 @@ wavefront = do
 
 main :: IO ()
 main = do
-  initLCS
+  let (seqA, rng1) = lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
+      (seqB, _)    = lcsGenSeq rng1    lcsSeqLen lcsAlpha
+  mat <- newArray ((0,0), (lcsSeqLen, lcsSeqLen)) 0
   t0 <- getCurrentTime
-  wavefront
-  Just g <- readIORef globalLCS
-  !score <- readArray (lcsMat g) (lcsSeqLen, lcsSeqLen)
+  wavefront seqA seqB mat
+  !score <- readArray mat (lcsSeqLen, lcsSeqLen)
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn $ "RESULT=" ++ show score
