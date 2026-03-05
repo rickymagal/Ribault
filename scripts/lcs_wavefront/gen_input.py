@@ -51,15 +51,24 @@ def main():
 
     os.makedirs(args.out_dir, exist_ok=True)
 
+    with open(os.path.join(args.out_dir, "params.txt"), "w") as f:
+        f.write(f"{args.N} {args.alphabet} {args.seed}\n")
+
+    # For large N, skip the O(N^2) Python DP — just write params
+    # The benchmark script will cross-validate all 3 strategies instead
+    if args.N > 10000:
+        print(f"[gen_lcs_wf] N={args.N} (skipping Python DP, too large)")
+        # Write empty expected so the script knows to cross-validate
+        with open(os.path.join(args.out_dir, "expected.txt"), "w") as f:
+            f.write("SKIP\n")
+        return
+
     rng = lcg_stream(args.seed)
     seqA = gen_string(rng, args.N, args.alphabet)
     seqB = gen_string(rng, args.N, args.alphabet)
 
     print(f"[gen_lcs_wf] computing LCS for N={args.N}...", file=sys.stderr)
     score = lcs_dp(seqA, seqB)
-
-    with open(os.path.join(args.out_dir, "params.txt"), "w") as f:
-        f.write(f"{args.N} {args.alphabet} {args.seed}\n")
 
     with open(os.path.join(args.out_dir, "expected.txt"), "w") as f:
         f.write(f"{score}\n")

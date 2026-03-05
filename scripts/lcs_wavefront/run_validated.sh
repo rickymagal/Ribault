@@ -61,11 +61,24 @@ validate() {
     cat "$file" 2>/dev/null || true
     exit 1
   fi
-  if [[ "$got" != "$expected" ]]; then
-    echo "FATAL: $label -> got $got, expected $expected"
-    exit 1
+  if [[ "$expected" == "SKIP" ]]; then
+    # Cross-validate: record first result, check subsequent match
+    if [[ -z "${CROSS_EXPECTED:-}" ]]; then
+      CROSS_EXPECTED="$got"
+      echo "  OK: RESULT=$got (first result, will cross-validate)"
+    elif [[ "$got" != "$CROSS_EXPECTED" ]]; then
+      echo "FATAL: $label -> got $got, expected $CROSS_EXPECTED (cross-validate)"
+      exit 1
+    else
+      echo "  OK: RESULT=$got (cross-validated)"
+    fi
+  else
+    if [[ "$got" != "$expected" ]]; then
+      echo "FATAL: $label -> got $got, expected $expected"
+      exit 1
+    fi
+    echo "  OK: RESULT=$got (correct)"
   fi
-  echo "  OK: RESULT=$got (correct)"
 }
 
 CSV="$OUTROOT/metrics.csv"
@@ -87,6 +100,7 @@ for N in "${NS[@]}"; do
 
   NDIR="$OUTROOT/N_${N}"
   mkdir -p "$NDIR"
+  CROSS_EXPECTED=""
 
   # ===== Generate input + expected =====
   INPUT_DIR="$NDIR/input"
@@ -112,22 +126,20 @@ for N in "${NS[@]}"; do
   LIBDIR="$(dirname "$LIBSUP")"
   GHCDEPS="$LIBDIR/ghc-deps"
 
-  # ===== Build GHC Strategies =====
+  # ===== Build GHC forkIO =====
   GDIR="$NDIR/ghc"
   mkdir -p "$GDIR/obj"
   "$PY3" "$GEN_STRAT" --out "$GDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
       --dim "$DIM"
-  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel \
-      -package array -package deepseq \
+  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package array \
       -outputdir "$GDIR/obj" -o "$GDIR/lcs_wf" "$GDIR/lcs_wf.hs" >/dev/null 2>&1
 
-  # ===== Build GHC par/pseq =====
+  # ===== Build GHC forkOS =====
   PDIR="$NDIR/parpseq"
   mkdir -p "$PDIR/obj"
   "$PY3" "$GEN_PARPSEQ" --out "$PDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
       --dim "$DIM"
-  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel \
-      -package array \
+  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package array \
       -outputdir "$PDIR/obj" -o "$PDIR/lcs_wf" "$PDIR/lcs_wf.hs" >/dev/null 2>&1
 
   # ===== Run benchmarks =====
