@@ -3,11 +3,11 @@ set -euo pipefail
 
 # ============================================================
 # Validated LCS Wavefront Benchmark
-# TALM + GHC Strategies + GHC par/pseq
+# Sequential baseline + TALM + GHC-forkIO
 #
 # Single large LCS with DIM×DIM blocked wavefront parallelism.
-# Sweeps over sequence lengths (NS) and processor counts (PS).
-# Every repetition is validated against the expected score.
+# Sequential Haskell baseline (no parallelism) is the P=1 reference.
+# Parallel strategies only run at P>=2.
 # ============================================================
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -21,9 +21,9 @@ ASM_ROOT="$REPO/TALM/asm"
 CODEGEN="$REPO/codegen"
 BUILD_SUPERS="$REPO/tools/build_supers.sh"
 GEN_INPUT="$REPO/scripts/lcs_wavefront/gen_input.py"
+GEN_SEQ="$REPO/scripts/lcs_wavefront/gen_hs_sequential.py"
 GEN_TALM="$REPO/scripts/lcs_wavefront/gen_talm_input.py"
-GEN_STRAT="$REPO/scripts/lcs_wavefront/gen_hs_strategies.py"
-GEN_PARPSEQ="$REPO/scripts/lcs_wavefront/gen_hs_parpseq.py"
+GEN_GHC="$REPO/scripts/lcs_wavefront/gen_hs_strategies.py"
 
 REPS=${REPS:-3}
 SEED=${SEED:-42}
@@ -31,7 +31,7 @@ ALPHABET=${ALPHABET:-4}
 DIM=${DIM:-6}
 ITERS=${ITERS:-1}
 NS=(${NS:-1000 2000 3000})
-PS=(${PS:-1 2 4 8})
+PS=(${PS:-2 4 8})
 TALM_RTS_A=${TALM_RTS_A:-256m}
 
 # Detect HsFFI include
@@ -63,7 +63,6 @@ validate() {
     exit 1
   fi
   if [[ "$expected" == "SKIP" ]]; then
-    # Cross-validate: record first result, check subsequent match
     if [[ -z "${CROSS_EXPECTED:-}" ]]; then
       CROSS_EXPECTED="$got"
       echo "  OK: RESULT=$got (first result, will cross-validate)"
@@ -96,7 +95,7 @@ echo "========================================="
 for N in "${NS[@]}"; do
   echo ""
   echo "############################################"
-  echo "# SEQ_LEN=$N  DIM=$DIM"
+  echo "# SEQ_LEN=$N  DIM=$DIM  ITERS=$ITERS"
   echo "############################################"
 
   NDIR="$OUTROOT/N_${N}"
@@ -109,6 +108,14 @@ for N in "${NS[@]}"; do
       --out-dir "$INPUT_DIR"
   EXPECTED="$(cat "$INPUT_DIR/expected.txt")"
   echo "  Expected LCS score: $EXPECTED"
+
+  # ===== Build sequential baseline =====
+  SDIR="$NDIR/seq"
+  mkdir -p "$SDIR/obj"
+  "$PY3" "$GEN_SEQ" --out "$SDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
+      --dim "$DIM" --iters "$ITERS"
+  "$GHC_BIN" -O2 -rtsopts -package time -package array \
+      -outputdir "$SDIR/obj" -o "$SDIR/lcs_wf" "$SDIR/lcs_wf.hs" >/dev/null 2>&1
 
   # ===== Build TALM =====
   TDIR="$NDIR/talm"
@@ -130,20 +137,24 @@ for N in "${NS[@]}"; do
   # ===== Build GHC forkIO =====
   GDIR="$NDIR/ghc"
   mkdir -p "$GDIR/obj"
-  "$PY3" "$GEN_STRAT" --out "$GDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
+  "$PY3" "$GEN_GHC" --out "$GDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
       --dim "$DIM" --iters "$ITERS"
   "$GHC_BIN" -O2 -threaded -rtsopts -package time -package array \
       -outputdir "$GDIR/obj" -o "$GDIR/lcs_wf" "$GDIR/lcs_wf.hs" >/dev/null 2>&1
 
-  # ===== Build GHC forkOS =====
-  PDIR="$NDIR/parpseq"
-  mkdir -p "$PDIR/obj"
-  "$PY3" "$GEN_PARPSEQ" --out "$PDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
-      --dim "$DIM" --iters "$ITERS"
-  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package array \
-      -outputdir "$PDIR/obj" -o "$PDIR/lcs_wf" "$PDIR/lcs_wf.hs" >/dev/null 2>&1
+  # ===== Run sequential baseline (P=1) =====
+  echo ""
+  echo "======== SEQ_LEN=$N  SEQUENTIAL BASELINE ========"
+  for ((rep=1; rep<=REPS; rep++)); do
+    OUT="$SDIR/out_r${rep}.txt"
+    "$SDIR/lcs_wf" >"$OUT" 2>/dev/null
+    secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
+    echo "SEQ      N=$N rep=$rep -> ${secs}s"
+    validate "SEQ N=$N rep=$rep" "$OUT" "$EXPECTED"
+    echo "seq,$N,$DIM,1,$rep,$secs" >> "$CSV"
+  done
 
-  # ===== Run benchmarks =====
+  # ===== Run parallel benchmarks (P>=2) =====
   for P in "${PS[@]}"; do
     echo ""
     echo "======== SEQ_LEN=$N  P=$P ========"
@@ -181,24 +192,14 @@ for N in "${NS[@]}"; do
       echo "super,$N,$DIM,$P,$rep,$secs" >> "$CSV"
     done
 
-    # --- GHC Strategies ---
+    # --- GHC forkIO ---
     for ((rep=1; rep<=REPS; rep++)); do
       OUT="$GDIR/out_P${P}_r${rep}.txt"
       "$GDIR/lcs_wf" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
-      echo "GHC-Str  N=$N P=$P rep=$rep -> ${secs}s"
-      validate "GHC-Strategies N=$N P=$P rep=$rep" "$OUT" "$EXPECTED"
+      echo "GHC      N=$N P=$P rep=$rep -> ${secs}s"
+      validate "GHC N=$N P=$P rep=$rep" "$OUT" "$EXPECTED"
       echo "ghc,$N,$DIM,$P,$rep,$secs" >> "$CSV"
-    done
-
-    # --- GHC par/pseq ---
-    for ((rep=1; rep<=REPS; rep++)); do
-      OUT="$PDIR/out_P${P}_r${rep}.txt"
-      "$PDIR/lcs_wf" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
-      secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
-      echo "GHC-PP   N=$N P=$P rep=$rep -> ${secs}s"
-      validate "GHC-par/pseq N=$N P=$P rep=$rep" "$OUT" "$EXPECTED"
-      echo "parpseq,$N,$DIM,$P,$rep,$secs" >> "$CSV"
     done
   done
 done
