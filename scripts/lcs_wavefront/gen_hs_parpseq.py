@@ -7,11 +7,11 @@ Uses par/pseq for blocks within each anti-diagonal.
 
 import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (GHC forkOS)
+HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (GHC forkIO)
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
-import Control.Concurrent (forkOS)
+import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar)
 import Control.Monad (forM_, forM)
 import Data.Word (Word64)
@@ -38,6 +38,9 @@ lcsSeed = __SEED__
 
 lcsDim :: Int
 lcsDim = __DIM__
+
+lcsIters :: Int
+lcsIters = __ITERS__
 
 -- ===== LCG PRNG =====
 
@@ -70,28 +73,35 @@ computeBlock !sa !sb !mat !bi !bj = do
       !rowEnd   = if bi == lcsDim - 1 then n else (bi + 1) * chunkR
       !colStart = bj * chunkC + 1
       !colEnd   = if bj == lcsDim - 1 then n else (bj + 1) * chunkC
-  let outerLoop !i
-        | i > rowEnd = return ()
+  let doOnce = do
+        let outerLoop !i
+              | i > rowEnd = return ()
+              | otherwise = do
+                  let innerLoop !j
+                        | j > colEnd = return ()
+                        | otherwise = do
+                            let !ai = sa ! (i - 1)
+                                !bj' = sb ! (j - 1)
+                            if ai == bj'
+                              then do
+                                !d <- readArray mat (i-1, j-1)
+                                writeArray mat (i, j) (d + 1)
+                              else do
+                                !u <- readArray mat (i-1, j)
+                                !l <- readArray mat (i, j-1)
+                                writeArray mat (i, j) (max u l)
+                            innerLoop (j + 1)
+                  innerLoop colStart
+                  outerLoop (i + 1)
+        outerLoop rowStart
+  let iterLoop !k
+        | k >= lcsIters = return ()
         | otherwise = do
-            let innerLoop !j
-                  | j > colEnd = return ()
-                  | otherwise = do
-                      let !ai = sa ! (i - 1)
-                          !bj' = sb ! (j - 1)
-                      if ai == bj'
-                        then do
-                          !d <- readArray mat (i-1, j-1)
-                          writeArray mat (i, j) (d + 1)
-                        else do
-                          !u <- readArray mat (i-1, j)
-                          !l <- readArray mat (i, j-1)
-                          writeArray mat (i, j) (max u l)
-                      innerLoop (j + 1)
-            innerLoop colStart
-            outerLoop (i + 1)
-  outerLoop rowStart
+            doOnce
+            iterLoop (k + 1)
+  iterLoop 0
 
--- ===== Wavefront with forkOS + MVar =====
+-- ===== Wavefront with forkIO + MVar =====
 
 wavefront :: UArray Int Int -> UArray Int Int -> IOUArray (Int,Int) Int -> IO ()
 wavefront !sa !sb !mat = do
@@ -102,7 +112,7 @@ wavefront !sa !sb !mat = do
             let blocks = [(i, d - i) | i <- [max 0 (d - dim + 1) .. min d (dim - 1)]]
             dones <- forM blocks $ \(!bi, !bj) -> do
               mv <- newEmptyMVar
-              forkOS $ do
+              forkIO $ do
                 computeBlock sa sb mat bi bj
                 putMVar mv ()
               return mv
@@ -128,7 +138,7 @@ main = do
 """
 
 
-def emit_hs(path, input_dir, dim):
+def emit_hs(path, input_dir, dim, iters=1):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
     with open(os.path.join(input_dir, "params.txt")) as f:
@@ -142,10 +152,11 @@ def emit_hs(path, input_dir, dim):
     src = src.replace("__ALPHA__", str(alphabet))
     src = src.replace("__SEED__", str(seed))
     src = src.replace("__DIM__", str(dim))
+    src = src.replace("__ITERS__", str(iters))
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[gen_lcs_wf_parpseq] wrote {path}  (N={seq_len}, DIM={dim})")
+    print(f"[gen_lcs_wf_parpseq] wrote {path}  (N={seq_len}, DIM={dim}, ITERS={iters})")
 
 
 def main():
@@ -153,8 +164,9 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--input-dir", required=True)
     ap.add_argument("--dim", type=int, default=6)
+    ap.add_argument("--iters", type=int, default=1)
     args = ap.parse_args()
-    emit_hs(args.out, args.input_dir, args.dim)
+    emit_hs(args.out, args.input_dir, args.dim, args.iters)
 
 
 if __name__ == "__main__":

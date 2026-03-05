@@ -18,7 +18,7 @@ import argparse, os
 MAX_CALL_SITES = 63
 
 
-def emit_hsk(path, input_dir, dim):
+def emit_hsk(path, input_dir, dim, iters=1):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
     with open(os.path.join(input_dir, "params.txt")) as f:
@@ -125,6 +125,9 @@ lcsSeed = {seed}
 lcsDim :: Int
 lcsDim = {dim}
 
+lcsIters :: Int
+lcsIters = {iters}
+
 -- LCG PRNG (Word64, zero GMP)
 lcsNextRng :: Word64 -> Word64
 lcsNextRng r = (6364136223846793005 * r + 1442695040888963407) .&. 0x7FFFFFFFFFFFFFFF
@@ -183,26 +186,33 @@ lcsBlock blockIdx = do
       !sa = lcsA g
       !sb = lcsB g
       !mat = lcsMat g
-  let outerLoop !i
-        | i > rowEnd = return ()
+  let doOnce = do
+        let outerLoop !i
+              | i > rowEnd = return ()
+              | otherwise = do
+                  let innerLoop !j
+                        | j > colEnd = return ()
+                        | otherwise = do
+                            let !ai = sa ! (i - 1)
+                                !bj' = sb ! (j - 1)
+                            if ai == bj'
+                              then do
+                                !d <- Data.Array.IO.readArray mat (i-1, j-1)
+                                Data.Array.IO.writeArray mat (i, j) (d + 1)
+                              else do
+                                !u <- Data.Array.IO.readArray mat (i-1, j)
+                                !l <- Data.Array.IO.readArray mat (i, j-1)
+                                Data.Array.IO.writeArray mat (i, j) (max u l)
+                            innerLoop (j + 1)
+                  innerLoop colStart
+                  outerLoop (i + 1)
+        outerLoop rowStart
+  let iterLoop !k
+        | k >= lcsIters = return ()
         | otherwise = do
-            let innerLoop !j
-                  | j > colEnd = return ()
-                  | otherwise = do
-                      let !ai = sa ! (i - 1)
-                          !bj' = sb ! (j - 1)
-                      if ai == bj'
-                        then do
-                          !d <- Data.Array.IO.readArray mat (i-1, j-1)
-                          Data.Array.IO.writeArray mat (i, j) (d + 1)
-                        else do
-                          !u <- Data.Array.IO.readArray mat (i-1, j)
-                          !l <- Data.Array.IO.readArray mat (i, j-1)
-                          Data.Array.IO.writeArray mat (i, j) (max u l)
-                      innerLoop (j + 1)
-            innerLoop colStart
-            outerLoop (i + 1)
-  outerLoop rowStart
+            doOnce
+            iterLoop (k + 1)
+  iterLoop 0
   return 0
 
 -- Result: read final score and print
@@ -225,8 +235,10 @@ def main():
     ap.add_argument("--input-dir", required=True)
     ap.add_argument("--dim", type=int, default=6,
                     help="Block grid dimension (DIM×DIM blocks)")
+    ap.add_argument("--iters", type=int, default=1,
+                    help="Iterations per block (multiply work)")
     args = ap.parse_args()
-    emit_hsk(args.out, args.input_dir, args.dim)
+    emit_hsk(args.out, args.input_dir, args.dim, args.iters)
 
 
 if __name__ == "__main__":

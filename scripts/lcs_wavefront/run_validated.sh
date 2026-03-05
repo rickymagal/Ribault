@@ -29,6 +29,7 @@ REPS=${REPS:-3}
 SEED=${SEED:-42}
 ALPHABET=${ALPHABET:-4}
 DIM=${DIM:-6}
+ITERS=${ITERS:-1}
 NS=(${NS:-1000 2000 3000})
 PS=(${PS:-1 2 4 8})
 TALM_RTS_A=${TALM_RTS_A:-256m}
@@ -87,7 +88,7 @@ echo "variant,seq_len,dim,P,rep,seconds" > "$CSV"
 echo "========================================="
 echo " LCS Wavefront Benchmark"
 echo " NS (seq_len)=${NS[*]}"
-echo " DIM=$DIM  ALPHABET=$ALPHABET"
+echo " DIM=$DIM  ITERS=$ITERS  ALPHABET=$ALPHABET"
 echo " PS=${PS[*]}  reps=$REPS  seed=$SEED"
 echo " Output: $OUTROOT"
 echo "========================================="
@@ -113,7 +114,7 @@ for N in "${NS[@]}"; do
   TDIR="$NDIR/talm"
   mkdir -p "$TDIR/supers"
   "$PY3" "$GEN_TALM" --out "$TDIR/lcs_wf.hsk" --input-dir "$INPUT_DIR" \
-      --dim "$DIM"
+      --dim "$DIM" --iters "$ITERS"
   "$CODEGEN" "$TDIR/lcs_wf.hsk" > "$TDIR/lcs_wf.fl" 2>/dev/null
 
   INJECT_FILE="$TDIR/supers_inject.hs"
@@ -130,7 +131,7 @@ for N in "${NS[@]}"; do
   GDIR="$NDIR/ghc"
   mkdir -p "$GDIR/obj"
   "$PY3" "$GEN_STRAT" --out "$GDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
-      --dim "$DIM"
+      --dim "$DIM" --iters "$ITERS"
   "$GHC_BIN" -O2 -threaded -rtsopts -package time -package array \
       -outputdir "$GDIR/obj" -o "$GDIR/lcs_wf" "$GDIR/lcs_wf.hs" >/dev/null 2>&1
 
@@ -138,7 +139,7 @@ for N in "${NS[@]}"; do
   PDIR="$NDIR/parpseq"
   mkdir -p "$PDIR/obj"
   "$PY3" "$GEN_PARPSEQ" --out "$PDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
-      --dim "$DIM"
+      --dim "$DIM" --iters "$ITERS"
   "$GHC_BIN" -O2 -threaded -rtsopts -package time -package array \
       -outputdir "$PDIR/obj" -o "$PDIR/lcs_wf" "$PDIR/lcs_wf.hs" >/dev/null 2>&1
 
