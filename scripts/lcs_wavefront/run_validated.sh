@@ -18,7 +18,6 @@ OUTROOT="$(cd "$OUTROOT" && pwd)"
 PY3="${PY3:-python3}"
 INTERP="$REPO/TALM/interp/interp"
 ASM_ROOT="$REPO/TALM/asm"
-CODEGEN="$REPO/codegen"
 BUILD_SUPERS="$REPO/tools/build_supers.sh"
 GEN_INPUT="$REPO/scripts/lcs_wavefront/gen_input.py"
 GEN_SEQ="$REPO/scripts/lcs_wavefront/gen_hs_sequential.py"
@@ -118,15 +117,16 @@ for N in "${NS[@]}"; do
       -outputdir "$SDIR/obj" -o "$SDIR/lcs_wf" "$SDIR/lcs_wf.hs" >/dev/null 2>&1
 
   # ===== Build TALM =====
+  # gen_talm_input.py generates:
+  #   1. lcs_wf.hsk (minimal, for supersgen/build_supers.sh)
+  #   2. lcs_wf.fl  (pre-expanded flowasm with superi for block index)
+  #   3. supers_inject.hs (Haskell super bodies with treb_get_tid FFI)
   TDIR="$NDIR/talm"
   mkdir -p "$TDIR/supers"
   "$PY3" "$GEN_TALM" --out "$TDIR/lcs_wf.hsk" --input-dir "$INPUT_DIR" \
       --dim "$DIM" --iters "$ITERS"
-  "$CODEGEN" "$TDIR/lcs_wf.hsk" > "$TDIR/lcs_wf.fl" 2>/dev/null
 
-  INJECT_FILE="$TDIR/supers_inject.hs"
-  cp "$NDIR/talm/supers_inject.hs" "$INJECT_FILE" 2>/dev/null || true
-  SUPERS_INJECT_FILE="$INJECT_FILE" \
+  SUPERS_INJECT_FILE="$TDIR/supers_inject.hs" \
       SUPERS_GHC_PACKAGES="array" \
       CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/lcs_wf.hsk" "$TDIR/supers/Supers.hs"
 

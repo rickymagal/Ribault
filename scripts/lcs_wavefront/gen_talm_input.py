@@ -1,25 +1,38 @@
 #!/usr/bin/env python3
-"""Generate TALM .hsk for LCS wavefront benchmark.
+"""Generate TALM files for LCS wavefront benchmark.
 
-Wavefront parallelism: DIM×DIM block grid over the DP matrix.
-Block(i,j) depends on block(i-1,j) and block(i,j-1).
-Dependencies for interior blocks are joined via addition (both must
-complete before the block_super fires).
+Generates three files:
+  1. A minimal .hsk with super definitions (for supersgen / build_supers.sh)
+  2. A preprocessor .fl using flowasm macros (bypasses codegen for the
+     dataflow graph — no call-site limit on DIM)
+  3. supers_inject.hs with the Haskell super implementations
 
-Three supers:
-  init_super   — generate sequences, allocate shared score matrix
-  block_super  — compute one block of the DP matrix
-  result_super — read final score, print RESULT=
+The .fl uses the flowasm preprocessor loop macros to unroll the
+wavefront dependency graph, following the same pattern as the original
+hand-written LCS benchmark.
+
+Block super uses `superi` (super with immediate) to pass the block
+index.  The Haskell super retrieves it via FFI to `treb_get_tid()`.
+
+Super IDs (from codegen on the minimal .hsk, verified stable):
+  init_super   → super 6  (s6)
+  block_super  → super 5  (s5)
+  result_super → super 4  (s4)
 """
 
 import argparse, os
 
 
-MAX_CALL_SITES = 63
+# Super IDs assigned by the codegen for our 3-super .hsk.
+# Verified stable: init=6, block=5, result=4.
+SUPER_INIT   = 6
+SUPER_BLOCK  = 5
+SUPER_RESULT = 4
 
 
-def emit_hsk(path, input_dir, dim, iters=1):
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+def emit(path, input_dir, dim, iters=1):
+    out_dir = os.path.dirname(path) or "."
+    os.makedirs(out_dir, exist_ok=True)
 
     with open(os.path.join(input_dir, "params.txt")) as f:
         parts = f.read().split()
@@ -27,82 +40,80 @@ def emit_hsk(path, input_dir, dim, iters=1):
         alphabet = int(parts[1])
         seed = int(parts[2])
 
-    # Each block is its own super type, plus init + result
-    n_blocks = dim * dim
-    # We need: 1 (init) + n_blocks (one per block) + 1 (result) call sites
-    if n_blocks + 2 > MAX_CALL_SITES:
-        # Reduce dim to fit
-        import math
-        dim = int(math.floor(math.sqrt(MAX_CALL_SITES - 2)))
-        n_blocks = dim * dim
-        print(f"[gen_lcs_wf_talm] WARNING: reduced DIM to {dim} (max call sites)")
-
-    lines = []
-    lines.append(f"-- lcs_wavefront.hsk  (auto-generated)")
-    lines.append(f"-- N={seq_len}  ALPHA={alphabet}  SEED={seed}  DIM={dim}")
-    lines.append(f"-- Wavefront LCS: {dim}x{dim} block grid")
-    lines.append("")
-
-    # init_super: generate sequences + allocate matrix
-    lines.append("init_super seed =")
-    lines.append("  super single input (seed) output (state)")
-    lines.append("#BEGINSUPER")
-    lines.append("    state = unsafePerformIO (lcsInit (fromIntegral seed))")
-    lines.append("#ENDSUPER")
-    lines.append("")
-
-    # Per-block supers: each has the block index hardcoded
-    for i in range(dim):
-        for j in range(dim):
-            idx = i * dim + j
-            lines.append(f"block_{idx}_super dep =")
-            lines.append(f"  super single input (dep) output (result)")
-            lines.append(f"#BEGINSUPER")
-            lines.append(f"    result = unsafePerformIO (lcsBlock {idx})")
-            lines.append(f"#ENDSUPER")
-            lines.append(f"")
-
-    # result_super: read and print final score
-    lines.append("result_super dep =")
-    lines.append("  super single input (dep) output (out)")
-    lines.append("#BEGINSUPER")
-    lines.append('    out = unsafePerformIO (lcsResult dep)')
-    lines.append("#ENDSUPER")
-    lines.append("")
-
-    # Main: unrolled wavefront with dependency joins via +
-    lines.append("main =")
-    lines.append("  let s = init_super 0")
-
-    # Generate block let-bindings
-    def bname(i, j):
-        return f"b_{i}_{j}"
-
-    for i in range(dim):
-        for j in range(dim):
-            idx = i * dim + j
-            bn = bname(i, j)
-            if i == 0 and j == 0:
-                lines.append(f"      {bn} = block_{idx}_super s")
-            elif i == 0:
-                lines.append(f"      {bn} = block_{idx}_super {bname(i, j-1)}")
-            elif j == 0:
-                lines.append(f"      {bn} = block_{idx}_super {bname(i-1, j)}")
-            else:
-                # Join two dependencies via +
-                lines.append(f"      {bn} = block_{idx}_super ({bname(i-1, j)} + {bname(i, j-1)})")
-
-    last = bname(dim - 1, dim - 1)
-    lines.append(f"  in result_super {last}")
-
-    hsk = "\n".join(lines) + "\n"
+    # ---- 1. Minimal .hsk (for supersgen → Supers.hs) ----
+    hsk_lines = [
+        "-- lcs_wavefront.hsk  (auto-generated, minimal for supersgen)",
+        f"-- N={seq_len}  ALPHA={alphabet}  SEED={seed}  DIM={dim}",
+        "",
+        "init_super seed =",
+        "  super single input (seed) output (state)",
+        "#BEGINSUPER",
+        "    state = unsafePerformIO (lcsInit (fromIntegral seed))",
+        "#ENDSUPER",
+        "",
+        "block_super dep =",
+        "  super single input (dep) output (result)",
+        "#BEGINSUPER",
+        "    result = unsafePerformIO (lcsBlockTid dep)",
+        "#ENDSUPER",
+        "",
+        "result_super dep =",
+        "  super single input (dep) output (out)",
+        "#BEGINSUPER",
+        "    out = unsafePerformIO (lcsResult dep)",
+        "#ENDSUPER",
+        "",
+        "main =",
+        "  let s = init_super 0",
+        "      b = block_super s",
+        "  in result_super b",
+    ]
     with open(path, "w", encoding="utf-8") as f:
-        f.write(hsk)
+        f.write("\n".join(hsk_lines) + "\n")
     print(f"[gen_lcs_wf_talm] wrote {path}  (N={seq_len}, DIM={dim})")
 
-    # Generate supers_inject.hs
-    inject_path = os.path.join(os.path.dirname(path) or ".", "supers_inject.hs")
+    # ---- 2. Flowasm .fl (pre-expanded, bypasses codegen) ----
+    fl_path = os.path.join(out_dir, "lcs_wf.fl")
+    fl_lines = [
+        f"superinst('init',   {SUPER_INIT},   1, False, False)",
+        f"superinst('block',  {SUPER_BLOCK},  1, False, True)",
+        f"superinst('output', {SUPER_RESULT}, 1, False, False)",
+        f"avgtime('block', 10000)",
+        "",
+        "const c0, 0",
+        "init ini, c0",
+        "block blck0, ini, 0",
+    ]
 
+    def bname(i, j):
+        return f"blck{i * dim + j}"
+
+    # First row: depends on left neighbor only
+    for j in range(1, dim):
+        idx = j
+        fl_lines.append(f"block {bname(0, j)}, {bname(0, j-1)}, {idx}")
+
+    # First column: depends on top neighbor only
+    for i in range(1, dim):
+        idx = i * dim
+        fl_lines.append(f"block {bname(i, 0)}, {bname(i-1, 0)}, {idx}")
+
+    # Interior blocks: 2 inputs (top + left) + immediate block index
+    for i in range(1, dim):
+        for j in range(1, dim):
+            idx = i * dim + j
+            fl_lines.append(
+                f"block {bname(i, j)}, {bname(i-1, j)}, {bname(i, j-1)}, {idx}"
+            )
+
+    fl_lines.append(f"output out, {bname(dim-1, dim-1)}")
+
+    with open(fl_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(fl_lines) + "\n")
+    print(f"[gen_lcs_wf_talm] wrote {fl_path}  ({dim*dim} blocks)")
+
+    # ---- 3. supers_inject.hs ----
+    inject_path = os.path.join(out_dir, "supers_inject.hs")
     inject = f"""import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
 import Data.Array.IO (IOUArray, newArray, readArray, writeArray)
@@ -111,6 +122,10 @@ import Data.Array.Unsafe (unsafeFreeze)
 import Data.Array.ST (STUArray, newArray, readArray, writeArray)
 import Control.Monad.ST (ST, runST)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Foreign.C.Types (CInt(..))
+
+-- FFI: get immediate value from superi instruction
+foreign import ccall unsafe "treb_get_tid" c_treb_get_tid :: IO CInt
 
 -- Constants
 lcsSeqLen :: Int
@@ -167,10 +182,13 @@ lcsInit _ = do
   writeIORef globalLCS (Just (LCSGlobal seqA seqB mat))
   return 0
 
+-- Block computation using treb_get_tid() for block index
+lcsBlockTid :: Int64 -> IO Int64
+lcsBlockTid _ = do
+  blockIdx <- fromIntegral <$> c_treb_get_tid
+  lcsBlock blockIdx
+
 -- Block computation: compute block (bi, bj) of the DP matrix
--- Matrix is (0..N) x (0..N), row 0 and col 0 are base cases (0).
--- Block (bi,bj) covers rows [bi*chunk+1 .. (bi+1)*chunk] and
--- cols [bj*chunk+1 .. (bj+1)*chunk], where chunk = N/DIM.
 lcsBlock :: Int -> IO Int64
 lcsBlock blockIdx = do
   Just g <- readIORef globalLCS
@@ -231,14 +249,15 @@ lcsResult _ = do
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", required=True,
+                    help="Output .hsk path (minimal, for supersgen)")
     ap.add_argument("--input-dir", required=True)
     ap.add_argument("--dim", type=int, default=6,
                     help="Block grid dimension (DIM×DIM blocks)")
     ap.add_argument("--iters", type=int, default=1,
                     help="Iterations per block (multiply work)")
     args = ap.parse_args()
-    emit_hsk(args.out, args.input_dir, args.dim, args.iters)
+    emit(args.out, args.input_dir, args.dim, args.iters)
 
 
 if __name__ == "__main__":
