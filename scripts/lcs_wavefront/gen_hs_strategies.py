@@ -12,7 +12,6 @@ import argparse, os
 
 HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (GHC Strategies par/pseq)
 {-# LANGUAGE BangPatterns #-}
-{-# NOINLINE evalBlock #-}
 module Main where
 
 import Control.Parallel.Strategies (using, parList, rseq)
@@ -100,6 +99,7 @@ computeBlock !sa !sb !mat !bi !bj = do
 -- ===== Pure wrapper for par/pseq sparking =====
 
 -- NOINLINE prevents GHC from floating out or sharing the unsafePerformIO
+{-# NOINLINE evalBlock #-}
 evalBlock :: Ptr Int -> Ptr Int -> Ptr Int -> Int -> Int -> ()
 evalBlock sa sb mat bi bj = unsafePerformIO $ do
   computeBlock sa sb mat bi bj
