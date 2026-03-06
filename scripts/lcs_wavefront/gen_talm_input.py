@@ -7,9 +7,8 @@ Generates three files:
      dataflow graph — no call-site limit on DIM)
   3. supers_inject.hs with the Haskell super implementations
 
-The .fl uses the flowasm preprocessor loop macros to unroll the
-wavefront dependency graph, following the same pattern as the original
-hand-written LCS benchmark.
+Supports rectangular grids (DIM_ROWS × DIM_COLS) for tuning grain size
+independently from parallelism level.
 
 Block super uses `superi` (super with immediate) to pass the block
 index.  The Haskell super retrieves it via FFI to `treb_get_tid()`.
@@ -30,7 +29,7 @@ SUPER_BLOCK  = 5
 SUPER_RESULT = 4
 
 
-def emit(path, input_dir, dim, iters=1):
+def emit(path, input_dir, dim_rows, dim_cols):
     out_dir = os.path.dirname(path) or "."
     os.makedirs(out_dir, exist_ok=True)
 
@@ -43,7 +42,7 @@ def emit(path, input_dir, dim, iters=1):
     # ---- 1. Minimal .hsk (for supersgen → Supers.hs) ----
     hsk_lines = [
         "-- lcs_wavefront.hsk  (auto-generated, minimal for supersgen)",
-        f"-- N={seq_len}  ALPHA={alphabet}  SEED={seed}  DIM={dim}",
+        f"-- N={seq_len}  ALPHA={alphabet}  SEED={seed}  ROWS={dim_rows}  COLS={dim_cols}",
         "",
         "init_super seed =",
         "  super single input (seed) output (state)",
@@ -70,7 +69,7 @@ def emit(path, input_dir, dim, iters=1):
     ]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(hsk_lines) + "\n")
-    print(f"[gen_lcs_wf_talm] wrote {path}  (N={seq_len}, DIM={dim})")
+    print(f"[gen_lcs_wf_talm] wrote {path}  (N={seq_len}, {dim_rows}x{dim_cols})")
 
     # ---- 2. Flowasm .fl (pre-expanded, bypasses codegen) ----
     fl_path = os.path.join(out_dir, "lcs_wf.fl")
@@ -86,31 +85,32 @@ def emit(path, input_dir, dim, iters=1):
     ]
 
     def bname(i, j):
-        return f"blck{i * dim + j}"
+        return f"blck{i * dim_cols + j}"
 
     # First row: depends on left neighbor only
-    for j in range(1, dim):
+    for j in range(1, dim_cols):
         idx = j
         fl_lines.append(f"block {bname(0, j)}, {bname(0, j-1)}, {idx}")
 
     # First column: depends on top neighbor only
-    for i in range(1, dim):
-        idx = i * dim
+    for i in range(1, dim_rows):
+        idx = i * dim_cols
         fl_lines.append(f"block {bname(i, 0)}, {bname(i-1, 0)}, {idx}")
 
     # Interior blocks: 2 inputs (top + left) + immediate block index
-    for i in range(1, dim):
-        for j in range(1, dim):
-            idx = i * dim + j
+    for i in range(1, dim_rows):
+        for j in range(1, dim_cols):
+            idx = i * dim_cols + j
             fl_lines.append(
                 f"block {bname(i, j)}, {bname(i-1, j)}, {bname(i, j-1)}, {idx}"
             )
 
-    fl_lines.append(f"output out, {bname(dim-1, dim-1)}")
+    fl_lines.append(f"output out, {bname(dim_rows-1, dim_cols-1)}")
 
+    total_blocks = dim_rows * dim_cols
     with open(fl_path, "w", encoding="utf-8") as f:
         f.write("\n".join(fl_lines) + "\n")
-    print(f"[gen_lcs_wf_talm] wrote {fl_path}  ({dim*dim} blocks)")
+    print(f"[gen_lcs_wf_talm] wrote {fl_path}  ({total_blocks} blocks, {dim_rows}x{dim_cols})")
 
     # ---- 3. supers_inject.hs ----
     inject_path = os.path.join(out_dir, "supers_inject.hs")
@@ -136,8 +136,11 @@ lcsAlpha = {alphabet}
 lcsSeed :: Word64
 lcsSeed = {seed}
 
-lcsDim :: Int
-lcsDim = {dim}
+lcsDimRows :: Int
+lcsDimRows = {dim_rows}
+
+lcsDimCols :: Int
+lcsDimCols = {dim_cols}
 
 lcsStride :: Int
 lcsStride = {stride}
@@ -190,15 +193,15 @@ lcsBlockTid _ = do
 lcsBlock :: Int -> IO Int64
 lcsBlock blockIdx = do
   Just g <- readIORef globalLCS
-  let !bi = blockIdx `div` lcsDim
-      !bj = blockIdx `mod` lcsDim
+  let !bi = blockIdx `div` lcsDimCols
+      !bj = blockIdx `mod` lcsDimCols
       !n  = lcsSeqLen
-      !chunkR = n `div` lcsDim
-      !chunkC = n `div` lcsDim
+      !chunkR = n `div` lcsDimRows
+      !chunkC = n `div` lcsDimCols
       !rowStart = bi * chunkR + 1
-      !rowEnd   = if bi == lcsDim - 1 then n else (bi + 1) * chunkR
+      !rowEnd   = if bi == lcsDimRows - 1 then n else (bi + 1) * chunkR
       !colStart = bj * chunkC + 1
-      !colEnd   = if bj == lcsDim - 1 then n else (bj + 1) * chunkC
+      !colEnd   = if bj == lcsDimCols - 1 then n else (bj + 1) * chunkC
       !sa  = lcsA g
       !sb  = lcsB g
       !mat = lcsMat g
@@ -244,12 +247,16 @@ def main():
     ap.add_argument("--out", required=True,
                     help="Output .hsk path (minimal, for supersgen)")
     ap.add_argument("--input-dir", required=True)
+    ap.add_argument("--dim-rows", type=int, default=None,
+                    help="Row dimension of block grid")
+    ap.add_argument("--dim-cols", type=int, default=None,
+                    help="Column dimension of block grid")
     ap.add_argument("--dim", type=int, default=6,
-                    help="Block grid dimension (DIM×DIM blocks)")
-    ap.add_argument("--iters", type=int, default=1,
-                    help="Iterations per block (multiply work)")
+                    help="Square grid dimension (used if --dim-rows/--dim-cols not set)")
     args = ap.parse_args()
-    emit(args.out, args.input_dir, args.dim, args.iters)
+    dim_rows = args.dim_rows if args.dim_rows is not None else args.dim
+    dim_cols = args.dim_cols if args.dim_cols is not None else args.dim
+    emit(args.out, args.input_dir, dim_rows, dim_cols)
 
 
 if __name__ == "__main__":

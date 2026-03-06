@@ -1,26 +1,30 @@
 #!/usr/bin/env python3
-"""Generate GHC Strategies .hs for LCS wavefront benchmark.
+"""Generate GHC Strategies (par/pseq) .hs for LCS wavefront benchmark.
 
-Same blocked wavefront as TALM version. Uses forkIO for
-blocks within each anti-diagonal. Ptr-based matrix (no IOUArray).
+Same blocked wavefront as TALM version. Uses Control.Parallel.Strategies
+with parList to spark blocks within each anti-diagonal.
+Ptr-based matrix (no IOUArray).
+
+Supports rectangular grids (DIM_ROWS × DIM_COLS).
 """
 
 import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (GHC forkIO)
+HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (GHC Strategies par/pseq)
 {-# LANGUAGE BangPatterns #-}
+{-# NOINLINE evalBlock #-}
 module Main where
 
-import Control.Concurrent (forkIO)
-import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar)
-import Control.Monad (forM_, forM)
+import Control.Parallel.Strategies (using, parList, rseq)
 import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
+import Data.List (foldl')
 import Foreign.Ptr (Ptr)
 import Foreign.Marshal.Alloc (callocBytes)
 import Foreign.Storable (peekElemOff, pokeElemOff)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout)
+import System.IO.Unsafe (unsafePerformIO)
 
 -- ===== Constants =====
 
@@ -33,8 +37,11 @@ lcsAlpha = __ALPHA__
 lcsSeed :: Word64
 lcsSeed = __SEED__
 
-lcsDim :: Int
-lcsDim = __DIM__
+lcsDimRows :: Int
+lcsDimRows = __DIM_ROWS__
+
+lcsDimCols :: Int
+lcsDimCols = __DIM_COLS__
 
 lcsStride :: Int
 lcsStride = __STRIDE__
@@ -63,12 +70,12 @@ computeBlock :: Ptr Int -> Ptr Int -> Ptr Int -> Int -> Int -> IO ()
 computeBlock !sa !sb !mat !bi !bj = do
   let !n = lcsSeqLen
       !str = lcsStride
-      !chunkR = n `div` lcsDim
-      !chunkC = n `div` lcsDim
+      !chunkR = n `div` lcsDimRows
+      !chunkC = n `div` lcsDimCols
       !rowStart = bi * chunkR + 1
-      !rowEnd   = if bi == lcsDim - 1 then n else (bi + 1) * chunkR
+      !rowEnd   = if bi == lcsDimRows - 1 then n else (bi + 1) * chunkR
       !colStart = bj * chunkC + 1
-      !colEnd   = if bj == lcsDim - 1 then n else (bj + 1) * chunkC
+      !colEnd   = if bj == lcsDimCols - 1 then n else (bj + 1) * chunkC
   let outerLoop !i
         | i > rowEnd = return ()
         | otherwise = do
@@ -90,25 +97,30 @@ computeBlock !sa !sb !mat !bi !bj = do
             outerLoop (i + 1)
   outerLoop rowStart
 
--- ===== Wavefront with forkIO + MVar =====
+-- ===== Pure wrapper for par/pseq sparking =====
+
+-- NOINLINE prevents GHC from floating out or sharing the unsafePerformIO
+evalBlock :: Ptr Int -> Ptr Int -> Ptr Int -> Int -> Int -> ()
+evalBlock sa sb mat bi bj = unsafePerformIO $ do
+  computeBlock sa sb mat bi bj
+  return ()
+
+-- ===== Wavefront with Strategies (parList) =====
 
 wavefront :: Ptr Int -> Ptr Int -> Ptr Int -> IO ()
 wavefront !sa !sb !mat = do
-  let !dim = lcsDim
+  let !dr = lcsDimRows
+      !dc = lcsDimCols
   let loop !d
-        | d >= 2 * dim - 1 = return ()
+        | d >= dr + dc - 1 = return ()
         | otherwise = do
-            let blocks = [(i, d - i) | i <- [max 0 (d - dim + 1) .. min d (dim - 1)]]
-            -- Fork one thread per block in this anti-diagonal
-            dones <- forM blocks $ \(!bi, !bj) -> do
-              mv <- newEmptyMVar
-              forkIO $ do
-                computeBlock sa sb mat bi bj
-                putMVar mv ()
-              return mv
-            -- Wait for all blocks in this diagonal to finish
-            forM_ dones takeMVar
-            loop (d + 1)
+            let blocks = [(i, d - i) | i <- [max 0 (d - dc + 1) .. min d (dr - 1)],
+                                        let j = d - i, j >= 0, j < dc]
+            -- Spark all blocks in this anti-diagonal using parList
+            let results = map (\(bi, bj) -> evalBlock sa sb mat bi bj) blocks
+                          `using` parList rseq
+            -- Force all results before proceeding to next diagonal
+            foldl' seq () results `seq` loop (d + 1)
   loop 0
 
 -- ===== Main =====
@@ -129,7 +141,7 @@ main = do
 """
 
 
-def emit_hs(path, input_dir, dim, iters=1):
+def emit_hs(path, input_dir, dim_rows, dim_cols):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
     with open(os.path.join(input_dir, "params.txt")) as f:
@@ -142,22 +154,26 @@ def emit_hs(path, input_dir, dim, iters=1):
     src = src.replace("__N__", str(seq_len))
     src = src.replace("__ALPHA__", str(alphabet))
     src = src.replace("__SEED__", str(seed))
-    src = src.replace("__DIM__", str(dim))
+    src = src.replace("__DIM_ROWS__", str(dim_rows))
+    src = src.replace("__DIM_COLS__", str(dim_cols))
     src = src.replace("__STRIDE__", str(seq_len + 1))
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[gen_lcs_wf_ghc] wrote {path}  (N={seq_len}, DIM={dim}, ITERS={iters})")
+    print(f"[gen_lcs_wf_ghc] wrote {path}  (N={seq_len}, {dim_rows}x{dim_cols})")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--input-dir", required=True)
+    ap.add_argument("--dim-rows", type=int, default=None)
+    ap.add_argument("--dim-cols", type=int, default=None)
     ap.add_argument("--dim", type=int, default=6)
-    ap.add_argument("--iters", type=int, default=1)
     args = ap.parse_args()
-    emit_hs(args.out, args.input_dir, args.dim, args.iters)
+    dim_rows = args.dim_rows if args.dim_rows is not None else args.dim
+    dim_cols = args.dim_cols if args.dim_cols is not None else args.dim
+    emit_hs(args.out, args.input_dir, dim_rows, dim_cols)
 
 
 if __name__ == "__main__":
