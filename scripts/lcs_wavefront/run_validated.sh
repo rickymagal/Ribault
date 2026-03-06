@@ -113,7 +113,7 @@ for N in "${NS[@]}"; do
   mkdir -p "$SDIR/obj"
   "$PY3" "$GEN_SEQ" --out "$SDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
       --dim "$DIM" --iters "$ITERS"
-  "$GHC_BIN" -O2 -rtsopts -package time -package array \
+  "$GHC_BIN" -O2 -rtsopts -package time \
       -outputdir "$SDIR/obj" -o "$SDIR/lcs_wf" "$SDIR/lcs_wf.hs" >/dev/null 2>&1
 
   # ===== Build TALM =====
@@ -127,7 +127,6 @@ for N in "${NS[@]}"; do
       --dim "$DIM" --iters "$ITERS"
 
   SUPERS_INJECT_FILE="$TDIR/supers_inject.hs" \
-      SUPERS_GHC_PACKAGES="array" \
       CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/lcs_wf.hsk" "$TDIR/supers/Supers.hs"
 
   LIBSUP="$TDIR/supers/libsupers.so"
@@ -139,7 +138,7 @@ for N in "${NS[@]}"; do
   mkdir -p "$GDIR/obj"
   "$PY3" "$GEN_GHC" --out "$GDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
       --dim "$DIM" --iters "$ITERS"
-  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package array \
+  "$GHC_BIN" -O2 -threaded -rtsopts -package time \
       -outputdir "$GDIR/obj" -o "$GDIR/lcs_wf" "$GDIR/lcs_wf.hs" >/dev/null 2>&1
 
   # ===== Run sequential baseline (P=1) =====

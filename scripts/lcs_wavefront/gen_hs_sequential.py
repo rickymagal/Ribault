@@ -14,12 +14,9 @@ module Main where
 
 import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
-import Data.Array.IO (IOUArray, newArray, readArray, writeArray)
-import Data.Array.Unboxed (UArray, bounds, (!))
-import Data.Array.Unsafe (unsafeFreeze)
-import Data.Array.ST (STUArray)
-import qualified Data.Array.ST as ST
-import Control.Monad.ST (ST, runST)
+import Foreign.Ptr (Ptr)
+import Foreign.Marshal.Alloc (callocBytes)
+import Foreign.Storable (peekElemOff, pokeElemOff)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout)
 
@@ -37,71 +34,63 @@ lcsSeed = __SEED__
 lcsDim :: Int
 lcsDim = __DIM__
 
-lcsIters :: Int
-lcsIters = __ITERS__
+lcsStride :: Int
+lcsStride = __STRIDE__
 
 -- ===== LCG PRNG =====
 
 lcsNextRng :: Word64 -> Word64
 lcsNextRng r = (6364136223846793005 * r + 1442695040888963407) .&. 0x7FFFFFFFFFFFFFFF
 
-lcsGenSeq :: Word64 -> Int -> Int -> (UArray Int Int, Word64)
-lcsGenSeq !rng0 len_ alpha = runST $ do
-  arr <- ST.newArray (0, len_ - 1) 0 :: ST s (STUArray s Int Int)
+lcsGenSeq :: Word64 -> Int -> Int -> IO (Ptr Int, Word64)
+lcsGenSeq !rng0 len_ alpha = do
+  arr <- callocBytes (len_ * 8)
   let go !i !r
         | i >= len_ = return r
         | otherwise = do
             let !r' = lcsNextRng r
-                !c  = fromIntegral ((r' `shiftR` 33) `mod` fromIntegral alpha)
-            ST.writeArray arr i c
+                !c  = fromIntegral ((r' `shiftR` 33) `mod` fromIntegral alpha) :: Int
+            pokeElemOff arr i c
             go (i + 1) r'
   rng' <- go 0 rng0
-  frozen <- unsafeFreeze arr
-  return (frozen, rng')
+  return (arr, rng')
 
 -- ===== Block computation =====
 
-computeBlock :: UArray Int Int -> UArray Int Int -> IOUArray (Int,Int) Int
-             -> Int -> Int -> IO ()
+computeBlock :: Ptr Int -> Ptr Int -> Ptr Int -> Int -> Int -> IO ()
 computeBlock !sa !sb !mat !bi !bj = do
   let !n = lcsSeqLen
+      !str = lcsStride
       !chunkR = n `div` lcsDim
       !chunkC = n `div` lcsDim
       !rowStart = bi * chunkR + 1
       !rowEnd   = if bi == lcsDim - 1 then n else (bi + 1) * chunkR
       !colStart = bj * chunkC + 1
       !colEnd   = if bj == lcsDim - 1 then n else (bj + 1) * chunkC
-  let doOnce = do
-        let outerLoop !i
-              | i > rowEnd = return ()
-              | otherwise = do
-                  let innerLoop !j
-                        | j > colEnd = return ()
-                        | otherwise = do
-                            let !ai = sa ! (i - 1)
-                                !bj' = sb ! (j - 1)
-                            if ai == bj'
-                              then do
-                                !d <- readArray mat (i-1, j-1)
-                                writeArray mat (i, j) (d + 1)
-                              else do
-                                !u <- readArray mat (i-1, j)
-                                !l <- readArray mat (i, j-1)
-                                writeArray mat (i, j) (max u l)
-                            innerLoop (j + 1)
-                  innerLoop colStart
-                  outerLoop (i + 1)
-        outerLoop rowStart
-  let iterLoop !k
-        | k >= lcsIters = return ()
+  let outerLoop !i
+        | i > rowEnd = return ()
         | otherwise = do
-            doOnce
-            iterLoop (k + 1)
-  iterLoop 0
+            !ai <- peekElemOff sa (i - 1)
+            let innerLoop !j
+                  | j > colEnd = return ()
+                  | otherwise = do
+                      !bj' <- peekElemOff sb (j - 1)
+                      if ai == bj'
+                        then do
+                          !d <- peekElemOff mat ((i-1)*str + (j-1))
+                          pokeElemOff mat (i*str + j) (d + 1)
+                        else do
+                          !u <- peekElemOff mat ((i-1)*str + j)
+                          !l <- peekElemOff mat (i*str + (j-1))
+                          pokeElemOff mat (i*str + j) (max u l)
+                      innerLoop (j + 1)
+            innerLoop colStart
+            outerLoop (i + 1)
+  outerLoop rowStart
 
 -- ===== Sequential wavefront (no threading) =====
 
-wavefront :: UArray Int Int -> UArray Int Int -> IOUArray (Int,Int) Int -> IO ()
+wavefront :: Ptr Int -> Ptr Int -> Ptr Int -> IO ()
 wavefront !sa !sb !mat = do
   let !dim = lcsDim
   let loop !d
@@ -120,12 +109,12 @@ wavefront !sa !sb !mat = do
 
 main :: IO ()
 main = do
-  let (seqA, rng1) = lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
-      (seqB, _)    = lcsGenSeq rng1    lcsSeqLen lcsAlpha
-  mat <- newArray ((0,0), (lcsSeqLen, lcsSeqLen)) 0
+  (seqA, rng1) <- lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
+  (seqB, _)    <- lcsGenSeq rng1    lcsSeqLen lcsAlpha
+  mat <- callocBytes (lcsStride * lcsStride * 8)
   t0 <- getCurrentTime
   wavefront seqA seqB mat
-  !score <- readArray mat (lcsSeqLen, lcsSeqLen)
+  !score <- peekElemOff mat (lcsSeqLen * lcsStride + lcsSeqLen) :: IO Int
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn $ "RESULT=" ++ show score
@@ -148,7 +137,7 @@ def emit_hs(path, input_dir, dim, iters=1):
     src = src.replace("__ALPHA__", str(alphabet))
     src = src.replace("__SEED__", str(seed))
     src = src.replace("__DIM__", str(dim))
-    src = src.replace("__ITERS__", str(iters))
+    src = src.replace("__STRIDE__", str(seq_len + 1))
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)

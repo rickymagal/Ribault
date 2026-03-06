@@ -114,15 +114,14 @@ def emit(path, input_dir, dim, iters=1):
 
     # ---- 3. supers_inject.hs ----
     inject_path = os.path.join(out_dir, "supers_inject.hs")
+    stride = seq_len + 1  # row stride for flat matrix indexing
     inject = f"""import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
-import Data.Array.IO (IOUArray, newArray, readArray, writeArray)
-import Data.Array.Unboxed (UArray, bounds, (!))
-import Data.Array.Unsafe (unsafeFreeze)
-import Data.Array.ST (STUArray, newArray, readArray, writeArray)
-import Control.Monad.ST (ST, runST)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Foreign.C.Types (CInt(..))
+import Foreign.Ptr (Ptr)
+import Foreign.Marshal.Alloc (callocBytes)
+import Foreign.Storable (peekElemOff, pokeElemOff)
 
 -- FFI: get immediate value from superi instruction
 foreign import ccall unsafe "treb_get_tid" c_treb_get_tid :: IO CInt
@@ -140,33 +139,32 @@ lcsSeed = {seed}
 lcsDim :: Int
 lcsDim = {dim}
 
-lcsIters :: Int
-lcsIters = {iters}
+lcsStride :: Int
+lcsStride = {stride}
 
 -- LCG PRNG (Word64, zero GMP)
 lcsNextRng :: Word64 -> Word64
 lcsNextRng r = (6364136223846793005 * r + 1442695040888963407) .&. 0x7FFFFFFFFFFFFFFF
 
--- Generate sequence into UArray
-lcsGenSeq :: Word64 -> Int -> Int -> (UArray Int Int, Word64)
-lcsGenSeq !rng0 len_ alpha = runST $ do
-  arr <- Data.Array.ST.newArray (0, len_ - 1) 0 :: ST s (STUArray s Int Int)
+-- Generate sequence into Ptr Int (C-allocated, outside GHC heap)
+lcsGenSeq :: Word64 -> Int -> Int -> IO (Ptr Int, Word64)
+lcsGenSeq !rng0 len_ alpha = do
+  arr <- callocBytes (len_ * 8)
   let go !i !r
         | i >= len_ = return r
         | otherwise = do
             let !r' = lcsNextRng r
-                !c  = fromIntegral ((r' `shiftR` 33) `mod` fromIntegral alpha)
-            Data.Array.ST.writeArray arr i c
+                !c  = fromIntegral ((r' `shiftR` 33) `mod` fromIntegral alpha) :: Int
+            pokeElemOff arr i c
             go (i + 1) r'
   rng' <- go 0 rng0
-  frozen <- unsafeFreeze arr
-  return (frozen, rng')
+  return (arr, rng')
 
--- Global shared state
+-- Global shared state (all Ptr-based, outside GHC heap)
 data LCSGlobal = LCSGlobal
-  {{ lcsA :: !(UArray Int Int)
-  , lcsB :: !(UArray Int Int)
-  , lcsMat :: !(IOUArray (Int,Int) Int)
+  {{ lcsA   :: !(Ptr Int)
+  , lcsB   :: !(Ptr Int)
+  , lcsMat :: !(Ptr Int)   -- flat (N+1)*(N+1) matrix, row-major
   }}
 
 {{-# NOINLINE globalLCS #-}}
@@ -176,9 +174,9 @@ globalLCS = unsafePerformIO (newIORef Nothing)
 -- Init: generate sequences, allocate matrix
 lcsInit :: Int -> IO Int64
 lcsInit _ = do
-  let (seqA, rng1) = lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
-      (seqB, _)    = lcsGenSeq rng1    lcsSeqLen lcsAlpha
-  mat <- Data.Array.IO.newArray ((0,0), (lcsSeqLen, lcsSeqLen)) 0
+  (seqA, rng1) <- lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
+  (seqB, _)    <- lcsGenSeq rng1    lcsSeqLen lcsAlpha
+  mat <- callocBytes (lcsStride * lcsStride * 8)  -- (N+1)^2 ints, zeroed
   writeIORef globalLCS (Just (LCSGlobal seqA seqB mat))
   return 0
 
@@ -201,44 +199,38 @@ lcsBlock blockIdx = do
       !rowEnd   = if bi == lcsDim - 1 then n else (bi + 1) * chunkR
       !colStart = bj * chunkC + 1
       !colEnd   = if bj == lcsDim - 1 then n else (bj + 1) * chunkC
-      !sa = lcsA g
-      !sb = lcsB g
+      !sa  = lcsA g
+      !sb  = lcsB g
       !mat = lcsMat g
-  let doOnce = do
-        let outerLoop !i
-              | i > rowEnd = return ()
-              | otherwise = do
-                  let innerLoop !j
-                        | j > colEnd = return ()
-                        | otherwise = do
-                            let !ai = sa ! (i - 1)
-                                !bj' = sb ! (j - 1)
-                            if ai == bj'
-                              then do
-                                !d <- Data.Array.IO.readArray mat (i-1, j-1)
-                                Data.Array.IO.writeArray mat (i, j) (d + 1)
-                              else do
-                                !u <- Data.Array.IO.readArray mat (i-1, j)
-                                !l <- Data.Array.IO.readArray mat (i, j-1)
-                                Data.Array.IO.writeArray mat (i, j) (max u l)
-                            innerLoop (j + 1)
-                  innerLoop colStart
-                  outerLoop (i + 1)
-        outerLoop rowStart
-  let iterLoop !k
-        | k >= lcsIters = return ()
+      !str = lcsStride
+  let outerLoop !i
+        | i > rowEnd = return ()
         | otherwise = do
-            doOnce
-            iterLoop (k + 1)
-  iterLoop 0
+            !ai <- peekElemOff sa (i - 1)
+            let innerLoop !j
+                  | j > colEnd = return ()
+                  | otherwise = do
+                      !bj' <- peekElemOff sb (j - 1)
+                      if ai == bj'
+                        then do
+                          !d <- peekElemOff mat ((i-1)*str + (j-1))
+                          pokeElemOff mat (i*str + j) (d + 1)
+                        else do
+                          !u <- peekElemOff mat ((i-1)*str + j)
+                          !l <- peekElemOff mat (i*str + (j-1))
+                          pokeElemOff mat (i*str + j) (max u l)
+                      innerLoop (j + 1)
+            innerLoop colStart
+            outerLoop (i + 1)
+  outerLoop rowStart
   return 0
 
 -- Result: read final score and print
 lcsResult :: Int64 -> IO Int64
 lcsResult _ = do
   Just g <- readIORef globalLCS
-  !score <- Data.Array.IO.readArray (lcsMat g) (lcsSeqLen, lcsSeqLen)
-  putStrLn ("RESULT=" ++ show score)
+  !score <- peekElemOff (lcsMat g) (lcsSeqLen * lcsStride + lcsSeqLen)
+  putStrLn ("RESULT=" ++ show (score :: Int))
   hFlush stdout
   return 0
 """
