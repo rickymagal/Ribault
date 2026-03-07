@@ -69,13 +69,14 @@ data BuildS = BuildS
   , bsListFuns   :: !(S.Set Ident) -- ^ Functions that build/return lists.
   , bsRetVals    :: !(M.Map Ident Port) -- ^ Return value port for each function.
   , bsGuard      :: !(Maybe Port)  -- ^ Optional guard for gating calls in branches.
-  , bsRecIx      :: !(M.Map Ident Int) -- ^ Recursion call-site indices per function.
   , bsCallIx     :: !(M.Map Ident Int) -- ^ Callgroup output indices per function.
+  , bsRecIx      :: !(M.Map Ident Int) -- ^ Self-recursive call-site counter per function.
+  , bsSelfCalls  :: !(M.Map Ident Int) -- ^ Max simultaneous self-calls per function (stride).
   }
 
 -- | Initial empty builder state.
 emptyS :: BuildS
-emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty S.empty M.empty Nothing M.empty M.empty
+emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty S.empty M.empty Nothing M.empty M.empty M.empty
 
 -- | Builder monad with unique-id generation.
 newtype Build a = Build { unBuild :: StateT BuildS Unique a }
@@ -225,61 +226,41 @@ incTagI k p = do
 decTagI :: Int -> Port -> Build Port
 decTagI k p = incTagI (-k) p
 
--- | Radix used to encode recursive tag paths.
--- Must be > (max number of distinct call sites to the same function) + 1.
--- Each nesting level multiplies the tag by this radix, so it must fit
--- in 64-bit signed int for the deepest recursion expected.
--- Radix 16 supports up to 15 unique call sites per callee and allows
--- depth 15 before overflowing signed 64-bit (16^15 ~ 1.15e18 < 2^63).
-tagRadix :: Int
-tagRadix = 16
+-- | Build a child tag: simple depth counter, tag + 1.
+-- Call groups handle call-site routing.
+-- | Build a child tag for a recursive call.
+-- Linear (1 self-call): additive, tag + 1.  Max depth = 2^63.
+-- Tree (>1 self-calls): multiplicative, tag * stride + k.
+--   Stride = max self-calls in the function. Max depth = 63/log2(stride).
+-- Call groups handle return routing via ret/retsnd.
+mkChildTag :: Bool -> Int -> Int -> Port -> Build Port
+mkChildTag isTree stride k parent
+  | isTree = do
+      -- multiplicative: parent * stride + k (k ∈ [1..stride])
+      tv <- newNode "tagval" (NTagVal "")
+      connectPlus parent (InstPort tv "0")
+      scaled <- mulI (out0 tv) (stride + 1)
+      bumped <- addI scaled k
+      vt <- newNode "valtag" (NValTag "")
+      connectPlus parent (InstPort vt "0")
+      connectPlus bumped (InstPort vt "1")
+      pure (out0 vt)
+  | otherwise = incTagI 1 parent  -- additive: depth counter
 
--- | Build a unique child tag using parent tag * radix + k.
-mkChildTag :: Int -> Port -> Build Port
-mkChildTag k parent = do
-  tv <- newNode "tagval" (NTagVal "")
-  connectPlus parent (InstPort tv "0")
-  scaled <- mulI (out0 tv) tagRadix
-  bumped <- addI scaled k
-  vt <- newNode "valtag" (NValTag "")
-  connectPlus parent (InstPort vt "0")
-  connectPlus bumped (InstPort vt "1")
-  pure (out0 vt)
-
--- | Recover parent tag by dividing by the radix.
-mkParentTag :: Port -> Build Port
-mkParentTag child = do
-  tv <- newNode "tagval" (NTagVal "")
-  connectPlus child (InstPort tv "0")
-  divN <- newNode ("divi_" ++ show tagRadix) (NDivI "" tagRadix)
-  connectPlus (out0 tv) (InstPort divN "0")
-  vt <- newNode "valtag" (NValTag "")
-  connectPlus child (InstPort vt "0")
-  connectPlus (out0 divN) (InstPort vt "1")
-  pure (out0 vt)
-
--- | Recover parent tag using exec-only retagging (keeps values even on tag mismatch).
-mkParentTagExecOnly :: Port -> Build Port
-mkParentTagExecOnly child = do
-  tv <- newNode "tagval" (NTagVal "")
-  connectPlus child (InstPort tv "0")
-  divN <- newNode ("divi_" ++ show tagRadix) (NDivI "" tagRadix)
-  connectPlus (out0 tv) (InstPort divN "0")
-  z <- constFrom child 0
-  div1 <- addI (out0 divN) 1
-  neg <- bin2 "sub" (NSub "") z div1
-  vt <- newNode "valtag" (NValTag "")
-  connectPlus child (InstPort vt "0")
-  connectPlus neg (InstPort vt "1")
-  pure (out0 vt)
-
--- | Allocate a small recursion call-site index for function @f@.
-nextRecIx :: Ident -> Build Int
-nextRecIx f = Build $ do
-  s <- get
-  let i = M.findWithDefault 0 f (bsRecIx s) + 1
-  put s { bsRecIx = M.insert f i (bsRecIx s) }
-  pure i
+-- | Recover parent tag from a child tag.
+mkParentTag :: Bool -> Int -> Port -> Build Port
+mkParentTag isTree stride child
+  | isTree = do
+      -- divisive: child / (stride + 1)
+      tv <- newNode "tagval" (NTagVal "")
+      connectPlus child (InstPort tv "0")
+      divN <- newNode ("divi_" ++ show (stride + 1)) (NDivI "" (stride + 1))
+      connectPlus (out0 tv) (InstPort divN "0")
+      vt <- newNode "valtag" (NValTag "")
+      connectPlus child (InstPort vt "0")
+      connectPlus (out0 divN) (InstPort vt "1")
+      pure (out0 vt)
+  | otherwise = decTagI 1 child  -- additive: depth counter
 
 -- | Allocate a callgroup output index for function @f@ (0-based).
 nextCallIx :: Ident -> Build Int
@@ -656,11 +637,54 @@ foldrM' f z0 = go
 
 -- API ------------------------------------------------------------------
 
+-- | Count max simultaneous self-recursive calls in an expression.
+-- Uses MAX across if/case branches (only one branch executes at runtime).
+countSelfCalls :: Ident -> Expr -> Int
+countSelfCalls f = go
+  where
+    go (Var _)         = 0
+    go (Lit _)         = 0
+    go (Lambda _ e)    = go e
+    go (If c t e)      = go c + max (go t) (go e)
+    go (Case e alts)   = go e + maximum (0 : [go b | (_, b) <- alts])
+    go (Let ds e)      = sum [go b | FunDecl _ _ b <- ds] + go e
+    go (App (Var g) a) = (if g == f then 1 else 0) + go a
+    go (App fn a)      = go fn + go a
+    go (BinOp _ l r)   = go l + go r
+    go (UnOp _ e)      = go e
+    go (List es)       = sum (map go es)
+    go (Tuple es)      = sum (map go es)
+    go (Cons h t)      = go h + go t
+    go (Super{})       = 0
+
+-- | Pre-scan: max self-calls per function (= stride for tag increments).
+preScanSelfCalls :: [Decl] -> M.Map Ident Int
+preScanSelfCalls decls = M.fromList
+  [ (f, max 1 (countSelfCalls f body)) | FunDecl f _ body <- decls ]
+
+-- | Allocate a self-recursive call-site index (1-based) for function @f@.
+nextRecIx :: Ident -> Build Int
+nextRecIx f = Build $ do
+  s <- get
+  let i = M.findWithDefault 0 f (bsRecIx s) + 1
+  put s { bsRecIx = M.insert f i (bsRecIx s) }
+  pure i
+
+-- | Get the stride (max self-calls) for the currently active function.
+getActiveStride :: Build Int
+getActiveStride = Build $ do
+  s <- get
+  case bsActive s of
+    (f:_) -> pure (M.findWithDefault 1 f (bsSelfCalls s))
+    []    -> pure 1
+
 -- | Build a 'DFG' from a 'Program'. Also assigns super names first.
 buildProgram :: Program -> DFG
 buildProgram p0 =
   let Program decls = assignSuperNames p0
+      selfCalls = preScanSelfCalls decls
       (_, st) = runBuild $ do
+        Build $ modify (\s -> s { bsSelfCalls = selfCalls })
         mapM_ (\(FunDecl f ps body) -> insertB f (BLam ps body)) decls
         mapM_ buildZero decls
   in bsGraph st
@@ -954,15 +978,22 @@ goApp fun args = case fun of
     let cgTag = "cg" ++ show cg
     recCall <- isActiveFun f
     listCall <- isListFun f
-    callIx <- nextRecIx f
-    let k = (callIx `mod` (tagRadix - 1)) + 1
+    -- Determine tag scheme based on calling context:
+    -- Self-recursive call in tree-recursive function → multiplicative
+    -- Self-recursive call in linear-recursive function → additive
+    -- Non-recursive call → additive
+    stride <- getActiveStride
+    let isTree = stride > 1
+    k <- if recCall
+           then nextRecIx f  -- unique call-site index (1, 2, ...)
+           else pure 1
     argv' <- pure argv
     tagTokParent <- case argv of
       (a0:_) -> pure a0
       []     -> constI 0
-    tagTokChild <- mkChildTag k tagTokParent
+    tagTokChild <- mkChildTag isTree stride k tagTokParent
     argvTagged <-
-      mapM (mkChildTag k) argv'
+      mapM (mkChildTag isTree stride k) argv'
     callOuts <- forM (zip [0..] argvTagged) $ \(i,a) -> do
       let slot = i + 1
       cs <- newNode (f ++ "#" ++ show slot) (NCallSnd (f ++ "#" ++ show slot) tid cg)
@@ -986,11 +1017,11 @@ goApp fun args = case fun of
       Just res -> do
         r <- retagTo rsTag res
         connectPlus r (InstPort retN "0")
-        mkParentTag r
+        mkParentTag isTree stride r
       Nothing -> do
         z <- constFrom rsTag 0
         connectPlus z (InstPort retN "0")
-        mkParentTag z
+        mkParentTag isTree stride z
     pure resOut
 
   Lambda ps body -> do
