@@ -2,78 +2,55 @@
 set -euo pipefail
 
 # ============================================================
-# run_talm_bench.sh — TALM merge sort benchmark (supers-based)
+# Validated Merge Sort Benchmark
+# Sequential baseline + TALM + par/pseq + Strategies
 #
-# Uses gen_talm_input.py: only mergeSortT stays in pure DF;
-# len, splitCount, merge, ms_super are all Haskell supers.
+# All variants use the same algorithm: Haskell linked-list merge sort.
+# Speedup is measured against the sequential baseline (single-threaded).
 # ============================================================
 
-START_N=50000000
-STEP=50000000
-N_MAX=1000000000
-REPS=3
-PROCS_CSV="1,2,4,8,16"
-OUTROOT=""
-TAG="talm_ms"
-
-RIBAULT=""        # path to Ribault repo root
-PY3="${PY3:-python3}"
-
-usage(){
-  cat <<EOF
-Usage:
-  $0 --ribault /path/to/Ribault --outroot /path/to/results \\
-     [--start-N 50000000] [--step 50000000] [--n-max 1000000000] \\
-     [--reps 3] [--procs "1,2,4,8,16"] [--tag name]
-EOF
-  exit 2
-}
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --ribault)  RIBAULT="$2";   shift 2;;
-    --outroot)  OUTROOT="$2";   shift 2;;
-    --start-N)  START_N="$2";   shift 2;;
-    --step)     STEP="$2";      shift 2;;
-    --n-max)    N_MAX="$2";     shift 2;;
-    --reps)     REPS="$2";      shift 2;;
-    --procs)    PROCS_CSV="$2"; shift 2;;
-    --tag)      TAG="$2";       shift 2;;
-    *) usage;;
-  esac
-done
-
-[[ -n "$RIBAULT" && -n "$OUTROOT" ]] || usage
-
-CODEGEN="$RIBAULT/codegen"
-ASM_ROOT="$RIBAULT/TALM/asm"
-INTERP="$RIBAULT/TALM/interp/interp"
-BUILD_SUPERS="$RIBAULT/tools/build_supers.sh"
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-GEN_TALM="$SCRIPT_DIR/gen_talm_input.py"
-
-[[ -x "$CODEGEN" ]]       || { echo "[ERR] codegen not found: $CODEGEN"; exit 1; }
-[[ -x "$INTERP" ]]        || { echo "[ERR] interp not found: $INTERP"; exit 1; }
-[[ -f "$GEN_TALM" ]]      || { echo "[ERR] gen_talm_input.py not found: $GEN_TALM"; exit 1; }
-[[ -f "$ASM_ROOT/assembler.py" ]] || { echo "[ERR] assembler.py not found: $ASM_ROOT"; exit 1; }
-
-echo "[cfg ] RIBAULT=$RIBAULT"
-echo "[cfg ] OUTROOT=$OUTROOT"
-echo "[cfg ] N range: $START_N to $N_MAX step $STEP"
-echo "[cfg ] P values: $PROCS_CSV"
-echo "[cfg ] REPS=$REPS"
-
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+OUTROOT="${1:-$REPO/results/merge_sort}"
 mkdir -p "$OUTROOT"
-METRICS_CSV="$OUTROOT/metrics_${TAG}.csv"
-echo "variant,N,P,rep,seconds,result" > "$METRICS_CSV"
+OUTROOT="$(cd "$OUTROOT" && pwd)"
 
-IFS=',' read -r -a PROCS <<< "$PROCS_CSV"
+PY3="${PY3:-python3}"
+INTERP="$REPO/TALM/interp/interp"
+ASM_ROOT="$REPO/TALM/asm"
+BUILD_SUPERS="$REPO/tools/build_supers.sh"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+GEN_SEQ="$SCRIPT_DIR/gen_hs_sequential.py"
+GEN_TALM="$SCRIPT_DIR/gen_talm_input.py"
+GEN_PARPSEQ="$SCRIPT_DIR/gen_hs_parpseq.py"
+GEN_STRAT="$SCRIPT_DIR/gen_hs_strategies.py"
+CODEGEN="$REPO/codegen"
 
-# Detect GHC shim for HsFFI include
-SHIM_DIR="$RIBAULT/build/ghc-shim"
-CFLAGS_SUPERS=""
+REPS=${REPS:-3}
+NS=(${NS:-50000000 100000000 150000000 200000000 250000000 300000000 350000000 400000000 450000000 500000000 550000000 600000000 650000000 700000000 750000000 800000000 850000000 900000000 950000000 1000000000})
+PS=(${PS:-2 4 8 16})
+
+# Detect HsFFI include
+GHC_BIN="${GHC:-ghc}"
+GHC_VER="$("$GHC_BIN" --numeric-version)"
+GHC_LIBDIR_RAW="$("$GHC_BIN" --print-libdir)"
+SUPERS_CFLAGS="${CFLAGS:-}"
+if [[ -z "$SUPERS_CFLAGS" ]]; then
+  for cand in \
+    "$GHC_LIBDIR_RAW/x86_64-linux-ghc-${GHC_VER}/rts-"*/include \
+    "$GHC_LIBDIR_RAW/../lib/x86_64-linux-ghc-${GHC_VER}/rts-"*/include \
+    "$GHC_LIBDIR_RAW/rts/include" \
+    "$GHC_LIBDIR_RAW/include"; do
+    if [[ -f "$cand/HsFFI.h" ]]; then
+      SUPERS_CFLAGS="-O2 -fPIC -I$cand"
+      break
+    fi
+  done
+  [[ -z "$SUPERS_CFLAGS" ]] && SUPERS_CFLAGS="-O2 -fPIC"
+fi
+
+# Detect GHC shim
+SHIM_DIR="$REPO/build/ghc-shim"
 if [[ -d "$SHIM_DIR/rts" ]]; then
-  GHC_VER="$(ghc --numeric-version)"
   SHIM_RTS_SO="$(ls "$SHIM_DIR/rts/libHSrts"*"-ghc${GHC_VER}.so" 2>/dev/null | head -1 || true)"
   if [[ -n "$SHIM_RTS_SO" ]]; then
     export GHC_LIBDIR="$SHIM_DIR"
@@ -86,142 +63,143 @@ if [[ -d "$SHIM_DIR/rts" ]]; then
   fi
 fi
 
-# Fallback: find HsFFI include from ghc
-if [[ -z "$CFLAGS_SUPERS" ]]; then
-  GHC_LIBDIR_RAW="$(ghc --print-libdir 2>/dev/null || true)"
-  if [[ -n "$GHC_LIBDIR_RAW" ]]; then
-    RTS_INC="$(find "$GHC_LIBDIR_RAW" -name HsFFI.h -printf '%h\n' 2>/dev/null | head -1 || true)"
-    if [[ -n "$RTS_INC" ]]; then
-      CFLAGS_SUPERS="-O2 -fPIC -I$RTS_INC"
-    fi
+validate() {
+  local label="$1" file="$2"
+  local got
+  got="$(awk -F= '/^RESULT=/{print $2}' "$file" 2>/dev/null || true)"
+  if [[ -z "$got" ]]; then
+    echo "FATAL: $label -> no RESULT= found in $file"
+    cat "$file" 2>/dev/null || true
+    exit 1
   fi
-fi
-
-# Temporarily move GHC env file if it exists (avoids package ambiguity during codegen)
-GHC_ENV_FILE=""
-for f in "$HOME/.ghc"/*/environments/default; do
-  [[ -f "$f" ]] && GHC_ENV_FILE="$f" && break
-done
-
-move_ghc_env() {
-  if [[ -n "$GHC_ENV_FILE" && -f "$GHC_ENV_FILE" ]]; then
-    mv "$GHC_ENV_FILE" "${GHC_ENV_FILE}.bak"
+  if [[ "$got" != "1" ]]; then
+    echo "FATAL: $label -> RESULT=$got (expected 1)"
+    exit 1
   fi
+  echo "  OK: RESULT=1"
 }
 
-restore_ghc_env() {
-  if [[ -n "$GHC_ENV_FILE" && -f "${GHC_ENV_FILE}.bak" ]]; then
-    mv "${GHC_ENV_FILE}.bak" "$GHC_ENV_FILE"
-  fi
-}
+CSV="$OUTROOT/metrics.csv"
+echo "variant,N,P,rep,seconds" > "$CSV"
 
-trap restore_ghc_env EXIT
+echo "========================================="
+echo " Merge Sort Benchmark"
+echo " NS=${NS[*]}"
+echo " PS=${PS[*]}  reps=$REPS"
+echo " Output: $OUTROOT"
+echo "========================================="
 
-# ============================================================
-# Main loop
-# ============================================================
-
-for N in $(seq "$START_N" "$STEP" "$N_MAX"); do
+for N in "${NS[@]}"; do
   echo ""
-  echo "================================================================"
-  echo "  N = $N  ($(echo "scale=0; $N / 1000000" | bc)M)"
-  echo "================================================================"
+  echo "############################################"
+  echo "# N=$N  ($((N / 1000000))M)"
+  echo "############################################"
 
-  N_DIR="$OUTROOT/N_${N}"
-  INPUT_DIR="$N_DIR/input"
-  SUPERS_DIR="$N_DIR/supers"
-  mkdir -p "$INPUT_DIR" "$SUPERS_DIR"
-
-  # Write params.txt
+  NDIR="$OUTROOT/N_${N}"
+  INPUT_DIR="$NDIR/input"
+  mkdir -p "$INPUT_DIR"
   echo "$N" > "$INPUT_DIR/params.txt"
 
-  # Build supers ONCE per N (supers don't depend on P)
-  SUPERS_HSK="$SUPERS_DIR/supers.hsk"
+  # ===== Build & run sequential baseline =====
+  SDIR="$NDIR/seq"
+  mkdir -p "$SDIR/obj"
+  "$PY3" "$GEN_SEQ" --out "$SDIR/ms_seq.hs" --input-dir "$INPUT_DIR"
+  "$GHC_BIN" -O2 -rtsopts -package time \
+      -outputdir "$SDIR/obj" -o "$SDIR/ms_seq" "$SDIR/ms_seq.hs" >/dev/null 2>&1
+
+  echo ""
+  echo "======== N=$N  SEQUENTIAL BASELINE ========"
+  for ((rep=1; rep<=REPS; rep++)); do
+    OUT="$SDIR/out_r${rep}.txt"
+    "$SDIR/ms_seq" +RTS -N1 -RTS >"$OUT" 2>/dev/null
+    secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
+    echo "SEQ      N=$N rep=$rep -> ${secs}s"
+    validate "SEQ N=$N rep=$rep" "$OUT"
+    echo "seq,$N,1,$rep,$secs" >> "$CSV"
+  done
+
+  # ===== Build TALM supers (once per N) =====
+  SUPERS_DIR="$NDIR/supers"
   if [[ ! -f "$SUPERS_DIR/libsupers.so" ]]; then
+    mkdir -p "$SUPERS_DIR"
     echo "[sup ] building supers for N=$N ..."
-    "$PY3" "$GEN_TALM" --out "$SUPERS_HSK" --input-dir "$INPUT_DIR" --P 2
-    if [[ -n "$CFLAGS_SUPERS" ]]; then
-      CFLAGS="$CFLAGS_SUPERS" "$BUILD_SUPERS" "$SUPERS_HSK" "$SUPERS_DIR/Supers.hs"
-    else
-      "$BUILD_SUPERS" "$SUPERS_HSK" "$SUPERS_DIR/Supers.hs"
-    fi
+    "$PY3" "$GEN_TALM" --out "$SUPERS_DIR/supers.hsk" --input-dir "$INPUT_DIR" --P 2
+    CFLAGS="$SUPERS_CFLAGS" "$BUILD_SUPERS" "$SUPERS_DIR/supers.hsk" "$SUPERS_DIR/Supers.hs"
     echo "[sup ] built: $SUPERS_DIR/libsupers.so"
-  else
-    echo "[sup ] reusing cached supers for N=$N"
   fi
 
-  for P in "${PROCS[@]}"; do
+  # ===== Run parallel benchmarks =====
+  for P in "${PS[@]}"; do
     echo ""
-    echo "-------- N=$N  P=$P --------"
+    echo "======== N=$N  P=$P ========"
 
-    CASE_DIR="$N_DIR/P_${P}"
-    LOGS_DIR="$CASE_DIR/logs"
-    mkdir -p "$CASE_DIR" "$LOGS_DIR"
+    # --- TALM ---
+    TDIR="$NDIR/talm_P${P}"
+    mkdir -p "$TDIR/logs"
 
-    HSK="$CASE_DIR/ms_N${N}_P${P}.hsk"
-    FL="$CASE_DIR/ms_N${N}_P${P}.fl"
-    PREFIX="$CASE_DIR/ms_N${N}_P${P}"
+    "$PY3" "$GEN_TALM" --out "$TDIR/ms.hsk" --input-dir "$INPUT_DIR" --P "$P"
+    "$CODEGEN" "$TDIR/ms.hsk" > "$TDIR/ms.fl" 2>"$TDIR/logs/codegen.err"
 
-    # Generate .hsk
-    "$PY3" "$GEN_TALM" --out "$HSK" --input-dir "$INPUT_DIR" --P "$P"
+    pushd "$ASM_ROOT" >/dev/null
+      "$PY3" assembler.py -a -n "$P" -o "$TDIR/ms" "$TDIR/ms.fl" >/dev/null 2>&1
+    popd >/dev/null
 
-    # Codegen
-    echo "[cg  ] codegen -> $FL"
-    move_ghc_env
-    "$CODEGEN" "$HSK" > "$FL" 2>"$LOGS_DIR/codegen.err" || {
-      restore_ghc_env
-      echo "[ERR ] codegen failed"; cat "$LOGS_DIR/codegen.err"; exit 1
-    }
-    restore_ghc_env
-
-    # Assemble with autoplace
-    echo "[asm ] assembling with autoplace -n $P"
-    (cd "$ASM_ROOT" && "$PY3" assembler.py -n "$P" -a -o "$PREFIX" "$FL") \
-      >"$LOGS_DIR/asm.out" 2>"$LOGS_DIR/asm.err" || {
-      echo "[ERR ] assembler failed"; cat "$LOGS_DIR/asm.err"; exit 1
-    }
-
-    # Use autoplace PLA
-    PLA="${PREFIX}_auto.pla"
-    [[ -f "$PLA" ]] || PLA="${PREFIX}.pla"
-
+    FLB="$TDIR/ms.flb"
+    PLA="$TDIR/ms_auto.pla"
+    [[ -f "$PLA" ]] || PLA="$TDIR/ms.pla"
     LIBSUP="$SUPERS_DIR/libsupers.so"
-    GHCDEPS="$SUPERS_DIR/ghc-deps"
+    LIBDIR="$(dirname "$LIBSUP")"
+    GHCDEPS="$LIBDIR/ghc-deps"
 
     for ((rep=1; rep<=REPS; rep++)); do
-      echo -n "  rep $rep/$REPS ... "
+      OUT="$TDIR/out_r${rep}.txt"
+      ERR="$TDIR/err_r${rep}.txt"
+      SUPERS_FORCE_PAR=1 SUPERS_RTS_N="$P" \
+        SUPERS_WORKER=0 SUPERS_WORKER_MAIN=0 \
+        LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
+      secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" 2>/dev/null || echo NaN)"
+      echo "TALM     N=$N P=$P rep=$rep -> ${secs}s"
+      validate "TALM N=$N P=$P rep=$rep" "$OUT"
+      echo "talm,$N,$P,$rep,$secs" >> "$CSV"
+    done
 
-      OUTLOG="$LOGS_DIR/run_rep${rep}.out"
-      ERRLOG="$LOGS_DIR/run_rep${rep}.err"
+    # --- par/pseq ---
+    PPDIR="$NDIR/parpseq_P${P}"
+    mkdir -p "$PPDIR/obj"
+    "$PY3" "$GEN_PARPSEQ" --out "$PPDIR/ms.hs" --input-dir "$INPUT_DIR" --P "$P"
+    "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel \
+        -outputdir "$PPDIR/obj" -o "$PPDIR/ms" "$PPDIR/ms.hs" >/dev/null 2>&1
 
-      SUPERS_FORCE_PAR=1 \
-      SUPERS_RTS_N="$P" \
-      SUPERS_WORKER=0 \
-      SUPERS_WORKER_MAIN=0 \
-      NUM_CORES="$P" \
-      LD_LIBRARY_PATH="$SUPERS_DIR:$GHCDEPS" \
-        "$INTERP" "$P" "${PREFIX}.flb" "$PLA" "$LIBSUP" \
-        >"$OUTLOG" 2>"$ERRLOG"
+    for ((rep=1; rep<=REPS; rep++)); do
+      OUT="$PPDIR/out_r${rep}.txt"
+      "$PPDIR/ms" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
+      echo "PARPSEQ  N=$N P=$P rep=$rep -> ${secs}s"
+      validate "PARPSEQ N=$N P=$P rep=$rep" "$OUT"
+      echo "parpseq,$N,$P,$rep,$secs" >> "$CSV"
+    done
 
-      # Extract time and result
-      EXEC_T="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERRLOG" 2>/dev/null || echo "NaN")"
-      RESULT="$(grep -oP 'RESULT=\K[0-9]+' "$OUTLOG" 2>/dev/null || echo "-1")"
+    # --- Strategies ---
+    STDIR="$NDIR/strat_P${P}"
+    mkdir -p "$STDIR/obj"
+    "$PY3" "$GEN_STRAT" --out "$STDIR/ms.hs" --input-dir "$INPUT_DIR" --P "$P"
+    "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel -package deepseq \
+        -outputdir "$STDIR/obj" -o "$STDIR/ms" "$STDIR/ms.hs" >/dev/null 2>&1
 
-      echo "time=${EXEC_T}s  RESULT=${RESULT}"
-
-      if [[ "$RESULT" != "1" ]]; then
-        echo "[ERR ] WRONG RESULT=$RESULT for N=$N P=$P rep=$rep"
-        echo "[ERR ] stdout:"; cat "$OUTLOG"
-        echo "[ERR ] stderr:"; cat "$ERRLOG"
-        exit 1
-      fi
-
-      echo "talm,$N,$P,$rep,$EXEC_T,$RESULT" >> "$METRICS_CSV"
+    for ((rep=1; rep<=REPS; rep++)); do
+      OUT="$STDIR/out_r${rep}.txt"
+      "$STDIR/ms" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
+      echo "STRAT    N=$N P=$P rep=$rep -> ${secs}s"
+      validate "STRAT N=$N P=$P rep=$rep" "$OUT"
+      echo "strategies,$N,$P,$rep,$secs" >> "$CSV"
     done
   done
 done
 
 echo ""
-echo "================================================================"
-echo "[DONE] All results in: $METRICS_CSV"
-echo "================================================================"
+echo "========================================="
+echo " ALL RUNS PASSED VALIDATION"
+echo " CSV: $CSV"
+echo "========================================="
