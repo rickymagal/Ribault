@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
-"""Generate manual par/pseq Haskell merge sort for benchmark.
+"""Generate GHC Strategies Haskell merge sort for benchmark.
 
 Same algorithm as the TALM version: recursive merge sort with
 splitCount for size tracking, cutoff at n <= n0/p, then
 sequential merge sort below the cutoff.
 
-Uses Control.Parallel (par, pseq) directly, NOT Strategies.
+Uses Control.Parallel.Strategies (Eval monad, rpar/rseq) with
+Control.DeepSeq (force) to deeply evaluate each subtree.
 """
 
 import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: merge sort benchmark (manual par/pseq)
+HS_TMPL = r"""-- Auto-generated: merge sort benchmark (GHC Strategies)
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
-import Control.Parallel (par, pseq)
+import Control.Parallel.Strategies (runEval, rpar, rseq)
+import Control.DeepSeq (force)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout)
 
@@ -42,10 +44,6 @@ merge (x:xt) (y:yt)
   | x <= y         = x : merge xt (y:yt)
   | otherwise       = y : merge (x:xt) yt
 
-forceSpine :: [a] -> ()
-forceSpine []     = ()
-forceSpine (_:xs) = forceSpine xs
-
 -- Sequential merge sort (below cutoff)
 msSeq :: [Int] -> [Int]
 msSeq []  = []
@@ -53,17 +51,18 @@ msSeq [x] = [x]
 msSeq xs  = let (l, r) = split xs
             in merge (msSeq l) (msSeq r)
 
--- Parallel merge sort with par/pseq
-mergeSortPar :: Int -> Int -> [Int] -> [Int]
-mergeSortPar _  _ []  = []
-mergeSortPar _  _ [x] = [x]
-mergeSortPar n0 n xs
+-- Parallel merge sort with Strategies (Eval monad)
+mergeSortStrat :: Int -> Int -> [Int] -> [Int]
+mergeSortStrat _  _ []  = []
+mergeSortStrat _  _ [x] = [x]
+mergeSortStrat n0 n xs
   | n <= n0 `div` parP = msSeq xs
   | otherwise =
       let (l, r, nl, nr) = splitCount xs
-          !sl = mergeSortPar n0 nl l
-          !sr = mergeSortPar n0 nr r
-      in forceSpine sl `par` (forceSpine sr `pseq` merge sl sr)
+      in runEval $ do
+        sl <- rpar (force (mergeSortStrat n0 nl l))
+        sr <- rseq (force (mergeSortStrat n0 nr r))
+        return (merge sl sr)
 
 -- Strict tail-recursive verification
 verify :: [Int] -> Int -> (Bool, Int)
@@ -78,7 +77,7 @@ main = do
   let !input = [seqLen, seqLen - 1 .. 1]
       !n0 = seqLen
   t0 <- getCurrentTime
-  let sorted = mergeSortPar n0 n0 input
+  let sorted = mergeSortStrat n0 n0 input
       !(ok, _) = verify sorted seqLen
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
@@ -100,7 +99,7 @@ def emit_hs(path, input_dir, p):
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[gen_ms_parpseq] wrote {path}  (N={n}, P={p})")
+    print(f"[gen_ms_strat] wrote {path}  (N={n}, P={p})")
 
 
 def main():
