@@ -111,7 +111,7 @@ for N in "${NS[@]}"; do
   echo "======== N=$N  SEQUENTIAL BASELINE ========"
   for ((rep=1; rep<=REPS; rep++)); do
     OUT="$SDIR/out_r${rep}.txt"
-    "$SDIR/ms_seq" +RTS -N1 -RTS >"$OUT" 2>/dev/null
+    "$SDIR/ms_seq" >"$OUT" 2>/dev/null
     secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
     echo "SEQ      N=$N rep=$rep -> ${secs}s"
     validate "SEQ N=$N rep=$rep" "$OUT"
