@@ -104,7 +104,7 @@ for N in "${NS[@]}"; do
   SDIR="$NDIR/seq"
   mkdir -p "$SDIR/obj"
   "$PY3" "$GEN_SEQ" --out "$SDIR/ms_seq.hs" --input-dir "$INPUT_DIR"
-  GHC_ENVIRONMENT=- "$GHC_BIN" -O2 -rtsopts -package base -package time \
+  "$GHC_BIN" -O2 -rtsopts -package base -package time \
       -outputdir "$SDIR/obj" -o "$SDIR/ms_seq" "$SDIR/ms_seq.hs" >/dev/null 2>&1
 
   echo ""
@@ -169,7 +169,7 @@ for N in "${NS[@]}"; do
     PPDIR="$NDIR/parpseq_P${P}"
     mkdir -p "$PPDIR/obj"
     "$PY3" "$GEN_PARPSEQ" --out "$PPDIR/ms.hs" --input-dir "$INPUT_DIR" --P "$P"
-    GHC_ENVIRONMENT=- "$GHC_BIN" -O2 -threaded -rtsopts -package base -package time -package parallel \
+    "$GHC_BIN" -O2 -threaded -rtsopts -package base -package time -package parallel \
         -outputdir "$PPDIR/obj" -o "$PPDIR/ms" "$PPDIR/ms.hs" >/dev/null 2>&1
 
     for ((rep=1; rep<=REPS; rep++)); do
@@ -185,7 +185,7 @@ for N in "${NS[@]}"; do
     STDIR="$NDIR/strat_P${P}"
     mkdir -p "$STDIR/obj"
     "$PY3" "$GEN_STRAT" --out "$STDIR/ms.hs" --input-dir "$INPUT_DIR" --P "$P"
-    GHC_ENVIRONMENT=- "$GHC_BIN" -O2 -threaded -rtsopts -package base -package time -package parallel -package deepseq \
+    "$GHC_BIN" -O2 -threaded -rtsopts -package base -package time -package parallel -package deepseq \
         -outputdir "$STDIR/obj" -o "$STDIR/ms" "$STDIR/ms.hs" >/dev/null 2>&1
 
     for ((rep=1; rep<=REPS; rep++)); do
