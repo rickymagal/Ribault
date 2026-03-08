@@ -5,7 +5,7 @@ set -euo pipefail
 # Validated Merge Sort Benchmark
 # Sequential baseline + TALM + par/pseq + Strategies
 #
-# All variants use the same algorithm: Haskell linked-list merge sort.
+# All variants use the same algorithm: array-based merge sort (Ptr Int).
 # Speedup is measured against the sequential baseline (single-threaded).
 # ============================================================
 
@@ -104,7 +104,7 @@ for N in "${NS[@]}"; do
   SDIR="$NDIR/seq"
   mkdir -p "$SDIR/obj"
   "$PY3" "$GEN_SEQ" --out "$SDIR/ms_seq.hs" --input-dir "$INPUT_DIR"
-  "$GHC_BIN" -O2 -rtsopts -package time \
+  GHC_ENVIRONMENT=- "$GHC_BIN" -O2 -rtsopts -package base -package time \
       -outputdir "$SDIR/obj" -o "$SDIR/ms_seq" "$SDIR/ms_seq.hs" >/dev/null 2>&1
 
   echo ""
@@ -124,7 +124,8 @@ for N in "${NS[@]}"; do
     mkdir -p "$SUPERS_DIR"
     echo "[sup ] building supers for N=$N ..."
     "$PY3" "$GEN_TALM" --out "$SUPERS_DIR/supers.hsk" --input-dir "$INPUT_DIR" --P 2
-    CFLAGS="$SUPERS_CFLAGS" "$BUILD_SUPERS" "$SUPERS_DIR/supers.hsk" "$SUPERS_DIR/Supers.hs"
+    CFLAGS="$SUPERS_CFLAGS" SUPERS_INJECT_FILE="$SUPERS_DIR/supers_inject.hs" \
+      "$BUILD_SUPERS" "$SUPERS_DIR/supers.hsk" "$SUPERS_DIR/Supers.hs"
     echo "[sup ] built: $SUPERS_DIR/libsupers.so"
   fi
 
@@ -168,7 +169,7 @@ for N in "${NS[@]}"; do
     PPDIR="$NDIR/parpseq_P${P}"
     mkdir -p "$PPDIR/obj"
     "$PY3" "$GEN_PARPSEQ" --out "$PPDIR/ms.hs" --input-dir "$INPUT_DIR" --P "$P"
-    "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel \
+    GHC_ENVIRONMENT=- "$GHC_BIN" -O2 -threaded -rtsopts -package base -package time -package parallel \
         -outputdir "$PPDIR/obj" -o "$PPDIR/ms" "$PPDIR/ms.hs" >/dev/null 2>&1
 
     for ((rep=1; rep<=REPS; rep++)); do
@@ -184,7 +185,7 @@ for N in "${NS[@]}"; do
     STDIR="$NDIR/strat_P${P}"
     mkdir -p "$STDIR/obj"
     "$PY3" "$GEN_STRAT" --out "$STDIR/ms.hs" --input-dir "$INPUT_DIR" --P "$P"
-    "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel -package deepseq \
+    GHC_ENVIRONMENT=- "$GHC_BIN" -O2 -threaded -rtsopts -package base -package time -package parallel -package deepseq \
         -outputdir "$STDIR/obj" -o "$STDIR/ms" "$STDIR/ms.hs" >/dev/null 2>&1
 
     for ((rep=1; rep<=REPS; rep++)); do

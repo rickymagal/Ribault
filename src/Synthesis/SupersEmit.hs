@@ -32,6 +32,7 @@ emitSupersModule baseName specs =
       , "import Foreign.Ptr      (Ptr, IntPtr, ptrToIntPtr, intPtrToPtr)"
       , "import Foreign.Storable (peek, poke, peekElemOff, peekByteOff)"
       , "import Foreign.StablePtr (StablePtr, newStablePtr, deRefStablePtr"
+      , "                        , freeStablePtr"
       , "                        , castStablePtrToPtr, castPtrToStablePtr)"
       , "import Data.Int         (Int64)"
       , "import Data.Word        (Word32)"
