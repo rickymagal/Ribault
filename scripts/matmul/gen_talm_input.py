@@ -3,9 +3,10 @@
 """Generate a parametric MatMul .hsk for the TALM benchmark.
 
 Uses Haskell supers (normal pipeline, compiled by GHC).
-P block-multiply supers fire in parallel via dataflow.
+N_FUNCS independent block-multiply supers fire in parallel via dataflow.
+Each super is a separate function (not reused) to match TALM's dataflow model.
 
-Each super computes rows [start..start+rows) of C = A * B^T,
+Each super computes rows [lo..hi) of C = A * B^T,
 returning a partial checksum. The dataflow sums all partial
 checksums and a print super validates the result.
 """
@@ -13,50 +14,35 @@ checksums and a print super validates the result.
 import argparse, os
 
 
-def emit_hsk(path, N, P):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+def emit_hsk(path, N, n_funcs):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
-    block_size = N // P
-    remainder = N % P
+    n_funcs = min(n_funcs, N)
     blocks = []
-    start = 0
-    for i in range(P):
-        rows = block_size + (1 if i < remainder else 0)
-        blocks.append((start, rows))
-        start += rows
+    for i in range(n_funcs):
+        lo = i * N // n_funcs
+        hi = (i + 1) * N // n_funcs
+        if hi > lo:
+            blocks.append((lo, hi))
 
     SHIFT = N + 1
+    nblocks = len(blocks)
 
-    leaf_lets = []
-    for i, (s, rows) in enumerate(blocks):
-        kw = "let" if i == 0 else "in let"
-        packed = s * SHIFT + rows
-        leaf_lets.append(f"  {kw} b{i} = block_mul {packed}")
-
-    if P == 1:
-        sum_expr = "b0"
-    else:
-        sum_expr = " + ".join(f"b{i}" for i in range(P))
-
-    # NOTE: All type annotations inside #BEGINSUPER must use Int64
-    # because supersgen wraps the body in s<N>_impl :: Int64 -> Int64.
-    # Using plain Int causes type-mismatch compilation errors.
-    hsk = f"""-- matmul.hsk  (auto-generated, Haskell supers)
--- N={N}  P={P}  blocks={P}
-
--- SUPER: multiply rows [start..start+rows) of A by B^T
--- Input: packed = start * {SHIFT} + rows
--- Output: partial checksum (truncated integer)
-block_mul packed =
-  super single input (packed) output (cs)
+    # Generate one super per block
+    super_defs = []
+    for idx, (lo, hi) in enumerate(blocks):
+        rows = hi - lo
+        packed = lo * SHIFT + rows
+        super_defs.append(f"""-- SUPER block_{idx}: rows [{lo}..{hi}) of C = A * B^T
+block_{idx} dummy =
+  super single input (dummy) output (cs)
 #BEGINSUPER
     cs = let
         sh   = {SHIFT} :: Int64
         n    = {N} :: Int64
+        packed = {packed} :: Int64
         s    = packed `div` sh
         rows = packed `mod` sh
-        -- generate A (seed=42) and B (seed=137) deterministically
-        -- simple LCG: x_{{i+1}} = (a*x_i + c) mod m, scaled to [0,1)
         lcg seed idx =
           let m = 2147483647 :: Int64
               a = 1103515245 :: Int64
@@ -69,7 +55,22 @@ block_mul packed =
         blockCS = sum [ dot ri k | ri <- [0..rows-1], k <- [0..n-1] ]
       in truncate (blockCS * 1000000 :: Double)
 #ENDSUPER
+""")
 
+    leaf_lets = []
+    for i in range(nblocks):
+        kw = "let" if i == 0 else "in let"
+        leaf_lets.append(f"  {kw} b{i} = block_{i} 0")
+
+    if nblocks == 1:
+        sum_expr = "b0"
+    else:
+        sum_expr = " + ".join(f"b{i}" for i in range(nblocks))
+
+    hsk = f"""-- matmul.hsk  (auto-generated, Haskell supers)
+-- N={N}  N_FUNCS={nblocks}
+
+{"".join(super_defs)}
 -- SUPER: print final checksum
 print_checksum cs =
   super single input (cs) output (out)
@@ -87,16 +88,21 @@ main =
 """
     with open(path, "w", encoding="utf-8") as f:
         f.write(hsk)
-    print(f"[gen_matmul_talm] wrote {path} (N={N}, P={P})")
+    print(f"[gen_matmul_talm] wrote {path} (N={N}, n_funcs={nblocks})")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--N", type=int, required=True)
-    ap.add_argument("--P", type=int, required=True)
+    ap.add_argument("--P", type=int, default=None,
+                    help="Deprecated, use --n-funcs instead")
+    ap.add_argument("--n-funcs", type=int, default=14)
     args = ap.parse_args()
-    emit_hsk(args.out, args.N, args.P)
+    n_funcs = args.n_funcs
+    if args.P is not None:
+        n_funcs = args.P
+    emit_hsk(args.out, args.N, n_funcs)
 
 
 if __name__ == "__main__":

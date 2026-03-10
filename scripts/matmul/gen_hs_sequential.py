@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generate matrix multiplication .hs using par/pseq (NO Strategies).
+"""Generate sequential matrix multiplication .hs (baseline).
 
-Equivalent structure to TALM: N_FUNCS independent block tasks, each computing
-a contiguous range of rows of C = A * B^T using on-the-fly LCG matrix
-generation.  Top-level parallelism via explicit par/pseq over blocks.
-Uses unsafePerformIO so block results can be evaluated in parallel.
+Single-threaded: processes all rows sequentially with on-the-fly LCG
+matrix generation.  Same per-block truncation as parallel variants
+to ensure checksum consistency.
 """
 
 import argparse, os
@@ -26,11 +25,9 @@ def emit_hs(path, N, n_funcs):
 
     src = f"""\
 {{-# LANGUAGE BangPatterns #-}}
--- Auto-generated: Matrix Multiply (par/pseq)
+-- Auto-generated: Matrix Multiply (sequential baseline)
 -- N={N}  N_FUNCS={len(ranges)}
 
-import Control.Parallel (par, pseq)
-import System.IO.Unsafe (unsafePerformIO)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import Data.Int (Int64)
 
@@ -53,29 +50,19 @@ getB :: Int64 -> Int64 -> Double
 getB i j = lcg 137 (i * n + j)
 
 -- Process a block of rows [lo, hi), returning partial checksum.
--- Matches TALM computation: list-comprehension dot products.
--- Uses unsafePerformIO for parallel evaluation via par/pseq.
+-- Same computation as parallel variants.
 processBlock :: (Int64, Int64) -> Int64
-processBlock (lo, hi) = unsafePerformIO $ do
+processBlock (lo, hi) =
     let rows = hi - lo
         dot i k = sum [ getA i j * getB k j | j <- [0..n-1] ]
         blockCS = sum [ dot (lo + ri) k | ri <- [0..rows-1], k <- [0..n-1] ]
-    return $! truncate (blockCS * 1000000 :: Double)
-
-{{-# NOINLINE processBlock #-}}
-
--- Parallel map using par/pseq.
-parMapPP :: (a -> b) -> [a] -> [b]
-parMapPP _ []     = []
-parMapPP f (x:xs) = let r = f x; rs = parMapPP f xs
-                    in r `par` rs `pseq` (r : rs)
+    in truncate (blockCS * 1000000 :: Double)
 
 main :: IO ()
 main = do
   t0 <- getCurrentTime
   let ranges = {range_list}
-      results = parMapPP processBlock ranges
-      !total = sum results
+      !total = sum (map processBlock ranges)
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn $ "CHECKSUM=" ++ show total
@@ -83,7 +70,7 @@ main = do
 """
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[gen_matmul_parpseq] wrote {path} (N={N}, n_funcs={len(ranges)})")
+    print(f"[gen_matmul_sequential] wrote {path} (N={N}, n_funcs={len(ranges)})")
 
 
 def main():

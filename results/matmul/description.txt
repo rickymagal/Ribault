@@ -1,0 +1,137 @@
+MATRIX MULTIPLICATION WITH DATA PIPELINE BENCHMARK
+===================================================
+
+1. Problem
+----------
+Dense matrix multiplication C = A * B^T with data pipeline: each parallel
+task independently reads its input matrices from binary files on disk via
+BS.readFile (strict ByteString), then computes its portion of the result.
+
+This models a common pattern in ML inference: each layer reads weight
+matrices from storage and performs matrix-vector/matrix-matrix products.
+The key characteristic is that parallel tasks perform concurrent heap-
+allocating file IO (BS.readFile) interleaved with compute.
+
+
+2. Parallelisation
+------------------
+The NxN result matrix is partitioned into N_FUNCS row-blocks. Each block
+computes rows [lo, hi) of C, where block i handles rows
+[i*N/N_FUNCS, (i+1)*N/N_FUNCS).
+
+Each block independently:
+  (a) Reads A.bin via BS.readFile  (N*N*8 bytes, GHC heap allocation)
+  (b) Reads BT.bin via BS.readFile (N*N*8 bytes, GHC heap allocation)
+  (c) Computes dot products for its rows using Ptr-based loops
+  (d) Returns a partial checksum: truncate(blockSum * 1e6)
+
+The final checksum is the sum of all block checksums.
+
+All N_FUNCS blocks are independent (embarrassingly parallel). The key
+bottleneck is concurrent BS.readFile: each call allocates a pinned
+ByteString on the GHC heap. With N_FUNCS blocks running concurrently,
+this creates ~2*N_FUNCS*N^2*8 bytes of heap allocation, triggering
+frequent stop-the-world GC pauses that degrade GHC's parallel scaling.
+
+
+3. Variants
+-----------
+  (a) Sequential baseline: processes blocks one at a time, single-threaded
+      (-N1). Same per-block BS.readFile + compute pattern.
+
+  (b) TALM (super): each block is a separate Haskell super compiled into
+      libsupers.so. The TALM dataflow interpreter schedules supers across
+      P pthreads via work-stealing. Each pthread calls its super's FFI
+      entry point, which executes BS.readFile + compute independently.
+
+  (c) GHC Strategies: blocks evaluated via parMap rdeepseq. Each block
+      wrapped in unsafePerformIO (NOINLINE). Green threads scheduled by
+      GHC's capability-based runtime across P capabilities (-N<P>).
+
+  (d) GHC par/pseq: same as Strategies but using manual par/pseq sparking
+      via parMapPP.
+
+
+4. Why TALM outperforms GHC here
+---------------------------------
+BS.readFile allocates strict ByteStrings as pinned MutableByteArray# on
+the GHC heap. When multiple blocks execute concurrently:
+
+  - GHC: all green threads share the GHC heap. Concurrent BS.readFile
+    from P capabilities creates heap pressure. GHC's stop-the-world GC
+    pauses ALL capabilities simultaneously, serialising execution.
+    At higher P, more concurrent allocation = more frequent GC = worse
+    scaling. GHC-Str at P=4 can be SLOWER than P=2.
+
+  - TALM: each super runs in its own pthread via FFI. While supers still
+    use the same GHC RTS internally, the dataflow scheduler ensures that
+    at most P supers are active simultaneously. The SUPERS_RTS_A=256m
+    flag gives each capability a large allocation area, reducing GC
+    frequency. The key advantage is that TALM's scheduler does not
+    depend on GHC's green thread scheduling, avoiding capability
+    contention for spark management.
+
+
+5. Matrix generation
+--------------------
+Matrices A and B^T are pre-generated as flat binary files (row-major,
+IEEE-754 float64, 8 bytes per element). Elements are computed via a
+deterministic LCG:
+
+  A[i][j] = lcg(42,  i*N + j)
+  B[k][j] = lcg(137, k*N + j)
+
+  lcg(seed, idx) = ((1103515245 * (seed + idx) + 12345) mod 2147483647)
+                   / 2147483647
+
+This ensures reproducible results across runs and platforms.
+
+
+6. Computation
+--------------
+Each block computes:
+  dot(i, k) = sum_{j=0}^{N-1} A[i][j] * BT[k][j]
+  blockCS   = sum_{ri=0}^{rows-1} sum_{k=0}^{N-1} dot(lo+ri, k)
+  partial   = truncate(blockCS * 1000000)
+
+Per-block truncation ensures checksum consistency across all variants
+regardless of block partitioning order.
+
+Computational complexity: O(N^3) total, O(N^3 / N_FUNCS) per block.
+IO volume: 2 * N^2 * 8 bytes per block (read both matrices).
+
+
+7. Validation
+-------------
+Every parallel run's checksum is cross-validated against the sequential
+baseline. Any mismatch aborts the benchmark immediately.
+
+
+8. Variance reduction
+---------------------
+Three measures reduce runtime variance across repetitions:
+
+  (a) Core pinning: each run is bound to physical cores 0..(P-1) via
+      taskset -c. On the Intel Xeon Gold 5412U, cores 0-23 are physical
+      and 24-47 are hyperthreading siblings. Pinning avoids OS migration
+      across sockets/HT pairs and ensures consistent cache behaviour.
+      If P > 24, all 24 physical cores are used (no HT).
+
+  (b) Warmup: one discarded execution before the measured reps for each
+      (variant, P) configuration. This warms the page cache (critical
+      for matmul where A.bin + BT.bin are 128-606 MB each), populates
+      TLB entries, and stabilises DVFS governor state.
+
+  (c) 5 measured reps: the median (not mean) is the robust statistic.
+      With 5 reps the median is the 3rd-order statistic, immune to
+      outliers from background noise or GC pauses.
+
+
+9. Files
+--------
+  scripts/matmul/gen_matrices.py        - Generate A.bin and BT.bin
+  scripts/matmul/gen_hs_sequential_io.py - Sequential baseline generator
+  scripts/matmul/gen_hs_strategies_io.py - GHC Strategies generator
+  scripts/matmul/gen_hs_parpseq_io.py   - GHC par/pseq generator
+  scripts/matmul/gen_talm_input_io.py   - TALM input generator
+  scripts/matmul/run_validated_io.sh    - Unified benchmark runner
