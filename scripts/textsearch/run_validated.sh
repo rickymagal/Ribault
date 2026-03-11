@@ -3,7 +3,12 @@ set -euo pipefail
 
 # ============================================================
 # Validated Text-Search benchmark: TALM + GHC Strategies + GHC par/pseq
-# Demonstrates pipelining advantage of dataflow execution.
+#
+# Structure:
+#   - Sequential baseline (P=1, GHC -N1): same for all variants
+#   - Parallel strategies (P>=2): TALM, GHC Strategies, GHC par/pseq
+#
+# Supports pre-generated corpus (CORPUS_DIR) and multiple N values (NS_CSV).
 # ============================================================
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -22,13 +27,19 @@ GEN_STRAT="$REPO/scripts/textsearch/gen_hs_strategies.py"
 GEN_PARPSEQ="$REPO/scripts/textsearch/gen_hs_parpseq.py"
 
 REPS=${REPS:-3}
-N_FILES=${N_FILES:-200}
-FILE_SIZE=${FILE_SIZE:-50000}
+FILE_SIZE=${FILE_SIZE:-10000000}
 KEYWORD=${KEYWORD:-FINDME}
 DENSITY=${DENSITY:-0.002}
 N_FUNCS=${N_FUNCS:-14}
-PS=(${PS:-1 2 4 8 12 16 24})
-TALM_RTS_A=${TALM_RTS_A:-64m}  # GHC RTS allocation area for TALM supers
+PS=(${PS:-2 4 8 16})
+TALM_RTS_A=${TALM_RTS_A:-256m}
+
+# NS_CSV: comma-separated list of N_FILES values to benchmark
+NS_CSV="${NS_CSV:-2000,4000,6000,8000,10000}"
+IFS=',' read -r -a NS_LIST <<< "$NS_CSV"
+
+# Pre-generated corpus directory (skip generation if set and exists)
+CORPUS_DIR="${CORPUS_DIR:-}"
 
 # Detect HsFFI include
 GHC_BIN="${GHC:-ghc}"
@@ -65,131 +76,167 @@ validate() {
   echo "  OK: RESULT=$got (correct)"
 }
 
-# Warm page cache for the corpus
-warm_cache() {
-  cat "$CORPUS"/file_*.txt > /dev/null 2>&1
+# Compute expected total for first N files from manifest
+expected_for_n() {
+  local manifest="$1" n="$2"
+  head -n "$n" "$manifest" | awk '{s+=$2} END{print s}'
 }
 
-# ===== Generate corpus =====
-CORPUS="$OUTROOT/corpus"
-echo "Generating corpus: $N_FILES files, ~${FILE_SIZE}B each..."
-"$PY3" "$GEN_CORPUS" --n-files "$N_FILES" --file-size "$FILE_SIZE" \
-    --keyword "$KEYWORD" --density "$DENSITY" --out-dir "$CORPUS" --seed 42
+# Warm page cache for N files
+warm_cache() {
+  local corpus="$1" n="$2"
+  head -n "$n" "$corpus/manifest.txt" | awk -v d="$corpus" '{print d"/"$1}' | \
+    xargs -P 8 cat > /dev/null 2>&1
+}
 
-EXPECTED="$(cat "$CORPUS/expected_total.txt")"
+# ===== Generate or reuse corpus =====
+MAX_N="${NS_LIST[-1]}"  # largest N value
 
-# Warm page cache so all variants start from same state
-echo "Warming page cache..."
-warm_cache
+if [[ -n "$CORPUS_DIR" && -f "$CORPUS_DIR/manifest.txt" ]]; then
+  CORPUS="$CORPUS_DIR"
+  CORPUS_N="$(wc -l < "$CORPUS/manifest.txt")"
+  if [[ "$CORPUS_N" -lt "$MAX_N" ]]; then
+    echo "FATAL: corpus has $CORPUS_N files but MAX_N=$MAX_N"
+    exit 1
+  fi
+  echo "Using pre-generated corpus: $CORPUS ($CORPUS_N files)"
+else
+  CORPUS="$OUTROOT/corpus"
+  CORPUS_N="$MAX_N"
+  echo "Generating corpus: $MAX_N files, ~${FILE_SIZE}B each..."
+  "$PY3" "$GEN_CORPUS" --n-files "$MAX_N" --file-size "$FILE_SIZE" \
+      --keyword "$KEYWORD" --density "$DENSITY" --out-dir "$CORPUS" --seed 42
+  CORPUS_DIR="$CORPUS"
+fi
+
+# Compute pad width from total corpus size (filenames use this many digits)
+PAD_WIDTH="${#CORPUS_N}"
+[[ "$PAD_WIDTH" -lt 4 ]] && PAD_WIDTH=4
 
 CSV="$OUTROOT/metrics.csv"
 echo "variant,n_files,file_size,P,rep,seconds" > "$CSV"
 
 echo "========================================="
 echo " Text-Search Benchmark (validated)"
-echo " N_FILES=$N_FILES  FILE_SIZE=$FILE_SIZE  KEYWORD=$KEYWORD"
+echo " FILE_SIZE=$FILE_SIZE  KEYWORD=$KEYWORD"
+echo " N values: ${NS_LIST[*]}"
 echo " P=${PS[*]}  reps=$REPS  TALM_RTS_A=$TALM_RTS_A"
-echo " Expected total: $EXPECTED"
 echo " Output: $OUTROOT"
 echo "========================================="
 
-# ===== Build TALM (once for all P) =====
-TDIR="$OUTROOT/talm"
-mkdir -p "$TDIR/supers"
+# ===== Loop over N values =====
+for N_FILES in "${NS_LIST[@]}"; do
+  TOTAL_MB=$((N_FILES * FILE_SIZE / 1048576))
+  EXPECTED="$(expected_for_n "$CORPUS/manifest.txt" "$N_FILES")"
 
-echo ""
-echo "--- Building TALM program ---"
-"$PY3" "$GEN_TALM" --out "$TDIR/ts.hsk" --n-files "$N_FILES" \
-    --keyword "$KEYWORD" --corpus-dir "$CORPUS" --n-funcs "$N_FUNCS"
-"$CODEGEN" "$TDIR/ts.hsk" > "$TDIR/ts.fl" 2>/dev/null
-
-# Build supers with inject file
-INJECT_FILE="$TDIR/supers_inject.hs"
-
-SUPERS_INJECT_FILE="$INJECT_FILE" SUPERS_GHC_PACKAGES="bytestring" \
-    CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/ts.hsk" "$TDIR/supers/Supers.hs"
-
-LIBSUP="$TDIR/supers/libsupers.so"
-LIBDIR="$(dirname "$LIBSUP")"
-GHCDEPS="$LIBDIR/ghc-deps"
-
-# ===== Build GHC variants (once) =====
-GDIR="$OUTROOT/ghc"
-mkdir -p "$GDIR/obj"
-echo ""
-echo "--- Building GHC Strategies ---"
-"$PY3" "$GEN_STRAT" --out "$GDIR/ts.hs" --n-files "$N_FILES" \
-    --keyword "$KEYWORD" --corpus-dir "$CORPUS" --n-funcs "$N_FUNCS"
-"$GHC_BIN" -O2 -threaded -rtsopts -package time -package bytestring -package parallel \
-    -outputdir "$GDIR/obj" -o "$GDIR/ts" "$GDIR/ts.hs" >/dev/null 2>&1
-
-PDIR="$OUTROOT/parpseq"
-mkdir -p "$PDIR/obj"
-echo ""
-echo "--- Building GHC par/pseq ---"
-"$PY3" "$GEN_PARPSEQ" --out "$PDIR/ts.hs" --n-files "$N_FILES" \
-    --keyword "$KEYWORD" --corpus-dir "$CORPUS" --n-funcs "$N_FUNCS"
-"$GHC_BIN" -O2 -threaded -rtsopts -package time -package bytestring -package parallel \
-    -outputdir "$PDIR/obj" -o "$PDIR/ts" "$PDIR/ts.hs" >/dev/null 2>&1
-
-# ===== Run benchmarks =====
-for P in "${PS[@]}"; do
   echo ""
-  echo "======== P=$P ========"
+  echo "############################################################"
+  echo "# N=$N_FILES files  (${TOTAL_MB}MB total)  expected=$EXPECTED"
+  echo "############################################################"
 
-  # --- TALM ---
-  # Assemble for this P
-  pushd "$ASM_ROOT" >/dev/null
-    "$PY3" assembler.py -a -n "$P" -o "$TDIR/ts_P${P}" "$TDIR/ts.fl" >/dev/null 2>&1
-  popd >/dev/null
-  FLB="$TDIR/ts_P${P}.flb"
-  PLA="$TDIR/ts_P${P}_auto.pla"
-  [[ -f "$PLA" ]] || PLA="$TDIR/ts_P${P}.pla"
+  NDIR="$OUTROOT/N_${N_FILES}"
+  mkdir -p "$NDIR"
 
+  # --- Build TALM ---
+  TDIR="$NDIR/talm"
+  mkdir -p "$TDIR/supers"
+  "$PY3" "$GEN_TALM" --out "$TDIR/ts.hsk" --n-files "$N_FILES" \
+      --keyword "$KEYWORD" --corpus-dir "$CORPUS" --n-funcs "$N_FUNCS" --pad-width "$PAD_WIDTH"
+  "$CODEGEN" "$TDIR/ts.hsk" > "$TDIR/ts.fl" 2>/dev/null
+  INJECT_FILE="$TDIR/supers_inject.hs"
+  SUPERS_INJECT_FILE="$INJECT_FILE" SUPERS_GHC_PACKAGES="bytestring" \
+      CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/ts.hsk" "$TDIR/supers/Supers.hs"
+  LIBSUP="$TDIR/supers/libsupers.so"
+  LIBDIR="$(dirname "$LIBSUP")"
+  GHCDEPS="$LIBDIR/ghc-deps"
+
+  # --- Build GHC Strategies ---
+  GDIR="$NDIR/ghc"
+  mkdir -p "$GDIR/obj"
+  "$PY3" "$GEN_STRAT" --out "$GDIR/ts.hs" --n-files "$N_FILES" \
+      --keyword "$KEYWORD" --corpus-dir "$CORPUS" --n-funcs "$N_FUNCS" --pad-width "$PAD_WIDTH"
+  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package bytestring -package parallel \
+      -outputdir "$GDIR/obj" -o "$GDIR/ts" "$GDIR/ts.hs" >/dev/null 2>&1
+
+  # --- Build GHC par/pseq ---
+  PDIR="$NDIR/parpseq"
+  mkdir -p "$PDIR/obj"
+  "$PY3" "$GEN_PARPSEQ" --out "$PDIR/ts.hs" --n-files "$N_FILES" \
+      --keyword "$KEYWORD" --corpus-dir "$CORPUS" --n-funcs "$N_FUNCS" --pad-width "$PAD_WIDTH"
+  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package bytestring -package parallel \
+      -outputdir "$PDIR/obj" -o "$PDIR/ts" "$PDIR/ts.hs" >/dev/null 2>&1
+
+  echo "  Built all variants for N=$N_FILES"
+
+  # ===== Sequential baseline (P=1) =====
+  echo ""
+  echo "  ---- Sequential Baseline (P=1) ----"
   for ((rep=1; rep<=REPS; rep++)); do
-    warm_cache
-    OUT="$TDIR/out_P${P}_r${rep}.txt"
-    ERR="$TDIR/err_P${P}_r${rep}.txt"
-    for attempt in 1 2 3 4 5 6 7 8 9 10; do
-      set +e
-      SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
-      rc=$?
-      set -e
-      if [[ $rc -ne 0 ]]; then
-        echo "  WARN: TALM P=$P rep=$rep rc=$rc (attempt $attempt/10), retrying..."
-        continue
-      fi
-      got="$(awk -F= '/^RESULT=/{print $2}' "$OUT" 2>/dev/null || true)"
-      if [[ -n "$got" ]]; then break; fi
-      echo "  WARN: RESULT= missing (attempt $attempt/10), retrying..."
+    warm_cache "$CORPUS" "$N_FILES"
+    OUT="$GDIR/out_seq_r${rep}.txt"
+    "$GDIR/ts" +RTS -N1 -RTS >"$OUT" 2>/dev/null
+    secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
+    echo "  SEQ      N=$N_FILES P=1 rep=$rep -> ${secs}s"
+    validate "Sequential N=$N_FILES P=1 rep=$rep" "$OUT" "$EXPECTED"
+    echo "seq,$N_FILES,$FILE_SIZE,1,$rep,$secs" >> "$CSV"
+  done
+
+  # ===== Parallel benchmarks (P>=2) =====
+  for P in "${PS[@]}"; do
+    echo ""
+    echo "  ---- P=$P ----"
+
+    # --- TALM ---
+    pushd "$ASM_ROOT" >/dev/null
+      "$PY3" assembler.py -a -n "$P" -o "$TDIR/ts_P${P}" "$TDIR/ts.fl" >/dev/null 2>&1
+    popd >/dev/null
+    FLB="$TDIR/ts_P${P}.flb"
+    PLA="$TDIR/ts_P${P}_auto.pla"
+    [[ -f "$PLA" ]] || PLA="$TDIR/ts_P${P}.pla"
+
+    for ((rep=1; rep<=REPS; rep++)); do
+      warm_cache "$CORPUS" "$N_FILES"
+      OUT="$TDIR/out_P${P}_r${rep}.txt"
+      ERR="$TDIR/err_P${P}_r${rep}.txt"
+      for attempt in 1 2 3; do
+        set +e
+        SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+          "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
+        rc=$?
+        set -e
+        if [[ $rc -eq 0 ]]; then
+          got="$(awk -F= '/^RESULT=/{print $2}' "$OUT" 2>/dev/null || true)"
+          if [[ -n "$got" ]]; then break; fi
+        fi
+        echo "    WARN: TALM N=$N_FILES P=$P rep=$rep attempt=$attempt failed (rc=$rc)"
+      done
+      secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" 2>/dev/null || true)"
+      echo "  TALM     N=$N_FILES P=$P rep=$rep -> ${secs}s"
+      validate "TALM N=$N_FILES P=$P rep=$rep" "$OUT" "$EXPECTED"
+      echo "super,$N_FILES,$FILE_SIZE,$P,$rep,$secs" >> "$CSV"
     done
-    secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" 2>/dev/null || true)"
-    echo "TALM     P=$P rep=$rep -> ${secs}s"
-    validate "TALM P=$P rep=$rep" "$OUT" "$EXPECTED"
-    echo "super,$N_FILES,$FILE_SIZE,$P,$rep,$secs" >> "$CSV"
-  done
 
-  # --- GHC Strategies (default RTS settings) ---
-  for ((rep=1; rep<=REPS; rep++)); do
-    warm_cache
-    OUT="$GDIR/out_P${P}_r${rep}.txt"
-    "$GDIR/ts" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
-    secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
-    echo "GHC-Str  P=$P rep=$rep -> ${secs}s"
-    validate "GHC-Strategies P=$P rep=$rep" "$OUT" "$EXPECTED"
-    echo "ghc,$N_FILES,$FILE_SIZE,$P,$rep,$secs" >> "$CSV"
-  done
+    # --- GHC Strategies ---
+    for ((rep=1; rep<=REPS; rep++)); do
+      warm_cache "$CORPUS" "$N_FILES"
+      OUT="$GDIR/out_P${P}_r${rep}.txt"
+      "$GDIR/ts" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
+      echo "  GHC-Str  N=$N_FILES P=$P rep=$rep -> ${secs}s"
+      validate "GHC-Strategies N=$N_FILES P=$P rep=$rep" "$OUT" "$EXPECTED"
+      echo "strat,$N_FILES,$FILE_SIZE,$P,$rep,$secs" >> "$CSV"
+    done
 
-  # --- GHC par/pseq (default RTS settings) ---
-  for ((rep=1; rep<=REPS; rep++)); do
-    warm_cache
-    OUT="$PDIR/out_P${P}_r${rep}.txt"
-    "$PDIR/ts" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
-    secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
-    echo "GHC-PP   P=$P rep=$rep -> ${secs}s"
-    validate "GHC-par/pseq P=$P rep=$rep" "$OUT" "$EXPECTED"
-    echo "parpseq,$N_FILES,$FILE_SIZE,$P,$rep,$secs" >> "$CSV"
+    # --- GHC par/pseq ---
+    for ((rep=1; rep<=REPS; rep++)); do
+      warm_cache "$CORPUS" "$N_FILES"
+      OUT="$PDIR/out_P${P}_r${rep}.txt"
+      "$PDIR/ts" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
+      echo "  GHC-PP   N=$N_FILES P=$P rep=$rep -> ${secs}s"
+      validate "GHC-par/pseq N=$N_FILES P=$P rep=$rep" "$OUT" "$EXPECTED"
+      echo "parpseq,$N_FILES,$FILE_SIZE,$P,$rep,$secs" >> "$CSV"
+    done
   done
 done
 

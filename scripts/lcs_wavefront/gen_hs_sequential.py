@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """Generate pure sequential Haskell for LCS wavefront benchmark.
 
-Same blocked wavefront computation as all other variants, but
-purely sequential — no threading, no parallelism framework.
-Used as the P=1 baseline for speedup calculation.
+Uses a simple 2-row DP technique (prev_row / curr_row).
+No blocking, no wavefront — just the standard LCS recurrence
+row by row.  Memory: 2 * (N+1) * 8 bytes.
 
-Supports rectangular grids (DIM_ROWS × DIM_COLS).
+Used as the P=1 baseline for speedup calculation.
 """
 
 import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (sequential baseline)
+HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (sequential baseline, 2-row)
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
 import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
 import Foreign.Ptr (Ptr)
-import Foreign.Marshal.Alloc (callocBytes)
+import Foreign.Marshal.Alloc (callocBytes, free)
 import Foreign.Storable (peekElemOff, pokeElemOff)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout)
@@ -32,15 +32,6 @@ lcsAlpha = __ALPHA__
 
 lcsSeed :: Word64
 lcsSeed = __SEED__
-
-lcsDimRows :: Int
-lcsDimRows = __DIM_ROWS__
-
-lcsDimCols :: Int
-lcsDimCols = __DIM_COLS__
-
-lcsStride :: Int
-lcsStride = __STRIDE__
 
 -- ===== LCG PRNG =====
 
@@ -60,59 +51,39 @@ lcsGenSeq !rng0 len_ alpha = do
   rng' <- go 0 rng0
   return (arr, rng')
 
--- ===== Block computation =====
+-- ===== 2-row sequential LCS =====
 
-computeBlock :: Ptr Int -> Ptr Int -> Ptr Int -> Int -> Int -> IO ()
-computeBlock !sa !sb !mat !bi !bj = do
+lcsSequential :: Ptr Int -> Ptr Int -> IO Int
+lcsSequential !sa !sb = do
   let !n = lcsSeqLen
-      !str = lcsStride
-      !chunkR = n `div` lcsDimRows
-      !chunkC = n `div` lcsDimCols
-      !rowStart = bi * chunkR + 1
-      !rowEnd   = if bi == lcsDimRows - 1 then n else (bi + 1) * chunkR
-      !colStart = bj * chunkC + 1
-      !colEnd   = if bj == lcsDimCols - 1 then n else (bj + 1) * chunkC
-  let outerLoop !i
-        | i > rowEnd = return ()
+      !cols = n + 1
+  prevRow <- callocBytes (cols * 8)   -- zeroed
+  curRow  <- callocBytes (cols * 8)   -- zeroed
+  let outerLoop !prev !cur !i
+        | i > n = do
+            !score <- peekElemOff prev n
+            free prev
+            free cur
+            return score
         | otherwise = do
+            pokeElemOff cur 0 (0 :: Int)
             !ai <- peekElemOff sa (i - 1)
             let innerLoop !j
-                  | j > colEnd = return ()
+                  | j > n = return ()
                   | otherwise = do
-                      !bj' <- peekElemOff sb (j - 1)
-                      if ai == bj'
+                      !bj <- peekElemOff sb (j - 1)
+                      if ai == bj
                         then do
-                          !d <- peekElemOff mat ((i-1)*str + (j-1))
-                          pokeElemOff mat (i*str + j) (d + 1)
+                          !d <- peekElemOff prev (j - 1)
+                          pokeElemOff cur j (d + 1)
                         else do
-                          !u <- peekElemOff mat ((i-1)*str + j)
-                          !l <- peekElemOff mat (i*str + (j-1))
-                          pokeElemOff mat (i*str + j) (max u l)
+                          !u <- peekElemOff prev j
+                          !l <- peekElemOff cur (j - 1)
+                          pokeElemOff cur j (max u l)
                       innerLoop (j + 1)
-            innerLoop colStart
-            outerLoop (i + 1)
-  outerLoop rowStart
-
--- ===== Sequential wavefront (no threading) =====
-
-wavefront :: Ptr Int -> Ptr Int -> Ptr Int -> IO ()
-wavefront !sa !sb !mat = do
-  let !dr = lcsDimRows
-      !dc = lcsDimCols
-  let loop !d
-        | d >= dr + dc - 1 = return ()
-        | otherwise = do
-            let go !i
-                  | i > min d (dr - 1) = return ()
-                  | otherwise = do
-                      let !j = d - i
-                      if j >= 0 && j < dc
-                        then computeBlock sa sb mat i j
-                        else return ()
-                      go (i + 1)
-            go (max 0 (d - dc + 1))
-            loop (d + 1)
-  loop 0
+            innerLoop 1
+            outerLoop cur prev (i + 1)   -- swap: cur becomes prev
+  outerLoop prevRow curRow 1
 
 -- ===== Main =====
 
@@ -120,10 +91,8 @@ main :: IO ()
 main = do
   (seqA, rng1) <- lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
   (seqB, _)    <- lcsGenSeq rng1    lcsSeqLen lcsAlpha
-  mat <- callocBytes (lcsStride * lcsStride * 8)
   t0 <- getCurrentTime
-  wavefront seqA seqB mat
-  !score <- peekElemOff mat (lcsSeqLen * lcsStride + lcsSeqLen) :: IO Int
+  !score <- lcsSequential seqA seqB
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn $ "RESULT=" ++ show score
@@ -145,26 +114,22 @@ def emit_hs(path, input_dir, dim_rows, dim_cols):
     src = src.replace("__N__", str(seq_len))
     src = src.replace("__ALPHA__", str(alphabet))
     src = src.replace("__SEED__", str(seed))
-    src = src.replace("__DIM_ROWS__", str(dim_rows))
-    src = src.replace("__DIM_COLS__", str(dim_cols))
-    src = src.replace("__STRIDE__", str(seq_len + 1))
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[gen_lcs_wf_seq] wrote {path}  (N={seq_len}, {dim_rows}x{dim_cols})")
+    print(f"[gen_lcs_wf_seq] wrote {path}  (N={seq_len}, 2-row sequential)")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--input-dir", required=True)
+    # Accept but ignore dim args (kept for CLI compatibility with run_validated.sh)
     ap.add_argument("--dim-rows", type=int, default=None)
     ap.add_argument("--dim-cols", type=int, default=None)
     ap.add_argument("--dim", type=int, default=6)
     args = ap.parse_args()
-    dim_rows = args.dim_rows if args.dim_rows is not None else args.dim
-    dim_cols = args.dim_cols if args.dim_cols is not None else args.dim
-    emit_hs(args.out, args.input_dir, dim_rows, dim_cols)
+    emit_hs(args.out, args.input_dir, args.dim_rows, args.dim_cols)
 
 
 if __name__ == "__main__":

@@ -111,10 +111,10 @@ if [[ "$MS_LEAF" == "asm" ]]; then
   USE_SUPERS=0
   SUPERS_FIXED=""
   echo "[sup ] supers disabled (MS_LEAF=asm)"
-elif [[ "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" ]]; then
+elif [[ "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" || "$MS_LEAF" == "cqsort" || "$MS_LEAF" == "ex21" ]]; then
   USE_SUPERS=1
   SUPERS_FIXED=""
-  echo "[sup ] will build supers per-N (verify_sorted depends on N)"
+  echo "[sup ] will build supers per-N"
 else
   # array, coarse: use fixed supers
   USE_SUPERS=1
@@ -187,7 +187,21 @@ get_supers_dir() {
   d="$(cd "$d" && pwd)"
   echo "[sup ] building supers for N=${N}..." >&2
   "$PY3" "$GEN_PY" --out "$d/representative.hsk" --N "$N" --P 1 --vec "$VEC_MODE" --cutoff 256 --mode "$MS_LEAF" >&2
-  bash "$BUILD_SUPERS" "$d/representative.hsk" "$d/Supers.hs" >&2
+  local inject_env=""
+  if [[ -f "$d/supers_inject.hs" ]]; then
+    inject_env="SUPERS_INJECT_FILE=$d/supers_inject.hs"
+  fi
+  local flags_env=""
+  local extra_c_env=""
+  if [[ "$MS_LEAF" == "hsarray" ]]; then
+    flags_env="SUPERS_GHC_FLAGS=-XBangPatterns"
+  elif [[ "$MS_LEAF" == "cqsort" ]]; then
+    flags_env="SUPERS_GHC_FLAGS=-XBangPatterns"
+    if [[ -f "$d/msort_helpers.c" ]]; then
+      extra_c_env="SUPERS_EXTRA_C_FILES=$d/msort_helpers.c"
+    fi
+  fi
+  env $inject_env $flags_env $extra_c_env bash "$BUILD_SUPERS" "$d/representative.hsk" "$d/Supers.hs" >&2
   [[ -f "$d/libsupers.so" ]] || { echo "[ERR ] super build failed for N=${N}" >&2; exit 1; }
   echo "[sup ] built: $d/libsupers.so" >&2
   echo "$d"
@@ -202,6 +216,10 @@ gen_hsk() {
     mode="array"
   elif [[ "${MS_LEAF:-}" == "coarse" ]]; then
     mode="coarse"
+  elif [[ "${MS_LEAF:-}" == "cqsort" ]]; then
+    mode="cqsort"
+  elif [[ "${MS_LEAF:-}" == "ex21" ]]; then
+    mode="ex21"
   fi
   local cutoff="$CUTOFF"
   local scaled=0
@@ -633,7 +651,7 @@ run_interp_time_rc() {
   fi
 
   # Correctness check: for super mode, verify output is "1"
-  if [[ "$rc" -eq 0 && ( "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" || "$MS_LEAF" == "array" ) && -f "$outlog" ]]; then
+  if [[ "$rc" -eq 0 && ( "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" || "$MS_LEAF" == "array" || "$MS_LEAF" == "cqsort" ) && -f "$outlog" ]]; then
     local result; result="$(grep -oP '^\d+$' "$outlog" | head -1 || true)"
     if [[ -n "$result" && "$result" != "1" ]]; then
       >&2 echo "[ERR ] WRONG ANSWER: got '$result', expected '1'"
@@ -656,7 +674,7 @@ for N in $(seq "$START_N" "$STEP" "$N_MAX"); do
   echo ""
   echo "======== N=${N} ========"
   # Pre-build supers for this N
-  if [[ "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" ]]; then
+  if [[ "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" || "$MS_LEAF" == "cqsort" || "$MS_LEAF" == "ex21" ]]; then
     get_supers_dir "$N" > /dev/null
   fi
   for P in "${PROCS[@]}"; do
@@ -687,7 +705,7 @@ for N in $(seq "$START_N" "$STEP" "$N_MAX"); do
 
     LIBSUP=""
     if [[ "$USE_SUPERS" -eq 1 ]]; then
-      if [[ "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" ]]; then
+      if [[ "$MS_LEAF" == "super" || "$MS_LEAF" == "coarse" || "$MS_LEAF" == "cqsort" || "$MS_LEAF" == "ex21" ]]; then
         LIBSUP="$(get_supers_dir "$N")/libsupers.so"
       else
         LIBSUP="$(stage_supers_fixed "$SUPERS_FIXED" "$CASE_DIR")"

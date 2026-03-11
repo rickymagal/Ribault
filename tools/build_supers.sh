@@ -419,10 +419,16 @@ build_libsupers_so() {
       pkg_flags+=(-package "$pkg")
     done
 
+    # Extra GHC flags (space-separated, e.g. "-XMagicHash -XUnboxedTuples")
+    local -a extra_ghc_flags=()
+    for flag in ${SUPERS_GHC_FLAGS:-}; do
+      extra_ghc_flags+=("$flag")
+    done
+
     if [[ "${SUPERS_THREADED:-1}" == "1" ]]; then
-      GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC -threaded "${pkg_flags[@]}" -c Supers.hs -o Supers.o
+      GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC -threaded "${pkg_flags[@]}" "${extra_ghc_flags[@]}" -c Supers.hs -o Supers.o
     else
-      GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC "${pkg_flags[@]}" -c Supers.hs -o Supers.o
+      GHC_ENVIRONMENT=- "$ghc" -O2 -dynamic -fPIC "${pkg_flags[@]}" "${extra_ghc_flags[@]}" -c Supers.hs -o Supers.o
     fi
 
     "$cc" $cflags -c supers_wrappers.c -o supers_wrappers.o

@@ -1,29 +1,31 @@
 #!/usr/bin/env python3
-"""Generate GHC par/pseq .hs for LCS wavefront benchmark.
+"""Generate manual par/pseq .hs for LCS wavefront benchmark.
 
-Same blocked wavefront as TALM/Strategies versions.
-Uses par/pseq for blocks within each anti-diagonal.
+Same blocked wavefront as TALM and Strategies versions. Uses raw
+Control.Parallel (par/pseq) to spark blocks on each anti-diagonal,
+WITHOUT the Strategies library.
+
+Memory-efficient: stores only block boundary rows/columns instead of the
+full N*N matrix.  Memory: O((DIM_ROWS + DIM_COLS) * N) instead of O(N^2).
+
+Supports rectangular grids (DIM_ROWS x DIM_COLS).
 """
 
 import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (GHC forkIO)
+HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (manual par/pseq, boundary arrays)
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
-import Control.Concurrent (forkIO)
-import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar)
-import Control.Monad (forM_, forM)
+import Control.Parallel (par, pseq)
 import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
-import Data.Array.IO (IOUArray, newArray, readArray, writeArray)
-import Data.Array.Unboxed (UArray, bounds, (!))
-import Data.Array.Unsafe (unsafeFreeze)
-import Data.Array.ST (STUArray)
-import qualified Data.Array.ST as ST
-import Control.Monad.ST (ST, runST)
+import Foreign.Ptr (Ptr)
+import Foreign.Marshal.Alloc (callocBytes, allocaBytes)
+import Foreign.Storable (peekElemOff, pokeElemOff)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout)
+import System.IO.Unsafe (unsafePerformIO)
 
 -- ===== Constants =====
 
@@ -36,87 +38,121 @@ lcsAlpha = __ALPHA__
 lcsSeed :: Word64
 lcsSeed = __SEED__
 
-lcsDim :: Int
-lcsDim = __DIM__
+lcsDimRows :: Int
+lcsDimRows = __DIM_ROWS__
 
-lcsIters :: Int
-lcsIters = __ITERS__
+lcsDimCols :: Int
+lcsDimCols = __DIM_COLS__
 
 -- ===== LCG PRNG =====
 
 lcsNextRng :: Word64 -> Word64
 lcsNextRng r = (6364136223846793005 * r + 1442695040888963407) .&. 0x7FFFFFFFFFFFFFFF
 
-lcsGenSeq :: Word64 -> Int -> Int -> (UArray Int Int, Word64)
-lcsGenSeq !rng0 len_ alpha = runST $ do
-  arr <- ST.newArray (0, len_ - 1) 0 :: ST s (STUArray s Int Int)
+lcsGenSeq :: Word64 -> Int -> Int -> IO (Ptr Int, Word64)
+lcsGenSeq !rng0 len_ alpha = do
+  arr <- callocBytes (len_ * 8)
   let go !i !r
         | i >= len_ = return r
         | otherwise = do
             let !r' = lcsNextRng r
-                !c  = fromIntegral ((r' `shiftR` 33) `mod` fromIntegral alpha)
-            ST.writeArray arr i c
+                !c  = fromIntegral ((r' `shiftR` 33) `mod` fromIntegral alpha) :: Int
+            pokeElemOff arr i c
             go (i + 1) r'
   rng' <- go 0 rng0
-  frozen <- unsafeFreeze arr
-  return (frozen, rng')
+  return (arr, rng')
 
--- ===== Block computation =====
+-- ===== Block computation (boundary arrays) =====
 
-computeBlock :: UArray Int Int -> UArray Int Int -> IOUArray (Int,Int) Int
-             -> Int -> Int -> IO ()
-computeBlock !sa !sb !mat !bi !bj = do
+computeBlock :: Ptr Int -> Ptr Int -> Ptr Int -> Ptr Int -> Int -> Int -> IO ()
+computeBlock !sa !sb !hB !vB !bi !bj = do
   let !n = lcsSeqLen
-      !chunkR = n `div` lcsDim
-      !chunkC = n `div` lcsDim
+      !cols = n + 1
+      !chunkR = n `div` lcsDimRows
+      !chunkC = n `div` lcsDimCols
       !rowStart = bi * chunkR + 1
-      !rowEnd   = if bi == lcsDim - 1 then n else (bi + 1) * chunkR
+      !rowEnd   = if bi == lcsDimRows - 1 then n else (bi + 1) * chunkR
       !colStart = bj * chunkC + 1
-      !colEnd   = if bj == lcsDim - 1 then n else (bj + 1) * chunkC
-  let doOnce = do
-        let outerLoop !i
-              | i > rowEnd = return ()
-              | otherwise = do
-                  let innerLoop !j
-                        | j > colEnd = return ()
-                        | otherwise = do
-                            let !ai = sa ! (i - 1)
-                                !bj' = sb ! (j - 1)
-                            if ai == bj'
-                              then do
-                                !d <- readArray mat (i-1, j-1)
-                                writeArray mat (i, j) (d + 1)
-                              else do
-                                !u <- readArray mat (i-1, j)
-                                !l <- readArray mat (i, j-1)
-                                writeArray mat (i, j) (max u l)
-                            innerLoop (j + 1)
-                  innerLoop colStart
-                  outerLoop (i + 1)
-        outerLoop rowStart
-  let iterLoop !k
-        | k >= lcsIters = return ()
-        | otherwise = do
-            doOnce
-            iterLoop (k + 1)
-  iterLoop 0
+      !colEnd   = if bj == lcsDimCols - 1 then n else (bj + 1) * chunkC
+      !localCols = colEnd - colStart + 1
+      -- Pre-computed offsets
+      !hBReadBase  = bi * cols + colStart - 1
+      !hBWriteBase = (bi + 1) * cols + colStart - 1
+      !vBReadBase  = bj * cols
+      !vBWriteBase = (bj + 1) * cols
+      !sbBase      = colStart - 2
+      !rowBytes    = (localCols + 1) * 8
+  allocaBytes rowBytes $ \buf1 ->
+    allocaBytes rowBytes $ \buf2 -> do
+      let initPrev !lj
+            | lj > localCols = return ()
+            | otherwise = do
+                !v <- peekElemOff hB (hBReadBase + lj)
+                pokeElemOff buf1 lj v
+                initPrev (lj + 1)
+      initPrev 0
+      let outerLoop !prev !cur !i
+            | i > rowEnd = do
+                let writeFinal !lj
+                      | lj > localCols = return ()
+                      | otherwise = do
+                          !v <- peekElemOff prev lj
+                          pokeElemOff hB (hBWriteBase + lj) v
+                          writeFinal (lj + 1)
+                writeFinal 0
+            | otherwise = do
+                !leftVal <- peekElemOff vB (vBReadBase + i)
+                pokeElemOff cur 0 leftVal
+                !ai <- peekElemOff sa (i - 1)
+                let innerLoop !lj
+                      | lj > localCols = return ()
+                      | otherwise = do
+                          !bj' <- peekElemOff sb (sbBase + lj)
+                          if ai == bj'
+                            then do
+                              !d <- peekElemOff prev (lj - 1)
+                              pokeElemOff cur lj (d + 1)
+                            else do
+                              !u <- peekElemOff prev lj
+                              !l <- peekElemOff cur (lj - 1)
+                              pokeElemOff cur lj (max u l)
+                          innerLoop (lj + 1)
+                innerLoop 1
+                !rightVal <- peekElemOff cur localCols
+                pokeElemOff vB (vBWriteBase + i) rightVal
+                outerLoop cur prev (i + 1)
+      outerLoop buf1 buf2 rowStart
 
--- ===== Wavefront with forkIO + MVar =====
+-- ===== Pure wrapper for par/pseq sparking =====
 
-wavefront :: UArray Int Int -> UArray Int Int -> IOUArray (Int,Int) Int -> IO ()
-wavefront !sa !sb !mat = do
-  let !dim = lcsDim
+-- NOINLINE prevents GHC from floating out or sharing the unsafePerformIO
+{-# NOINLINE evalBlock #-}
+evalBlock :: Ptr Int -> Ptr Int -> Ptr Int -> Ptr Int -> Int -> Int -> ()
+evalBlock sa sb hB vB bi bj = unsafePerformIO $ do
+  computeBlock sa sb hB vB bi bj
+  return ()
+
+-- ===== Wavefront with manual par/pseq =====
+
+-- Spark all blocks on a diagonal, then force them all via pseq
+sparkBlocks :: Ptr Int -> Ptr Int -> Ptr Int -> Ptr Int -> [(Int, Int)] -> ()
+sparkBlocks _  _  _  _  []           = ()
+sparkBlocks sa sb hB vB [(bi, bj)]   = evalBlock sa sb hB vB bi bj
+sparkBlocks sa sb hB vB ((bi,bj):rest) =
+  let !x = evalBlock sa sb hB vB bi bj
+      !xs = sparkBlocks sa sb hB vB rest
+  in x `par` (xs `pseq` x `pseq` ())
+
+wavefront :: Ptr Int -> Ptr Int -> Ptr Int -> Ptr Int -> IO ()
+wavefront !sa !sb !hB !vB = do
+  let !dr = lcsDimRows
+      !dc = lcsDimCols
   let loop !d
-        | d >= 2 * dim - 1 = return ()
+        | d >= dr + dc - 1 = return ()
         | otherwise = do
-            let blocks = [(i, d - i) | i <- [max 0 (d - dim + 1) .. min d (dim - 1)]]
-            dones <- forM blocks $ \(!bi, !bj) -> do
-              mv <- newEmptyMVar
-              forkIO $ do
-                computeBlock sa sb mat bi bj
-                putMVar mv ()
-              return mv
-            forM_ dones takeMVar
+            let blocks = [(i, d - i) | i <- [max 0 (d - dc + 1) .. min d (dr - 1)],
+                                        let j = d - i, j >= 0, j < dc]
+            let !_ = sparkBlocks sa sb hB vB blocks
             loop (d + 1)
   loop 0
 
@@ -124,12 +160,15 @@ wavefront !sa !sb !mat = do
 
 main :: IO ()
 main = do
-  let (seqA, rng1) = lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
-      (seqB, _)    = lcsGenSeq rng1    lcsSeqLen lcsAlpha
-  mat <- newArray ((0,0), (lcsSeqLen, lcsSeqLen)) 0
+  let !n = lcsSeqLen
+      !cols = n + 1
+  (seqA, rng1) <- lcsGenSeq lcsSeed n lcsAlpha
+  (seqB, _)    <- lcsGenSeq rng1    n lcsAlpha
+  hBound <- callocBytes ((lcsDimRows + 1) * cols * 8)
+  vBound <- callocBytes ((lcsDimCols + 1) * cols * 8)
   t0 <- getCurrentTime
-  wavefront seqA seqB mat
-  !score <- readArray mat (lcsSeqLen, lcsSeqLen)
+  wavefront seqA seqB hBound vBound
+  !score <- peekElemOff hBound (lcsDimRows * cols + n) :: IO Int
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn $ "RESULT=" ++ show score
@@ -138,7 +177,7 @@ main = do
 """
 
 
-def emit_hs(path, input_dir, dim, iters=1):
+def emit_hs(path, input_dir, dim_rows, dim_cols):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
     with open(os.path.join(input_dir, "params.txt")) as f:
@@ -151,22 +190,25 @@ def emit_hs(path, input_dir, dim, iters=1):
     src = src.replace("__N__", str(seq_len))
     src = src.replace("__ALPHA__", str(alphabet))
     src = src.replace("__SEED__", str(seed))
-    src = src.replace("__DIM__", str(dim))
-    src = src.replace("__ITERS__", str(iters))
+    src = src.replace("__DIM_ROWS__", str(dim_rows))
+    src = src.replace("__DIM_COLS__", str(dim_cols))
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[gen_lcs_wf_parpseq] wrote {path}  (N={seq_len}, DIM={dim}, ITERS={iters})")
+    print(f"[gen_lcs_wf_parpseq] wrote {path}  (N={seq_len}, {dim_rows}x{dim_cols})")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--input-dir", required=True)
+    ap.add_argument("--dim-rows", type=int, default=None)
+    ap.add_argument("--dim-cols", type=int, default=None)
     ap.add_argument("--dim", type=int, default=6)
-    ap.add_argument("--iters", type=int, default=1)
     args = ap.parse_args()
-    emit_hs(args.out, args.input_dir, args.dim, args.iters)
+    dim_rows = args.dim_rows if args.dim_rows is not None else args.dim
+    dim_cols = args.dim_cols if args.dim_cols is not None else args.dim
+    emit_hs(args.out, args.input_dir, dim_rows, dim_cols)
 
 
 if __name__ == "__main__":

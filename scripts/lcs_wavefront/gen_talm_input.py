@@ -4,19 +4,22 @@
 Generates three files:
   1. A minimal .hsk with super definitions (for supersgen / build_supers.sh)
   2. A preprocessor .fl using flowasm macros (bypasses codegen for the
-     dataflow graph — no call-site limit on DIM)
+     dataflow graph -- no call-site limit on DIM)
   3. supers_inject.hs with the Haskell super implementations
 
-Supports rectangular grids (DIM_ROWS × DIM_COLS) for tuning grain size
+Memory-efficient: stores only block boundary rows/columns instead of the
+full N*N matrix.  Memory: O((DIM_ROWS + DIM_COLS) * N) instead of O(N^2).
+
+Supports rectangular grids (DIM_ROWS x DIM_COLS) for tuning grain size
 independently from parallelism level.
 
 Block super uses `superi` (super with immediate) to pass the block
 index.  The Haskell super retrieves it via FFI to `treb_get_tid()`.
 
 Super IDs (from codegen on the minimal .hsk, verified stable):
-  init_super   → super 6  (s6)
-  block_super  → super 5  (s5)
-  result_super → super 4  (s4)
+  init_super   -> super 6  (s6)
+  block_super  -> super 5  (s5)
+  result_super -> super 4  (s4)
 """
 
 import argparse, os
@@ -39,7 +42,7 @@ def emit(path, input_dir, dim_rows, dim_cols):
         alphabet = int(parts[1])
         seed = int(parts[2])
 
-    # ---- 1. Minimal .hsk (for supersgen → Supers.hs) ----
+    # ---- 1. Minimal .hsk (for supersgen -> Supers.hs) ----
     hsk_lines = [
         "-- lcs_wavefront.hsk  (auto-generated, minimal for supersgen)",
         f"-- N={seq_len}  ALPHA={alphabet}  SEED={seed}  ROWS={dim_rows}  COLS={dim_cols}",
@@ -114,13 +117,12 @@ def emit(path, input_dir, dim_rows, dim_cols):
 
     # ---- 3. supers_inject.hs ----
     inject_path = os.path.join(out_dir, "supers_inject.hs")
-    stride = seq_len + 1  # row stride for flat matrix indexing
     inject = f"""import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Foreign.C.Types (CInt(..))
 import Foreign.Ptr (Ptr)
-import Foreign.Marshal.Alloc (callocBytes)
+import Foreign.Marshal.Alloc (callocBytes, allocaBytes)
 import Foreign.Storable (peekElemOff, pokeElemOff)
 
 -- FFI: get immediate value from superi instruction
@@ -142,9 +144,6 @@ lcsDimRows = {dim_rows}
 lcsDimCols :: Int
 lcsDimCols = {dim_cols}
 
-lcsStride :: Int
-lcsStride = {stride}
-
 -- LCG PRNG (Word64, zero GMP)
 lcsNextRng :: Word64 -> Word64
 lcsNextRng r = (6364136223846793005 * r + 1442695040888963407) .&. 0x7FFFFFFFFFFFFFFF
@@ -163,24 +162,28 @@ lcsGenSeq !rng0 len_ alpha = do
   rng' <- go 0 rng0
   return (arr, rng')
 
--- Global shared state (all Ptr-based, outside GHC heap)
+-- Global shared state (boundary arrays instead of full matrix)
 data LCSGlobal = LCSGlobal
-  {{ lcsA   :: !(Ptr Int)
-  , lcsB   :: !(Ptr Int)
-  , lcsMat :: !(Ptr Int)   -- flat (N+1)*(N+1) matrix, row-major
+  {{ lcsA      :: !(Ptr Int)
+  , lcsB      :: !(Ptr Int)
+  , lcsHBound :: !(Ptr Int)  -- (DIM_ROWS+1) rows, each (N+1) Ints
+  , lcsVBound :: !(Ptr Int)  -- (DIM_COLS+1) cols, each (N+1) Ints
   }}
 
 {{-# NOINLINE globalLCS #-}}
 globalLCS :: IORef (Maybe LCSGlobal)
 globalLCS = unsafePerformIO (newIORef Nothing)
 
--- Init: generate sequences, allocate matrix
+-- Init: generate sequences, allocate boundary arrays (zeroed)
 lcsInit :: Int -> IO Int64
 lcsInit _ = do
-  (seqA, rng1) <- lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
-  (seqB, _)    <- lcsGenSeq rng1    lcsSeqLen lcsAlpha
-  mat <- callocBytes (lcsStride * lcsStride * 8)  -- (N+1)^2 ints, zeroed
-  writeIORef globalLCS (Just (LCSGlobal seqA seqB mat))
+  let !n = lcsSeqLen
+      !cols = n + 1
+  (seqA, rng1) <- lcsGenSeq lcsSeed n lcsAlpha
+  (seqB, _)    <- lcsGenSeq rng1    n lcsAlpha
+  hBound <- callocBytes ((lcsDimRows + 1) * cols * 8)
+  vBound <- callocBytes ((lcsDimCols + 1) * cols * 8)
+  writeIORef globalLCS (Just (LCSGlobal seqA seqB hBound vBound))
   return 0
 
 -- Block computation using treb_get_tid() for block index
@@ -189,50 +192,82 @@ lcsBlockTid _ = do
   blockIdx <- fromIntegral <$> c_treb_get_tid
   lcsBlock blockIdx
 
--- Block computation: compute block (bi, bj) of the DP matrix
+-- Block computation: compute block (bi, bj) using boundary arrays
 lcsBlock :: Int -> IO Int64
 lcsBlock blockIdx = do
   Just g <- readIORef globalLCS
   let !bi = blockIdx `div` lcsDimCols
       !bj = blockIdx `mod` lcsDimCols
       !n  = lcsSeqLen
+      !cols = n + 1
       !chunkR = n `div` lcsDimRows
       !chunkC = n `div` lcsDimCols
       !rowStart = bi * chunkR + 1
       !rowEnd   = if bi == lcsDimRows - 1 then n else (bi + 1) * chunkR
       !colStart = bj * chunkC + 1
       !colEnd   = if bj == lcsDimCols - 1 then n else (bj + 1) * chunkC
+      !localCols = colEnd - colStart + 1
       !sa  = lcsA g
       !sb  = lcsB g
-      !mat = lcsMat g
-      !str = lcsStride
-  let outerLoop !i
-        | i > rowEnd = return ()
-        | otherwise = do
-            !ai <- peekElemOff sa (i - 1)
-            let innerLoop !j
-                  | j > colEnd = return ()
-                  | otherwise = do
-                      !bj' <- peekElemOff sb (j - 1)
-                      if ai == bj'
-                        then do
-                          !d <- peekElemOff mat ((i-1)*str + (j-1))
-                          pokeElemOff mat (i*str + j) (d + 1)
-                        else do
-                          !u <- peekElemOff mat ((i-1)*str + j)
-                          !l <- peekElemOff mat (i*str + (j-1))
-                          pokeElemOff mat (i*str + j) (max u l)
-                      innerLoop (j + 1)
-            innerLoop colStart
-            outerLoop (i + 1)
-  outerLoop rowStart
+      !hB  = lcsHBound g
+      !vB  = lcsVBound g
+      -- Pre-computed offsets (loop-invariant)
+      !hBReadBase  = bi * cols + colStart - 1
+      !hBWriteBase = (bi + 1) * cols + colStart - 1
+      !vBReadBase  = bj * cols
+      !vBWriteBase = (bj + 1) * cols
+      !sbBase      = colStart - 2
+      !rowBytes    = (localCols + 1) * 8
+  allocaBytes rowBytes $ \\buf1 ->
+    allocaBytes rowBytes $ \\buf2 -> do
+      -- Initialize buf1 from hBound[bi]
+      let initPrev !lj
+            | lj > localCols = return ()
+            | otherwise = do
+                !v <- peekElemOff hB (hBReadBase + lj)
+                pokeElemOff buf1 lj v
+                initPrev (lj + 1)
+      initPrev 0
+      -- Process rows
+      let outerLoop !prev !cur !i
+            | i > rowEnd = do
+                -- Write prev -> hBound[bi+1]
+                let writeFinal !lj
+                      | lj > localCols = return ()
+                      | otherwise = do
+                          !v <- peekElemOff prev lj
+                          pokeElemOff hB (hBWriteBase + lj) v
+                          writeFinal (lj + 1)
+                writeFinal 0
+            | otherwise = do
+                !leftVal <- peekElemOff vB (vBReadBase + i)
+                pokeElemOff cur 0 leftVal
+                !ai <- peekElemOff sa (i - 1)
+                let innerLoop !lj
+                      | lj > localCols = return ()
+                      | otherwise = do
+                          !bj' <- peekElemOff sb (sbBase + lj)
+                          if ai == bj'
+                            then do
+                              !d <- peekElemOff prev (lj - 1)
+                              pokeElemOff cur lj (d + 1)
+                            else do
+                              !u <- peekElemOff prev lj
+                              !l <- peekElemOff cur (lj - 1)
+                              pokeElemOff cur lj (max u l)
+                          innerLoop (lj + 1)
+                innerLoop 1
+                !rightVal <- peekElemOff cur localCols
+                pokeElemOff vB (vBWriteBase + i) rightVal
+                outerLoop cur prev (i + 1)
+      outerLoop buf1 buf2 rowStart
   return 0
 
--- Result: read final score and print
+-- Result: read final LCS score from hBound[DIM_ROWS][N]
 lcsResult :: Int64 -> IO Int64
 lcsResult _ = do
   Just g <- readIORef globalLCS
-  !score <- peekElemOff (lcsMat g) (lcsSeqLen * lcsStride + lcsSeqLen)
+  !score <- peekElemOff (lcsHBound g) (lcsDimRows * (lcsSeqLen + 1) + lcsSeqLen)
   putStrLn ("RESULT=" ++ show (score :: Int))
   hFlush stdout
   return 0

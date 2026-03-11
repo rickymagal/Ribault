@@ -21,7 +21,7 @@ MAX_CALL_SITES = 14  # K range calls + 1 print_result = K+1 ≤ 15
 PACK_SHIFT = 65536   # lo * 65536 + hi
 
 
-def emit_hsk(path, n_files, keyword, corpus_dir, n_funcs):
+def emit_hsk(path, n_files, keyword, corpus_dir, n_funcs, pad_width=None):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
     n_funcs = min(n_funcs, n_files, MAX_CALL_SITES)
@@ -81,21 +81,21 @@ def emit_hsk(path, n_files, keyword, corpus_dir, n_funcs):
     # Generate the inject file for Supers.hs
     inject_path = os.path.join(os.path.dirname(path) or ".", "supers_inject.hs")
     abs_corpus = os.path.abspath(corpus_dir)
+    if pad_width is None:
+        pad_width = max(4, len(str(n_files - 1)))
     inject = f"""
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as BSU
 
 -- Text-search helpers (injected by gen_talm_input.py)
--- Sequential readFile + countOcc per file (same as GHC variants).
--- IO/compute overlap comes from TALM's OS-thread dispatch of supers.
 tsCorpusDir :: String
 tsCorpusDir = "{abs_corpus}"
 
 tsKwBytes :: BS.ByteString
 tsKwBytes = BS.pack {list(keyword.encode('ascii'))}
 
-tsPadInt :: Int -> Int -> String
-tsPadInt w n = let s = show n in replicate (w - length s) '0' ++ s
+tsPadInt :: Int -> String
+tsPadInt n = let s = show n in replicate ({pad_width} - length s) '0' ++ s
 
 -- Zero-allocation keyword counting (same algorithm as GHC benchmarks)
 tsCountOcc :: BS.ByteString -> BS.ByteString -> Int
@@ -120,7 +120,7 @@ tsProcessRange lo hi = go lo 0
     go !i !acc
       | i >= hi   = return acc
       | otherwise = do
-          let path = tsCorpusDir ++ "/file_" ++ tsPadInt 4 i ++ ".txt"
+          let path = tsCorpusDir ++ "/file_" ++ tsPadInt i ++ ".txt"
           contents <- BS.readFile path
           let !c = tsCountOcc contents tsKwBytes
           go (i + 1) (acc + fromIntegral c)
@@ -152,8 +152,11 @@ def main():
     ap.add_argument("--corpus-dir", required=True)
     ap.add_argument("--n-funcs", type=int, default=12,
                     help="Number of independent range supers (default: 12, max: 14)")
+    ap.add_argument("--pad-width", type=int, default=None,
+                    help="Filename padding width (default: auto from n-files)")
     args = ap.parse_args()
-    emit_hsk(args.out, args.n_files, args.keyword, args.corpus_dir, args.n_funcs)
+    emit_hsk(args.out, args.n_files, args.keyword, args.corpus_dir, args.n_funcs,
+             pad_width=args.pad_width)
 
 
 if __name__ == "__main__":

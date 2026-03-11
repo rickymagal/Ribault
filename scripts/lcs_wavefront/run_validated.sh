@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # Validated LCS Wavefront Benchmark
-# Sequential baseline + TALM + GHC-forkIO
+# Sequential baseline + TALM + par/pseq + Strategies
 #
 # Rectangular grid strategy: DIM_ROWS=P × DIM_COLS (configurable).
 # This gives large grain per block (N/P rows each) while
@@ -24,12 +24,13 @@ BUILD_SUPERS="$REPO/tools/build_supers.sh"
 GEN_INPUT="$REPO/scripts/lcs_wavefront/gen_input.py"
 GEN_SEQ="$REPO/scripts/lcs_wavefront/gen_hs_sequential.py"
 GEN_TALM="$REPO/scripts/lcs_wavefront/gen_talm_input.py"
-GEN_GHC="$REPO/scripts/lcs_wavefront/gen_hs_strategies.py"
+GEN_PARPSEQ="$REPO/scripts/lcs_wavefront/gen_hs_parpseq.py"
+GEN_STRAT="$REPO/scripts/lcs_wavefront/gen_hs_strategies.py"
 
 REPS=${REPS:-3}
 SEED=${SEED:-42}
 ALPHABET=${ALPHABET:-4}
-NS=(${NS:-1000 2000 3000})
+NS=(${NS:-1000 2000 5000})
 PS=(${PS:-2 4 8})
 DIM_COLS=${DIM_COLS:-16}
 TALM_RTS_A=${TALM_RTS_A:-256m}
@@ -183,22 +184,40 @@ for N in "${NS[@]}"; do
       echo "super,$N,$CUR_ROWS,$CUR_COLS,$P,$rep,$secs" >> "$CSV"
     done
 
-    # --- Build GHC forkIO with same grid ---
-    GDIR="$NDIR/ghc_P${P}"
-    mkdir -p "$GDIR/obj"
-    "$PY3" "$GEN_GHC" --out "$GDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
+    # --- Build par/pseq with same grid ---
+    PPDIR="$NDIR/parpseq_P${P}"
+    mkdir -p "$PPDIR/obj"
+    "$PY3" "$GEN_PARPSEQ" --out "$PPDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
         --dim-rows "$CUR_ROWS" --dim-cols "$CUR_COLS"
     "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel \
-        -outputdir "$GDIR/obj" -o "$GDIR/lcs_wf" "$GDIR/lcs_wf.hs" >/dev/null 2>&1
+        -outputdir "$PPDIR/obj" -o "$PPDIR/lcs_wf" "$PPDIR/lcs_wf.hs" >/dev/null 2>&1
 
-    # --- Run GHC forkIO ---
+    # --- Run par/pseq ---
     for ((rep=1; rep<=REPS; rep++)); do
-      OUT="$GDIR/out_P${P}_r${rep}.txt"
-      "$GDIR/lcs_wf" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      OUT="$PPDIR/out_P${P}_r${rep}.txt"
+      "$PPDIR/lcs_wf" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
-      echo "GHC      N=$N P=$P ${CUR_ROWS}x${CUR_COLS} rep=$rep -> ${secs}s"
-      validate "GHC N=$N P=$P rep=$rep" "$OUT" "$EXPECTED"
-      echo "ghc,$N,$CUR_ROWS,$CUR_COLS,$P,$rep,$secs" >> "$CSV"
+      echo "PARPSEQ  N=$N P=$P ${CUR_ROWS}x${CUR_COLS} rep=$rep -> ${secs}s"
+      validate "PARPSEQ N=$N P=$P rep=$rep" "$OUT" "$EXPECTED"
+      echo "parpseq,$N,$CUR_ROWS,$CUR_COLS,$P,$rep,$secs" >> "$CSV"
+    done
+
+    # --- Build Strategies with same grid ---
+    STDIR="$NDIR/strat_P${P}"
+    mkdir -p "$STDIR/obj"
+    "$PY3" "$GEN_STRAT" --out "$STDIR/lcs_wf.hs" --input-dir "$INPUT_DIR" \
+        --dim-rows "$CUR_ROWS" --dim-cols "$CUR_COLS"
+    "$GHC_BIN" -O2 -threaded -rtsopts -package time -package parallel \
+        -outputdir "$STDIR/obj" -o "$STDIR/lcs_wf" "$STDIR/lcs_wf.hs" >/dev/null 2>&1
+
+    # --- Run Strategies ---
+    for ((rep=1; rep<=REPS; rep++)); do
+      OUT="$STDIR/out_P${P}_r${rep}.txt"
+      "$STDIR/lcs_wf" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
+      echo "STRAT    N=$N P=$P ${CUR_ROWS}x${CUR_COLS} rep=$rep -> ${secs}s"
+      validate "STRAT N=$N P=$P rep=$rep" "$OUT" "$EXPECTED"
+      echo "strategies,$N,$CUR_ROWS,$CUR_COLS,$P,$rep,$secs" >> "$CSV"
     done
   done
 done

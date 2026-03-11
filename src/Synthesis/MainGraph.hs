@@ -23,6 +23,7 @@ module Main where
 -- Standard libraries
 ----------------------------------------------------------------------
 import Prelude            hiding (readFile, getContents)
+import Data.List          (isPrefixOf, isSuffixOf)
 import System.Environment (getArgs)
 import System.IO          (readFile, getContents, hPutStrLn, stderr)
 import System.Exit        (exitFailure)
@@ -41,7 +42,7 @@ import Syntax            (Program)
 -- Back-end: Builder → DOT
 ----------------------------------------------------------------------
 import qualified Synthesis.Builder  as DF  -- buildProgram :: Program -> DFG
-import qualified Synthesis.GraphViz as GV  -- toDot / toCleanDot :: DFG -> Text
+import qualified Synthesis.GraphViz as GV  -- toDot / toCleanDot / toFormalDot :: DFG -> Text
 
 ----------------------------------------------------------------------
 -- | Main entry point. See module header for behavior and usage.
@@ -49,15 +50,20 @@ import qualified Synthesis.GraphViz as GV  -- toDot / toCleanDot :: DFG -> Text
 main :: IO ()
 main = do
   args <- getArgs
-  let (full, files) = case args of
-        ("--full":rest) -> (True,  rest)
-        other           -> (False, other)
-  let render = if full then GV.toDot else GV.toCleanDot
+  let isFnName s = not ("-" `isPrefixOf` s)
+                 && '/' `notElem` s
+                 && not (".hsk" `isSuffixOf` s)
+      (render, files) = case args of
+        ("--full":rest)       -> (GV.toDot,                rest)
+        ("--ddg":fn:rest)
+          | isFnName fn       -> (GV.toFormalDot (Just fn), rest)
+        ("--ddg":rest)        -> (GV.toFormalDot Nothing,   rest)
+        other                 -> (GV.toCleanDot,            other)
 
   src <- case files of
     [file] -> readFile file
     []     -> getContents
-    _      -> hPutStrLn stderr "Usage: lambdaflow-df [--full] [file]" >> exitFailure
+    _      -> hPutStrLn stderr "Usage: lambdaflow-df [--full|--ddg] [file]" >> exitFailure
 
   tokens <- case scanAll src of
     Left err -> hPutStrLn stderr ("Lexical error: " ++ err) >> exitFailure

@@ -59,16 +59,23 @@ IFS=',' read -r -a PROCS <<< "$PROCS_CSV"
 
 # ----------------- helpers -----------------
 gen_hs() {
-  local N="$1" out_hs="$2"
-  local cutoff=$(( N / 64 ))
-  if [[ "$cutoff" -lt 256 ]]; then cutoff=256; fi
-  "$PY3" "$GEN_HS" --out "$out_hs" --N "$N" --vec "$VEC_MODE" --cutoff "$cutoff"
+  local N="$1" P="$2" out_hs="$3"
+  "$PY3" "$GEN_HS" --out "$out_hs" --N "$N" --P "$P"
 }
 
 build_bin() {
   local hs="$1" bin="$2"
+  local hs_dir
+  hs_dir="$(dirname "$hs")"
+  local c_helper="$hs_dir/msort_helpers.c"
   echo "[ghc ] compiling $hs -> $bin"
-  "$GHC" -O2 -dynamic $GHC_PKGS -threaded -rtsopts -o "$bin" "$hs" >/dev/null
+  if [[ -f "$c_helper" ]]; then
+    local c_obj="$hs_dir/msort_helpers.o"
+    gcc -O2 -c "$c_helper" -o "$c_obj"
+    "$GHC" -O2 $GHC_PKGS -threaded -rtsopts -o "$bin" "$c_obj" "$hs" >/dev/null
+  else
+    "$GHC" -O2 $GHC_PKGS -threaded -rtsopts -o "$bin" "$hs" >/dev/null
+  fi
 }
 
 run_bin_time_rc() {
@@ -99,16 +106,14 @@ run_bin_time_rc() {
 # ----------------- main -----------------
 N="$START_N"
 while [[ "$N" -le "$N_MAX" ]]; do
-  NDIR="$OUTROOT/ghc/N_${N}"
-  mkdir -p "$NDIR/bin"
-  HS="$NDIR/bin/ms_hs_N${N}.hs"
-  BIN="$NDIR/bin/ms_hs_N${N}"
-  gen_hs "$N" "$HS"
-  build_bin "$HS" "$BIN"
-
   for P in "${PROCS[@]}"; do
     CASE_DIR="$OUTROOT/ghc/N_${N}/P_${P}"
-    mkdir -p "$CASE_DIR/logs"
+    mkdir -p "$CASE_DIR/bin" "$CASE_DIR/logs"
+    HS="$CASE_DIR/bin/ms_hs_N${N}_P${P}.hs"
+    BIN="$CASE_DIR/bin/ms_hs_N${N}_P${P}"
+    gen_hs "$N" "$P" "$HS"
+    build_bin "$HS" "$BIN"
+
     for ((rep=1; rep<=REPS; rep++)); do
       out="$(run_bin_time_rc "$BIN" "$P" "$CASE_DIR/logs")"
       read -r secs rc <<< "$out"

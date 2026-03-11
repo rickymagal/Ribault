@@ -28,6 +28,7 @@ CODEGEN="$REPO/codegen"
 REPS=${REPS:-3}
 NS=(${NS:-100000000 200000000 300000000 400000000 500000000 600000000 700000000 800000000 900000000 1000000000})
 PS=(${PS:-2 4 8 16})
+GRAIN=${GRAIN:-1}
 
 # Detect HsFFI include
 GHC_BIN="${GHC:-ghc}"
@@ -85,7 +86,7 @@ echo "variant,N,P,rep,seconds" > "$CSV"
 echo "========================================="
 echo " Merge Sort Benchmark"
 echo " NS=${NS[*]}"
-echo " PS=${PS[*]}  reps=$REPS"
+echo " PS=${PS[*]}  G=$GRAIN  reps=$REPS"
 echo " Output: $OUTROOT"
 echo "========================================="
 
@@ -104,7 +105,7 @@ for N in "${NS[@]}"; do
   SDIR="$NDIR/seq"
   mkdir -p "$SDIR/obj"
   "$PY3" "$GEN_SEQ" --out "$SDIR/ms_seq.hs" --input-dir "$INPUT_DIR"
-  "$GHC_BIN" -O2 -rtsopts -package base -package time \
+  "$GHC_BIN" -O2 -rtsopts -XMagicHash -XUnboxedTuples -package base -package time \
       -outputdir "$SDIR/obj" -o "$SDIR/ms_seq" "$SDIR/ms_seq.hs" >/dev/null 2>&1
 
   echo ""
@@ -123,8 +124,10 @@ for N in "${NS[@]}"; do
   if [[ ! -f "$SUPERS_DIR/libsupers.so" ]]; then
     mkdir -p "$SUPERS_DIR"
     echo "[sup ] building supers for N=$N ..."
-    "$PY3" "$GEN_TALM" --out "$SUPERS_DIR/supers.hsk" --input-dir "$INPUT_DIR" --P 2
+    "$PY3" "$GEN_TALM" --out "$SUPERS_DIR/supers.hsk" --input-dir "$INPUT_DIR" --P 2 --G "$GRAIN"
     CFLAGS="$SUPERS_CFLAGS" SUPERS_INJECT_FILE="$SUPERS_DIR/supers_inject.hs" \
+      SUPERS_GHC_PACKAGES="time" \
+      SUPERS_GHC_FLAGS="-XMagicHash -XUnboxedTuples -fspec-constr-count=20 -fspec-constr-threshold=5000" \
       "$BUILD_SUPERS" "$SUPERS_DIR/supers.hsk" "$SUPERS_DIR/Supers.hs"
     echo "[sup ] built: $SUPERS_DIR/libsupers.so"
   fi
@@ -138,7 +141,7 @@ for N in "${NS[@]}"; do
     TDIR="$NDIR/talm_P${P}"
     mkdir -p "$TDIR/logs"
 
-    "$PY3" "$GEN_TALM" --out "$TDIR/ms.hsk" --input-dir "$INPUT_DIR" --P "$P"
+    "$PY3" "$GEN_TALM" --out "$TDIR/ms.hsk" --input-dir "$INPUT_DIR" --P "$P" --G "$GRAIN"
     "$CODEGEN" "$TDIR/ms.hsk" > "$TDIR/ms.fl" 2>"$TDIR/logs/codegen.err"
 
     pushd "$ASM_ROOT" >/dev/null
@@ -148,6 +151,15 @@ for N in "${NS[@]}"; do
     FLB="$TDIR/ms.flb"
     PLA="$TDIR/ms_auto.pla"
     [[ -f "$PLA" ]] || PLA="$TDIR/ms.pla"
+
+    # Round-robin PLA rewrite: distribute instructions evenly across PEs
+    # to eliminate the PE0 serial bottleneck from autoplacer
+    if [[ "$P" -gt 1 ]]; then
+      RR_PLA="$TDIR/ms_rr.pla"
+      awk -v P="$P" 'NR==1{print; next} {print (NR-2)%P}' "$PLA" > "$RR_PLA"
+      PLA="$RR_PLA"
+    fi
+
     LIBSUP="$SUPERS_DIR/libsupers.so"
     LIBDIR="$(dirname "$LIBSUP")"
     GHCDEPS="$LIBDIR/ghc-deps"
@@ -159,7 +171,7 @@ for N in "${NS[@]}"; do
         SUPERS_WORKER=0 SUPERS_WORKER_MAIN=0 \
         LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
-      secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" 2>/dev/null || echo NaN)"
+      secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
       echo "TALM     N=$N P=$P rep=$rep -> ${secs}s"
       validate "TALM N=$N P=$P rep=$rep" "$OUT"
       echo "talm,$N,$P,$rep,$secs" >> "$CSV"
@@ -168,8 +180,8 @@ for N in "${NS[@]}"; do
     # --- par/pseq ---
     PPDIR="$NDIR/parpseq_P${P}"
     mkdir -p "$PPDIR/obj"
-    "$PY3" "$GEN_PARPSEQ" --out "$PPDIR/ms.hs" --input-dir "$INPUT_DIR" --P "$P"
-    "$GHC_BIN" -O2 -threaded -rtsopts -package base -package time -package parallel \
+    "$PY3" "$GEN_PARPSEQ" --out "$PPDIR/ms.hs" --input-dir "$INPUT_DIR" --P "$P" --G "$GRAIN"
+    "$GHC_BIN" -O2 -threaded -rtsopts -XMagicHash -XUnboxedTuples -package base -package time -package parallel \
         -outputdir "$PPDIR/obj" -o "$PPDIR/ms" "$PPDIR/ms.hs" >/dev/null 2>&1
 
     for ((rep=1; rep<=REPS; rep++)); do
@@ -184,8 +196,8 @@ for N in "${NS[@]}"; do
     # --- Strategies ---
     STDIR="$NDIR/strat_P${P}"
     mkdir -p "$STDIR/obj"
-    "$PY3" "$GEN_STRAT" --out "$STDIR/ms.hs" --input-dir "$INPUT_DIR" --P "$P"
-    "$GHC_BIN" -O2 -threaded -rtsopts -package base -package time -package parallel -package deepseq \
+    "$PY3" "$GEN_STRAT" --out "$STDIR/ms.hs" --input-dir "$INPUT_DIR" --P "$P" --G "$GRAIN"
+    "$GHC_BIN" -O2 -threaded -rtsopts -XMagicHash -XUnboxedTuples -package base -package time -package parallel -package deepseq \
         -outputdir "$STDIR/obj" -o "$STDIR/ms" "$STDIR/ms.hs" >/dev/null 2>&1
 
     for ((rep=1; rep<=REPS; rep++)); do

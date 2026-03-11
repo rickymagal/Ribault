@@ -10,11 +10,13 @@ the standard GHC approach for parallel IO.
 import argparse, os
 
 
-def emit_hs(path, n_files, keyword, corpus_dir, n_funcs=12):
+def emit_hs(path, n_files, keyword, corpus_dir, n_funcs=12, pad_width=None):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     abs_corpus = os.path.abspath(corpus_dir)
     kw_bytes = list(keyword.encode("ascii"))
 
+    if pad_width is None:
+        pad_width = max(4, len(str(n_files - 1)))
     n_funcs = min(n_funcs, n_files, 14)
     ranges = []
     for i in range(n_funcs):
@@ -29,7 +31,6 @@ def emit_hs(path, n_files, keyword, corpus_dir, n_funcs=12):
 {{-# LANGUAGE BangPatterns #-}}
 -- Auto-generated: text search (GHC par/pseq)
 -- N_FILES={n_files}  KEYWORD="{keyword}"  N_FUNCS={len(ranges)}
--- Uses explicit par/pseq for top-level parallelism over K range tasks.
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Unsafe as BSU
@@ -43,11 +44,11 @@ corpusDir = "{abs_corpus}"
 kwBytes :: BS.ByteString
 kwBytes = BS.pack {kw_bytes}
 
-padInt :: Int -> Int -> String
-padInt w n = let s = show n in replicate (w - length s) '0' ++ s
+padInt :: Int -> String
+padInt n = let s = show n in replicate ({pad_width} - length s) '0' ++ s
 
 filePath :: Int -> FilePath
-filePath i = corpusDir ++ "/file_" ++ padInt 4 i ++ ".txt"
+filePath i = corpusDir ++ "/file_" ++ padInt i ++ ".txt"
 
 countOcc :: BS.ByteString -> BS.ByteString -> Int
 countOcc buf kw = go 0 0
@@ -106,8 +107,10 @@ def main():
     ap.add_argument("--keyword", default="FINDME")
     ap.add_argument("--corpus-dir", required=True)
     ap.add_argument("--n-funcs", type=int, default=12)
+    ap.add_argument("--pad-width", type=int, default=None)
     args = ap.parse_args()
-    emit_hs(args.out, args.n_files, args.keyword, args.corpus_dir, args.n_funcs)
+    emit_hs(args.out, args.n_files, args.keyword, args.corpus_dir, args.n_funcs,
+            pad_width=args.pad_width)
 
 
 if __name__ == "__main__":

@@ -287,7 +287,7 @@ $(EXE_CODE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
 $(DF_OUT_DIR)/%.dot: $(TEST_DIR)/%.hsk | $(EXE_DF)
 	@mkdir -p $(DF_OUT_DIR)
 	@echo "[DOT-DF] $< → $@"
-	./$(EXE_DF) $< > $@
+	./$(EXE_DF) --ddg $< > $@
 
 # ------------------------------------------------------------
 # PNG dataflow

@@ -1,118 +1,138 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generate parallel Merge Sort .hs using STUArray + Strategies."""
+"""Generate parallel Merge Sort .hs using C qsort FFI + Strategies."""
 
 import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: parallel Merge Sort (GHC Strategies, Array-based)
+HS_TMPL = r"""-- Auto-generated: parallel Merge Sort (GHC Strategies, C qsort FFI)
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
 import Control.Parallel.Strategies (runEval, rpar, rseq)
-import Control.DeepSeq (force, NFData(..), deepseq)
-import Control.Monad.ST (ST, runST)
-import Data.Array.ST (STUArray, newArray_, readArray, writeArray, runSTUArray)
-import Data.Array.Unboxed (UArray, listArray, elems, bounds, (!))
+import Control.DeepSeq (NFData(..))
+import Foreign.Ptr (Ptr, plusPtr, castPtr)
+import Foreign.Storable (peek, poke, peekElemOff, pokeElemOff)
+import Foreign.Marshal.Alloc (mallocBytes)
+import Foreign.Marshal.Utils (copyBytes)
+import Data.Int (Int64)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
+import System.IO.Unsafe (unsafePerformIO)
+import System.IO (hFlush, stdout)
 
-instance NFData (UArray Int Int) where
-  rnf a = a `seq` ()
+foreign import ccall "sort_int64" c_sort_int64 :: Ptr Int64 -> Int64 -> IO ()
+foreign import ccall "merge_int64" c_merge_int64 :: Ptr Int64 -> Int64 -> Ptr Int64 -> Int64 -> Ptr Int64 -> IO ()
 
--- Convert UArray slice to list
-sliceToList :: UArray Int Int -> Int -> Int -> [Int]
-sliceToList arr lo hi = [arr ! i | i <- [lo..hi-1]]
+instance NFData (Ptr a) where
+  rnf !_ = ()
 
--- Build UArray from list
-listToUArray :: [Int] -> UArray Int Int
-listToUArray xs = listArray (0, length xs - 1) xs
+arrAlloc :: Int -> IO (Ptr Int64)
+arrAlloc !n = do
+  raw <- mallocBytes ((n + 1) * 8)
+  poke (castPtr raw :: Ptr Int64) (fromIntegral n :: Int64)
+  return (raw `plusPtr` 8)
+{-# INLINE arrAlloc #-}
 
--- In-place mergesort on STUArray, returns UArray
-sortLeaf :: UArray Int Int -> Int -> Int -> UArray Int Int
-sortLeaf src lo len = runSTUArray $ do
-  arr <- newArray_ (0, len-1) :: ST s (STUArray s Int Int)
-  tmp <- newArray_ (0, len-1) :: ST s (STUArray s Int Int)
-  -- copy slice
-  let copyIn i | i >= len  = return ()
-               | otherwise = do writeArray arr i (src ! (lo + i)); copyIn (i+1)
-  copyIn 0
-  msortRec arr tmp 0 len
-  return arr
+arrSizeOf :: Ptr Int64 -> IO Int
+arrSizeOf p = do
+  s <- peek (p `plusPtr` (-8) :: Ptr Int64) :: IO Int64
+  return (fromIntegral s)
+{-# INLINE arrSizeOf #-}
 
-msortRec :: STUArray s Int Int -> STUArray s Int Int -> Int -> Int -> ST s ()
-msortRec arr tmp lo hi
-  | hi - lo <= 1 = return ()
+fillDescending :: Ptr Int64 -> Int -> Int -> IO ()
+fillDescending !p !n !i
+  | i >= n    = return ()
   | otherwise = do
-      let mid = lo + (hi - lo) `div` 2
-      msortRec arr tmp lo mid
-      msortRec arr tmp mid hi
-      mergeImpl arr tmp lo mid hi
+      pokeElemOff p i (fromIntegral (n - i) :: Int64)
+      fillDescending p n (i + 1)
 
-mergeImpl :: STUArray s Int Int -> STUArray s Int Int -> Int -> Int -> Int -> ST s ()
-mergeImpl arr tmp lo mid hi = do
-  let go i j k
-        | i >= mid && j >= hi = return ()
-        | i >= mid  = do x <- readArray arr j; writeArray tmp k x; go i (j+1) (k+1)
-        | j >= hi   = do x <- readArray arr i; writeArray tmp k x; go (i+1) j (k+1)
-        | otherwise = do
-            a <- readArray arr i
-            b <- readArray arr j
-            if a <= b
-              then do writeArray tmp k a; go (i+1) j (k+1)
-              else do writeArray tmp k b; go i (j+1) (k+1)
-  go lo mid lo
-  -- copy back
-  let copy i | i >= hi   = return ()
-             | otherwise = do x <- readArray tmp i; writeArray arr i x; copy (i+1)
-  copy lo
+sortLeaf :: Ptr Int64 -> Int -> Ptr Int64
+sortLeaf !src !size = unsafePerformIO $ do
+  out <- arrAlloc size
+  copyBytes (castPtr out) (castPtr src) (size * 8)
+  c_sort_int64 out (fromIntegral size)
+  return out
+{-# NOINLINE sortLeaf #-}
 
--- Merge two sorted UArrays into one
-mergePair :: UArray Int Int -> UArray Int Int -> UArray Int Int
-mergePair !left !right = runSTUArray $ do
-  let (_, lhi) = bounds left;  lsize = lhi + 1
-      (_, rhi) = bounds right; rsize = rhi + 1
-  merged <- newArray_ (0, lsize + rsize - 1) :: ST s (STUArray s Int Int)
-  let go i j k
-        | i >= lsize && j >= rsize = return ()
-        | i >= lsize = do writeArray merged k (right ! j); go i (j+1) (k+1)
-        | j >= rsize = do writeArray merged k (left ! i); go (i+1) j (k+1)
-        | otherwise  = do
-            let a = left ! i; b = right ! j
-            if a <= b
-              then do writeArray merged k a; go (i+1) j (k+1)
-              else do writeArray merged k b; go i (j+1) (k+1)
-  go 0 0 0
-  return merged
+mergePair :: Ptr Int64 -> Ptr Int64 -> Ptr Int64
+mergePair !lptr !rptr = unsafePerformIO $ do
+  !lsize <- arrSizeOf lptr
+  !rsize <- arrSizeOf rptr
+  let !total = lsize + rsize
+  out <- arrAlloc total
+  c_merge_int64 lptr (fromIntegral lsize) rptr (fromIntegral rsize) out
+  return out
+{-# NOINLINE mergePair #-}
 
--- Parallel mergesort with Strategies
-msortGo :: Int -> UArray Int Int -> Int -> Int -> UArray Int Int
-msortGo cutoff src lo len
-  | len <= 1  = sortLeaf src lo len
-  | len <= cutoff = sortLeaf src lo len
+msort :: Int -> Ptr Int64 -> Int -> Ptr Int64
+msort !cutoff !ptr !size
+  | size <= cutoff = sortLeaf ptr size
   | otherwise =
-      let mid    = len `div` 2
-          leftA  = msortGo cutoff src lo mid
-          rightA = msortGo cutoff src (lo + mid) (len - mid)
+      let !lsize = size `div` 2
+          !rsize = size - lsize
+          !rptr  = ptr `plusPtr` (lsize * 8)
+          leftR  = msort cutoff ptr lsize
+          rightR = msort cutoff rptr rsize
       in runEval $ do
-           a' <- rpar (force leftA)
-           b' <- rseq (force rightA)
-           _ <- rseq a'
-           return (mergePair a' b')
+           l <- rpar leftR
+           r <- rseq rightR
+           _ <- rseq l
+           return (mergePair l r)
+
+verifyLoop :: Ptr Int64 -> Int -> Int -> IO Bool
+verifyLoop !arr !size !i
+  | i >= size = return True
+  | otherwise = do
+      !a <- peekElemOff arr (i-1)
+      !b <- peekElemOff arr i
+      if b < a then return False
+               else verifyLoop arr size (i+1)
 
 main :: IO ()
 main = do
-  let n = __N__
-      !v = listArray (0, n-1) [n, n-1 .. 1] :: UArray Int Int
+  let !n = __N__
+      !cutoff = __CUTOFF__
+  ptr <- mallocBytes (n * 8)
+  let !p = castPtr ptr :: Ptr Int64
+  fillDescending p n 0
   t0 <- getCurrentTime
-  let !ys = force (msortGo __CUTOFF__ v 0 n)
+  let !result = msort cutoff p n
+  !rsize <- arrSizeOf result
   t1 <- getCurrentTime
-  let secs    = realToFrac (diffUTCTime t1 t0) :: Double
-      (_, hi) = bounds ys
-      nout    = hi + 1
-      sorted  = nout <= 1 || and [ys ! i <= ys ! (i+1) | i <- [0..nout-2]]
-  putStrLn $ "SORTED=" ++ show sorted
-  putStrLn $ "SORTED_HEAD=" ++ show [ys ! i | i <- [0..min 9 (nout-1)]]
-  putStrLn $ "N_OUT=" ++ show nout
+  let secs = realToFrac (diffUTCTime t1 t0) :: Double
+  !sorted <- verifyLoop result rsize 1
+  let !ok = sorted && rsize == n
+  putStrLn $ "SORTED=" ++ show ok
+  putStrLn $ "N_OUT=" ++ show rsize
   putStrLn $ "RUNTIME_SEC=" ++ show secs
+  hFlush stdout
+"""
+
+MSORT_HELPERS_C = """\
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+
+static int cmp_int64(const void *a, const void *b) {
+    int64_t va = *(const int64_t*)a;
+    int64_t vb = *(const int64_t*)b;
+    return (va > vb) - (va < vb);
+}
+
+void sort_int64(int64_t *arr, int64_t n) {
+    qsort(arr, (size_t)n, sizeof(int64_t), cmp_int64);
+}
+
+void merge_int64(const int64_t *left, int64_t lsize,
+                 const int64_t *right, int64_t rsize,
+                 int64_t *out) {
+    int64_t i = 0, j = 0, k = 0;
+    while (i < lsize && j < rsize) {
+        if (left[i] <= right[j]) out[k++] = left[i++];
+        else out[k++] = right[j++];
+    }
+    if (i < lsize) memcpy(out + k, left + i, (lsize - i) * sizeof(int64_t));
+    if (j < rsize) memcpy(out + k, right + j, (rsize - j) * sizeof(int64_t));
+}
 """
 
 def emit_hs(path, n, cutoff=0):
@@ -122,6 +142,10 @@ def emit_hs(path, n, cutoff=0):
     src = HS_TMPL.replace("__N__", str(n)).replace("__CUTOFF__", str(cutoff))
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
+    # Write C helper next to the .hs
+    c_path = os.path.join(os.path.dirname(path), "msort_helpers.c")
+    with open(c_path, "w", encoding="utf-8") as fc:
+        fc.write(MSORT_HELPERS_C)
     print(f"[hs_gen_input] wrote {path} (N={n}, cutoff={cutoff})")
 
 def main():

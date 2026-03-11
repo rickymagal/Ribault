@@ -8,6 +8,11 @@ set -euo pipefail
 # (GHC heap allocation), then computes its row-block of
 # O = softmax(Q * K^T / sqrt(D)) * V.
 #
+# Variance reduction measures:
+#   - Core pinning via taskset (physical cores only, no HT)
+#   - Warmup run before measured reps (discarded)
+#   - 5 measured reps (median is robust statistic)
+#
 # Structure:
 #   - Pre-generate binary Q/K/V per N
 #   - Sequential baseline (P=1)
@@ -30,13 +35,31 @@ GEN_SEQ="$REPO/scripts/attention/gen_hs_sequential.py"
 GEN_STRAT="$REPO/scripts/attention/gen_hs_strategies.py"
 GEN_PARPSEQ="$REPO/scripts/attention/gen_hs_parpseq.py"
 
-REPS=${REPS:-3}
+REPS=${REPS:-5}
+WARMUP=${WARMUP:-1}
 N_FUNCS=${N_FUNCS:-14}
 D=${D:-512}
 PS=(${PS:-2 4 8 16})
 TALM_RTS_A=${TALM_RTS_A:-256m}
 
 NS=(${NS:-6144 6656 7168 7680 8192})
+
+# ---- Core pinning ----
+# Use physical cores only (no hyperthreads) for deterministic performance.
+# On Intel Xeon Gold 5412U: cores 0-23 are physical, 24-47 are HT siblings.
+# Detect: core N and core N+n_physical share the same physical core.
+N_PHYS_CORES=${N_PHYS_CORES:-24}
+
+# Build taskset CPU list for P cores: "0-$((P-1))"
+pin_cores() {
+  local p="$1"
+  if (( p > N_PHYS_CORES )); then
+    # If P > physical cores, use all physical cores (no HT)
+    echo "0-$((N_PHYS_CORES - 1))"
+  else
+    echo "0-$((p - 1))"
+  fi
+}
 
 # Detect GHC
 GHC_BIN="${GHC:-ghc}"
@@ -80,7 +103,9 @@ echo "variant,N,D,n_funcs,P,rep,seconds" > "$CSV"
 echo "========================================="
 echo " Attention Data Pipeline Benchmark"
 echo " N values: ${NS[*]}"
-echo " D=$D  N_FUNCS=$N_FUNCS  P=${PS[*]}  reps=$REPS"
+echo " D=$D  N_FUNCS=$N_FUNCS  P=${PS[*]}"
+echo " reps=$REPS  warmup=$WARMUP"
+echo " core pinning: physical cores 0-$((N_PHYS_CORES-1))"
 echo " TALM_RTS_A=$TALM_RTS_A"
 echo " Output: $OUTROOT"
 echo "========================================="
@@ -141,9 +166,17 @@ for N in "${NS[@]}"; do
   echo ""
   echo "  ---- Sequential Baseline (P=1) ----"
   EXPECTED=""
+  CORES_1="$(pin_cores 1)"
+
+  # Warmup
+  for ((w=1; w<=WARMUP; w++)); do
+    echo "  SEQ      N=$N P=1 warmup=$w (discarded)"
+    taskset -c "$CORES_1" "$SDIR/attn" +RTS -N1 -RTS >/dev/null 2>/dev/null
+  done
+
   for ((rep=1; rep<=REPS; rep++)); do
     OUT="$SDIR/out_r${rep}.txt"
-    "$SDIR/attn" +RTS -N1 -RTS >"$OUT" 2>/dev/null
+    taskset -c "$CORES_1" "$SDIR/attn" +RTS -N1 -RTS >"$OUT" 2>/dev/null
     secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
     cs="$(awk -F= '/^CHECKSUM=/{print $2}' "$OUT")"
     if [[ -z "$EXPECTED" ]]; then
@@ -160,6 +193,7 @@ for N in "${NS[@]}"; do
   for P in "${PS[@]}"; do
     echo ""
     echo "  ---- P=$P ----"
+    CORES_P="$(pin_cores "$P")"
 
     # --- TALM ---
     pushd "$ASM_ROOT" >/dev/null
@@ -169,13 +203,22 @@ for N in "${NS[@]}"; do
     PLA="$TDIR/attn_P${P}_auto.pla"
     [[ -f "$PLA" ]] || PLA="$TDIR/attn_P${P}.pla"
 
+    # TALM warmup
+    for ((w=1; w<=WARMUP; w++)); do
+      echo "  TALM     N=$N P=$P warmup=$w (discarded)"
+      set +e
+      SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        taskset -c "$CORES_P" "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >/dev/null 2>/dev/null
+      set -e
+    done
+
     for ((rep=1; rep<=REPS; rep++)); do
       OUT="$TDIR/out_P${P}_r${rep}.txt"
       ERR="$TDIR/err_P${P}_r${rep}.txt"
       for attempt in 1 2 3; do
         set +e
         SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-          "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
+          taskset -c "$CORES_P" "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
         rc=$?
         set -e
         if [[ $rc -eq 0 ]]; then
@@ -191,9 +234,15 @@ for N in "${NS[@]}"; do
     done
 
     # --- GHC Strategies ---
+    # Warmup
+    for ((w=1; w<=WARMUP; w++)); do
+      echo "  GHC-Str  N=$N P=$P warmup=$w (discarded)"
+      taskset -c "$CORES_P" "$GDIR/attn" +RTS -N"$P" -RTS >/dev/null 2>/dev/null
+    done
+
     for ((rep=1; rep<=REPS; rep++)); do
       OUT="$GDIR/out_P${P}_r${rep}.txt"
-      "$GDIR/attn" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      taskset -c "$CORES_P" "$GDIR/attn" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
       echo "  GHC-Str  N=$N P=$P rep=$rep -> ${secs}s"
       validate "GHC-Strategies N=$N P=$P rep=$rep" "$OUT" "$EXPECTED"
@@ -201,9 +250,15 @@ for N in "${NS[@]}"; do
     done
 
     # --- GHC par/pseq ---
+    # Warmup
+    for ((w=1; w<=WARMUP; w++)); do
+      echo "  GHC-PP   N=$N P=$P warmup=$w (discarded)"
+      taskset -c "$CORES_P" "$PDIR/attn" +RTS -N"$P" -RTS >/dev/null 2>/dev/null
+    done
+
     for ((rep=1; rep<=REPS; rep++)); do
       OUT="$PDIR/out_P${P}_r${rep}.txt"
-      "$PDIR/attn" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      taskset -c "$CORES_P" "$PDIR/attn" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
       echo "  GHC-PP   N=$N P=$P rep=$rep -> ${secs}s"
       validate "GHC-par/pseq N=$N P=$P rep=$rep" "$OUT" "$EXPECTED"

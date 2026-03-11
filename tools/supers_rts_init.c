@@ -77,7 +77,7 @@ static void hs_startup(void) {
     char *argv[8];
     int argc = hs_rts_args(argv, 8);
     char **pargv = argv;
-    hs_init_with_rtsopts(&argc, &pargv); // permite -N grande
+    hs_init_with_rtsopts(&argc, &pargv);
     hs_set_caps_from_env();
     if (supers_io_init) {
         supers_io_init();
@@ -89,7 +89,7 @@ static void hs_shutdown(void) {
     if (hs_manual_init_enabled()) return;
     if (!hs_is_inited) return;
     hs_is_inited = 0;
-    hs_exit();                           // finaliza ao descarregar o .so
+    hs_exit();
 }
 
 __attribute__((visibility("default")))
@@ -119,7 +119,6 @@ void supers_hs_init_thread(void) {
     if (hs_init_thread) {
         hs_init_thread();
     }
-    hs_set_caps_from_env();
 }
 
 __attribute__((visibility("default")))
