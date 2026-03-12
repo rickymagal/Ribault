@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Generate TALM graph coloring with file IO.
+"""Generate TALM graph coloring with file IO (adjacency-list representation).
 
-Same pattern as attention: separate supers per chunk, each reading adj.bin
-via BS.readFile (GHC heap allocation -> GC pressure).
+Each chunk reads adj.bin via BS.readFile, builds the full adjacency list
+as a Haskell [[Int]], then colors its vertex range using the pre-built
+neighbor lists.
 
 Generates:
   1. Minimal .hsk with separate chunk supers + max merge tree
@@ -71,7 +72,7 @@ chunk_{idx} dummy =
 
     max_lines, final_var = gen_max_tree(nchunks)
 
-    hsk = f"""-- graph_coloring.hsk  (auto-generated, file IO, separate supers)
+    hsk = f"""-- graph_coloring.hsk  (auto-generated, adjacency-list representation)
 -- N={N}  N_FUNCS={nchunks}
 
 {"".join(super_defs)}
@@ -117,32 +118,41 @@ gcShift = {SHIFT}
 gcAdjFile :: FilePath
 gcAdjFile = "{data_dir}/adj.bin"
 
-gcLookupColor :: Int -> [(Int, Int)] -> Maybe Int
-gcLookupColor _ [] = Nothing
-gcLookupColor !v ((u,c):rest) = if u == v then Just c else gcLookupColor v rest
+-- Build adjacency lists for ALL vertices from binary matrix.
+-- Each element is the sorted list of neighbors of that vertex.
+gcBuildAdjList :: Ptr Word8 -> Int -> IO [[Int]]
+gcBuildAdjList !adjP !n = mapM buildRow [0..n-1]
+  where
+    buildRow !v = do
+      let go !u !acc
+            | u < 0     = return acc
+            | u == v    = go (u-1) acc
+            | otherwise = do
+                !b <- peekElemOff adjP (v * n + u)
+                if b /= (0 :: Word8) then go (u-1) (u : acc)
+                else go (u-1) acc
+      go (n-1) []
+
+-- Find colors used by colored neighbors
+gcFindUsedColors :: [Int] -> [(Int, Int)] -> [Int]
+gcFindUsedColors [] _ = []
+gcFindUsedColors (!u:us) !colList =
+  case lookup u colList of
+    Just !c -> c : gcFindUsedColors us colList
+    Nothing -> gcFindUsedColors us colList
 
 gcSmallestMissing :: [Int] -> Int
-gcSmallestMissing used = go 0
+gcSmallestMissing !used = go 0
   where go !c = if c `elem` used then go (c + 1) else c
 
-gcGetUsedColors :: Ptr Word8 -> Int -> [(Int, Int)] -> Int -> [Int] -> IO [Int]
-gcGetUsedColors !adjP !v !colList !u !acc
-  | u >= gcNumVertices = return acc
-  | u == v = gcGetUsedColors adjP v colList (u + 1) acc
-  | otherwise = do
-      !b <- peekElemOff adjP (u * gcNumVertices + v)
-      if b /= (0 :: Word8)
-        then case gcLookupColor u colList of
-               Just c  -> gcGetUsedColors adjP v colList (u + 1) (c : acc)
-               Nothing -> gcGetUsedColors adjP v colList (u + 1) acc
-        else gcGetUsedColors adjP v colList (u + 1) acc
-
-gcColorAllIO :: Ptr Word8 -> Int -> Int -> [(Int, Int)] -> IO [(Int, Int)]
-gcColorAllIO _ _ 0 !colList = return colList
-gcColorAllIO !adjP !cur !remaining !colList = do
-  !usedColors <- gcGetUsedColors adjP cur colList 0 []
-  let !newC = gcSmallestMissing usedColors
-  gcColorAllIO adjP (cur + 1) (remaining - 1) ((cur, newC) : colList)
+-- Color vertices from adjacency list
+gcColorAllAdj :: [[Int]] -> Int -> Int -> [(Int, Int)] -> [(Int, Int)]
+gcColorAllAdj [] _ _ !colList = colList
+gcColorAllAdj _ _ 0 !colList = colList
+gcColorAllAdj (!nbrs:rest) !cur !remaining !colList =
+  let !usedColors = gcFindUsedColors nbrs colList
+      !newC = gcSmallestMissing usedColors
+  in gcColorAllAdj rest (cur+1) (remaining-1) ((cur, newC) : colList)
 
 gcColorChunk :: Int64 -> IO Int64
 gcColorChunk packed64 = do
@@ -151,10 +161,12 @@ gcColorChunk packed64 = do
       count  = packed `mod` gcShift
   adjBS <- BS.readFile gcAdjFile
   let !(BSI.BS adjfp _) = adjBS
-  withForeignPtr adjfp $ \\adjRaw -> do
+  withForeignPtr adjfp $ \\\\adjRaw -> do
     let !adjP = castPtr adjRaw :: Ptr Word8
-    !coloring <- gcColorAllIO adjP start count []
-    let !maxC = if null coloring then 0 else maximum (map snd coloring)
+    !fullAdjList <- gcBuildAdjList adjP gcNumVertices
+    let !chunkAdj = drop start fullAdjList
+        !coloring = gcColorAllAdj chunkAdj start count []
+        !maxC = if null coloring then 0 else maximum (map snd coloring)
     return $! fromIntegral (maxC * gcShift + count)
 """
     with open(inject_path, "w", encoding="utf-8") as f:

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Generate GHC Strategies graph coloring .hs (file IO via BS.readFile).
+"""Generate GHC Strategies graph coloring .hs (adjacency-list representation).
 
-Each chunk reads adj.bin independently, colors its vertex range greedily.
+Each chunk reads adj.bin, builds full adjacency list in Haskell heap,
+then colors its vertex range using the pre-built neighbor lists.
 """
 
 import argparse, os
@@ -23,7 +24,7 @@ def emit_hs(path, N, n_funcs, data_dir):
 
     src = f"""\
 {{-# LANGUAGE BangPatterns #-}}
--- Auto-generated: Graph Coloring GHC Strategies (file IO via BS.readFile)
+-- Auto-generated: Graph Coloring GHC Strategies (adjacency-list representation)
 -- N={N}  N_FUNCS={len(chunks)}
 
 import Data.Int (Int64)
@@ -46,32 +47,38 @@ shift = {SHIFT}
 adjFile :: FilePath
 adjFile = "{data_dir}/adj.bin"
 
-lookupColor :: Int -> [(Int, Int)] -> Maybe Int
-lookupColor _ [] = Nothing
-lookupColor !v ((u,c):rest) = if u == v then Just c else lookupColor v rest
+-- Build adjacency lists for ALL vertices from binary matrix.
+buildAdjList :: Ptr Word8 -> Int -> IO [[Int]]
+buildAdjList !adjP !n = mapM buildRow [0..n-1]
+  where
+    buildRow !v = do
+      let go !u !acc
+            | u < 0     = return acc
+            | u == v    = go (u-1) acc
+            | otherwise = do
+                !b <- peekElemOff adjP (v * n + u)
+                if b /= (0 :: Word8) then go (u-1) (u : acc)
+                else go (u-1) acc
+      go (n-1) []
+
+findUsedColors :: [Int] -> [(Int, Int)] -> [Int]
+findUsedColors [] _ = []
+findUsedColors (!u:us) !colList =
+  case lookup u colList of
+    Just !c -> c : findUsedColors us colList
+    Nothing -> findUsedColors us colList
 
 smallestMissing :: [Int] -> Int
-smallestMissing used = go 0
+smallestMissing !used = go 0
   where go !c = if c `elem` used then go (c + 1) else c
 
-getUsedColors :: Ptr Word8 -> Int -> [(Int, Int)] -> Int -> [Int] -> IO [Int]
-getUsedColors !adjP !v !colList !u !acc
-  | u >= numVertices = return acc
-  | u == v = getUsedColors adjP v colList (u + 1) acc
-  | otherwise = do
-      !b <- peekElemOff adjP (u * numVertices + v)
-      if b /= (0 :: Word8)
-        then case lookupColor u colList of
-               Just c  -> getUsedColors adjP v colList (u + 1) (c : acc)
-               Nothing -> getUsedColors adjP v colList (u + 1) acc
-        else getUsedColors adjP v colList (u + 1) acc
-
-colorAllIO :: Ptr Word8 -> Int -> Int -> [(Int, Int)] -> IO [(Int, Int)]
-colorAllIO _ _ 0 !colList = return colList
-colorAllIO !adjP !cur !remaining !colList = do
-  !usedColors <- getUsedColors adjP cur colList 0 []
-  let !newC = smallestMissing usedColors
-  colorAllIO adjP (cur + 1) (remaining - 1) ((cur, newC) : colList)
+colorAllAdj :: [[Int]] -> Int -> Int -> [(Int, Int)] -> [(Int, Int)]
+colorAllAdj [] _ _ !colList = colList
+colorAllAdj _ _ 0 !colList = colList
+colorAllAdj (!nbrs:rest) !cur !remaining !colList =
+  let !usedColors = findUsedColors nbrs colList
+      !newC = smallestMissing usedColors
+  in colorAllAdj rest (cur+1) (remaining-1) ((cur, newC) : colList)
 
 processChunk :: Int -> Int -> IO Int64
 processChunk !start !count = do
@@ -79,8 +86,10 @@ processChunk !start !count = do
   let !(BSI.BS adjfp _) = adjBS
   withForeignPtr adjfp $ \\adjRaw -> do
     let !adjP = castPtr adjRaw :: Ptr Word8
-    !coloring <- colorAllIO adjP start count []
-    let !maxC = if null coloring then 0 else maximum (map snd coloring)
+    !fullAdjList <- buildAdjList adjP numVertices
+    let !chunkAdj = drop start fullAdjList
+        !coloring = colorAllAdj chunkAdj start count []
+        !maxC = if null coloring then 0 else maximum (map snd coloring)
     return $! fromIntegral (maxC * shift + count)
 
 {{-# NOINLINE evalChunk #-}}
