@@ -161,7 +161,7 @@ gcColorChunk packed64 = do
       count  = packed `mod` gcShift
   adjBS <- BS.readFile gcAdjFile
   let !(BSI.BS adjfp _) = adjBS
-  withForeignPtr adjfp $ \\\\adjRaw -> do
+  withForeignPtr adjfp $ \\adjRaw -> do
     let !adjP = castPtr adjRaw :: Ptr Word8
     !fullAdjList <- gcBuildAdjList adjP gcNumVertices
     let !chunkAdj = drop start fullAdjList
