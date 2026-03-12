@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Generate GHC par/pseq graph coloring .hs (file IO via BS.readFile).
+"""Generate sequential graph coloring .hs (baseline, file IO via BS.readFile).
 
-Each chunk reads adj.bin independently, colors its vertex range greedily.
+Greedy coloring with association-list lookup.
+Processes n_funcs chunks sequentially, each reading adj.bin from file.
 """
 
 import argparse, os
@@ -23,17 +24,15 @@ def emit_hs(path, N, n_funcs, data_dir):
 
     src = f"""\
 {{-# LANGUAGE BangPatterns #-}}
--- Auto-generated: Graph Coloring GHC par/pseq (file IO via BS.readFile)
+-- Auto-generated: Graph Coloring sequential baseline (file IO via BS.readFile)
 -- N={N}  N_FUNCS={len(chunks)}
 
 import Data.Int (Int64)
 import Data.Word (Word8)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
-import Control.Parallel (par, pseq)
 import Foreign.Ptr (Ptr, castPtr)
 import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Storable (peekElemOff)
-import System.IO.Unsafe (unsafePerformIO)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 
@@ -46,14 +45,17 @@ shift = {SHIFT}
 adjFile :: FilePath
 adjFile = "{data_dir}/adj.bin"
 
+-- Association-list lookup
 lookupColor :: Int -> [(Int, Int)] -> Maybe Int
 lookupColor _ [] = Nothing
 lookupColor !v ((u,c):rest) = if u == v then Just c else lookupColor v rest
 
+-- Smallest color not in used list
 smallestMissing :: [Int] -> Int
 smallestMissing used = go 0
   where go !c = if c `elem` used then go (c + 1) else c
 
+-- Collect used colors of neighbors of v from coloring, scanning via adj matrix
 getUsedColors :: Ptr Word8 -> Int -> [(Int, Int)] -> Int -> [Int] -> IO [Int]
 getUsedColors !adjP !v !colList !u !acc
   | u >= numVertices = return acc
@@ -66,6 +68,7 @@ getUsedColors !adjP !v !colList !u !acc
                Nothing -> getUsedColors adjP v colList (u + 1) acc
         else getUsedColors adjP v colList (u + 1) acc
 
+-- Greedy coloring of vertices [start..start+count-1]
 colorAllIO :: Ptr Word8 -> Int -> Int -> [(Int, Int)] -> IO [(Int, Int)]
 colorAllIO _ _ 0 !colList = return colList
 colorAllIO !adjP !cur !remaining !colList = do
@@ -73,6 +76,7 @@ colorAllIO !adjP !cur !remaining !colList = do
   let !newC = smallestMissing usedColors
   colorAllIO adjP (cur + 1) (remaining - 1) ((cur, newC) : colList)
 
+-- Process one chunk: read adj.bin, color vertices, return packed result
 processChunk :: Int -> Int -> IO Int64
 processChunk !start !count = do
   adjBS <- BS.readFile adjFile
@@ -83,33 +87,27 @@ processChunk !start !count = do
     let !maxC = if null coloring then 0 else maximum (map snd coloring)
     return $! fromIntegral (maxC * shift + count)
 
-{{-# NOINLINE evalChunk #-}}
-evalChunk :: (Int, Int) -> Int64
-evalChunk (start, count) = unsafePerformIO $ processChunk start count
-
-parMapPP :: (a -> b) -> [a] -> [b]
-parMapPP _ []     = []
-parMapPP f (x:xs) = y `par` ys `pseq` (y : ys)
-  where y  = f x
-        ys = parMapPP f xs
-
 main :: IO ()
 main = do
   t0 <- getCurrentTime
   let chunks = {chunk_list}
-      !results = parMapPP evalChunk chunks
-      !maxPacked = maximum results
-      !maxColor = fromIntegral maxPacked `div` shift :: Int
+  !maxPacked <- processChunks chunks 0
+  let !maxColor = fromIntegral maxPacked `div` shift :: Int
       !colors = maxColor + 1
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn $ "COLORS=" ++ show colors
   putStrLn "VALID=True"
   putStrLn $ "RUNTIME_SEC=" ++ show secs
+  where
+    processChunks [] !acc = return acc
+    processChunks ((s,c):rest) !acc = do
+      !v <- processChunk s c
+      processChunks rest (max acc v)
 """
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[gen_gc_pp] wrote {path} (N={N}, n_funcs={len(chunks)})")
+    print(f"[gen_gc_seq] wrote {path} (N={N}, n_funcs={len(chunks)})")
 
 
 def main():
