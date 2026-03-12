@@ -212,8 +212,8 @@ validateAndPrint packed =
         nColored = p `mod` shift
         colors = maxColor + 1
       in unsafePerformIO $ do
-        print colors
-        print (1 :: Int)
+        putStrLn ("COLORS=" ++ show colors)
+        putStrLn "VALID=True"
         return (0 :: Int64)
 #ENDSUPER;
 
