@@ -42,6 +42,7 @@ EDGE_PROB=${EDGE_PROB:-0.001}
 SEED=${SEED:-42}
 PS=(${PS:-2 4 8 16})
 TALM_RTS_A=${TALM_RTS_A:-64m}
+SUPERS_RTS_N=${SUPERS_RTS_N:-1}
 
 NS=(${NS:-1000 1500 2000})
 
@@ -103,7 +104,7 @@ echo " edge_prob=$EDGE_PROB  seed=$SEED"
 echo " N_FUNCS=$N_FUNCS  P=${PS[*]}"
 echo " reps=$REPS  warmup=$WARMUP"
 echo " core pinning: physical cores 0-$((N_PHYS_CORES-1))"
-echo " TALM_RTS_A=$TALM_RTS_A"
+echo " TALM_RTS_A=$TALM_RTS_A  SUPERS_RTS_N=$SUPERS_RTS_N"
 echo " Output: $OUTROOT"
 echo "========================================="
 
@@ -204,7 +205,7 @@ for N in "${NS[@]}"; do
     for ((w=1; w<=WARMUP; w++)); do
       echo "  TALM     N=$N P=$P warmup=$w (discarded)"
       set +e
-      SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+      SUPERS_RTS_N="$SUPERS_RTS_N" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         taskset -c "$CORES_P" "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >/dev/null 2>/dev/null
       set -e
     done
@@ -214,7 +215,7 @@ for N in "${NS[@]}"; do
       ERR="$TDIR/err_P${P}_r${rep}.txt"
       for attempt in 1 2 3; do
         set +e
-        SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        SUPERS_RTS_N="$SUPERS_RTS_N" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
           taskset -c "$CORES_P" "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
         rc=$?
         set -e
