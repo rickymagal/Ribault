@@ -48,9 +48,6 @@ import Data.List (foldl')
 import Data.Bits (shiftR)
 import Data.Word (Word64)
 
-instance NFData IntSet where rnf s = s `seq` ()
-instance NFData v => NFData (IntMap v) where rnf m = IM.foldl' (\_ v -> rnf v) () m `seq` ()
-
 -- Parameters
 numVertices, numProcs, seed :: Int
 numVertices = __N__
