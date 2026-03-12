@@ -1,131 +1,146 @@
 #!/usr/bin/env python3
-"""Generate sequential graph coloring .hs (baseline, file IO via BS.readFile).
+# -*- coding: utf-8 -*-
+"""
+Generate sequential graph coloring baseline (no parallelism).
 
-Greedy coloring with adjacency-list representation.
-Each chunk reads adj.bin, builds full adjacency list in Haskell heap,
-then colors its vertex range using the pre-built neighbor lists.
+Same IntMap/IntSet greedy algorithm as GHC strategies, but purely
+sequential: build graph, color all vertices in order, report result.
+This is the shared baseline for computing speedup of all variants.
 """
 
-import argparse, os
+import argparse
+import os
 
+TMPL = r"""{-# LANGUAGE BangPatterns #-}
+-- Auto-generated: Graph Coloring Sequential Baseline
+-- N=__N__  EDGE_PROB=__EDGE_PROB__  SEED=__SEED__
 
-def emit_hs(path, N, n_funcs, data_dir):
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    n_funcs = min(n_funcs, N)
-
-    chunks = []
-    for i in range(n_funcs):
-        lo = i * N // n_funcs
-        hi = (i + 1) * N // n_funcs
-        if hi > lo:
-            chunks.append((lo, hi - lo))
-
-    SHIFT = N + 1
-    chunk_list = "[" + ", ".join(f"({lo}, {cnt})" for lo, cnt in chunks) + "]"
-
-    src = f"""\
-{{-# LANGUAGE BangPatterns #-}}
--- Auto-generated: Graph Coloring sequential baseline (adjacency-list representation)
--- N={N}  N_FUNCS={len(chunks)}
-
-import Data.Int (Int64)
-import Data.Word (Word8)
+import Control.DeepSeq (NFData(..), deepseq, force)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
-import Foreign.Ptr (Ptr, castPtr)
-import Foreign.ForeignPtr (withForeignPtr)
-import Foreign.Storable (peekElemOff)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Internal as BSI
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IM
+import Data.IntSet (IntSet)
+import qualified Data.IntSet as IS
+import Data.List (foldl')
+import Data.Bits (shiftR)
+import Data.Word (Word64)
+import System.IO (hFlush, stdout)
 
-numVertices :: Int
-numVertices = {N}
+numVertices, seed :: Int
+numVertices = __N__
+seed = __SEED__
 
-shift :: Int
-shift = {SHIFT}
+edgeProb :: Double
+edgeProb = __EDGE_PROB__
 
-adjFile :: FilePath
-adjFile = "{data_dir}/adj.bin"
+type RNG = Word64
 
--- Build adjacency lists for ALL vertices from binary matrix.
--- Each element is the sorted list of neighbors of that vertex.
-buildAdjList :: Ptr Word8 -> Int -> IO [[Int]]
-buildAdjList !adjP !n = mapM buildRow [0..n-1]
+initRNG :: Int -> RNG
+initRNG s = fromIntegral s
+
+nextRNG :: RNG -> (Double, RNG)
+nextRNG !r =
+  let a = 6364136223846793005 :: Word64
+      c = 1442695040888963407 :: Word64
+      r' = a * r + c
+      val = fromIntegral (r' `shiftR` 33) / 4294967295.0
+  in (val, r')
+
+type Graph = IntMap IntSet
+
+generateGraph :: Int -> Double -> Int -> Graph
+generateGraph n p s = foldl' addVertex IM.empty [0..n-1]
   where
-    buildRow !v = do
-      let go !u !acc
-            | u < 0     = return acc
-            | u == v    = go (u-1) acc
-            | otherwise = do
-                !b <- peekElemOff adjP (v * n + u)
-                if b /= (0 :: Word8) then go (u-1) (u : acc)
-                else go (u-1) acc
-      go (n-1) []
+    addVertex !g !v =
+      let ns = generateNeighbors v (initRNG (s + v * 31337))
+      in IM.insert v ns g
+    generateNeighbors v rng0 = go (v + 1) rng0 IS.empty
+      where
+        go !u !rng !acc
+          | u >= n = acc
+          | otherwise =
+              let (r, rng') = nextRNG rng
+              in if r < p
+                 then go (u + 1) rng' (IS.insert u acc)
+                 else go (u + 1) rng' acc
 
--- Find colors used by colored neighbors
-findUsedColors :: [Int] -> [(Int, Int)] -> [Int]
-findUsedColors [] _ = []
-findUsedColors (!u:us) !colList =
-  case lookup u colList of
-    Just !c -> c : findUsedColors us colList
-    Nothing -> findUsedColors us colList
+symmetrize :: Graph -> Graph
+symmetrize g = IM.foldlWithKey' addReverse g g
+  where
+    addReverse !acc !v !ns =
+      IS.foldl' (\a u -> IM.adjust (IS.insert v) u a) acc ns
 
--- Smallest color not in used list
-smallestMissing :: [Int] -> Int
-smallestMissing !used = go 0
-  where go !c = if c `elem` used then go (c + 1) else c
+type Coloring = IntMap Int
 
--- Color vertices from adjacency list
-colorAllAdj :: [[Int]] -> Int -> Int -> [(Int, Int)] -> [(Int, Int)]
-colorAllAdj [] _ _ !colList = colList
-colorAllAdj _ _ 0 !colList = colList
-colorAllAdj (!nbrs:rest) !cur !remaining !colList =
-  let !usedColors = findUsedColors nbrs colList
-      !newC = smallestMissing usedColors
-  in colorAllAdj rest (cur+1) (remaining-1) ((cur, newC) : colList)
+smallestMissing :: IntSet -> Int
+smallestMissing s = go 0
+  where go !c = if IS.member c s then go (c + 1) else c
 
-processChunk :: Int -> Int -> IO Int64
-processChunk !start !count = do
-  adjBS <- BS.readFile adjFile
-  let !(BSI.BS adjfp _) = adjBS
-  withForeignPtr adjfp $ \\adjRaw -> do
-    let !adjP = castPtr adjRaw :: Ptr Word8
-    !fullAdjList <- buildAdjList adjP numVertices
-    let !chunkAdj = drop start fullAdjList
-        !coloring = colorAllAdj chunkAdj start count []
-        !maxC = if null coloring then 0 else maximum (map snd coloring)
-    return $! fromIntegral (maxC * shift + count)
+getNeighbors :: Graph -> Int -> IntSet
+getNeighbors g v = IM.findWithDefault IS.empty v g
+
+greedyColor :: Graph -> Coloring -> Int -> Int
+greedyColor g col v =
+  let ns = getNeighbors g v
+      usedColors = IS.fromList
+        [ c | u <- IS.toList ns, Just c <- [IM.lookup u col] ]
+  in smallestMissing usedColors
+
+-- Color ALL vertices sequentially (single pass, no chunking)
+colorAll :: Graph -> [Int] -> Coloring
+colorAll g vs = foldl' colorOne IM.empty vs
+  where
+    colorOne !col !v = IM.insert v (greedyColor g col v) col
+
+validateColoring :: Graph -> Coloring -> Bool
+validateColoring g col = IM.foldlWithKey' chk True g
+  where
+    chk !acc !v !ns
+      | not acc   = False
+      | otherwise =
+          let myC = IM.findWithDefault (-1) v col
+          in all (\u -> IM.lookup u col /= Just myC) (IS.toList ns)
+
+countColors :: Coloring -> Int
+countColors col = IS.size (IS.fromList (IM.elems col))
 
 main :: IO ()
 main = do
+  let !g = force (symmetrize (generateGraph numVertices edgeProb seed))
+  g `deepseq` return ()
+
   t0 <- getCurrentTime
-  let chunks = {chunk_list}
-  !maxPacked <- processChunks chunks 0
-  let !maxColor = fromIntegral maxPacked `div` shift :: Int
-      !colors = maxColor + 1
+  let !coloring = force (colorAll g [0..numVertices-1])
+  coloring `deepseq` return ()
   t1 <- getCurrentTime
+
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
+      colors = countColors coloring
+      valid = validateColoring g coloring
+
   putStrLn $ "COLORS=" ++ show colors
-  putStrLn "VALID=True"
+  putStrLn $ "VALID=" ++ show valid
   putStrLn $ "RUNTIME_SEC=" ++ show secs
-  where
-    processChunks [] !acc = return acc
-    processChunks ((s,c):rest) !acc = do
-      !v <- processChunk s c
-      processChunks rest (max acc v)
+  hFlush stdout
 """
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(src)
-    print(f"[gen_gc_seq] wrote {path} (N={N}, n_funcs={len(chunks)})")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--N", type=int, required=True)
-    ap.add_argument("--n-funcs", type=int, default=14)
-    ap.add_argument("--data-dir", required=True)
+    ap.add_argument("--edge-prob", type=float, default=0.001)
+    ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
-    emit_hs(args.out, args.N, args.n_funcs, args.data_dir)
+
+    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+    src = (TMPL
+           .replace("__N__", str(args.N))
+           .replace("__EDGE_PROB__", str(args.edge_prob))
+           .replace("__SEED__", str(args.seed)))
+    with open(args.out, "w") as f:
+        f.write(src)
+    print(f"[gen_gc_seq] wrote {args.out} (N={args.N}, edge_prob={args.edge_prob})")
 
 
 if __name__ == "__main__":

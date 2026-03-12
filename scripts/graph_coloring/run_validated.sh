@@ -30,6 +30,7 @@ ASM_ROOT="$REPO/TALM/asm"
 CODEGEN="$REPO/codegen"
 BUILD_SUPERS="$REPO/tools/build_supers.sh"
 GEN_TALM="$REPO/scripts/graph_coloring/gen_graph_input.py"
+GEN_SEQ="$REPO/scripts/graph_coloring/gen_hs_sequential.py"
 GEN_STRAT="$REPO/scripts/graph_coloring/gen_hs_strategies.py"
 GEN_PARPSEQ="$REPO/scripts/graph_coloring/gen_hs_parpseq.py"
 
@@ -139,11 +140,11 @@ for N in "${NS[@]}"; do
   LIBDIR="$(dirname "$LIBSUP")"
   GHCDEPS="$LIBDIR/ghc-deps"
 
-  # --- Build GHC Sequential (Strategies with P=1, single chunk) ---
+  # --- Build Sequential Baseline (shared across all variants) ---
   SDIR="$NDIR/seq"
   mkdir -p "$SDIR/obj"
-  "$PY3" "$GEN_STRAT" --out "$SDIR/gc.hs" --N "$N" --P 1 --edge-prob "$EDGE_PROB" --seed "$SEED"
-  GHC_ENVIRONMENT=- "$GHC_BIN" $GHC_PKG_FLAGS -O2 -threaded -rtsopts \
+  "$PY3" "$GEN_SEQ" --out "$SDIR/gc.hs" --N "$N" --edge-prob "$EDGE_PROB" --seed "$SEED"
+  GHC_ENVIRONMENT=- "$GHC_BIN" $GHC_PKG_FLAGS -O2 -rtsopts \
       -outputdir "$SDIR/obj" -o "$SDIR/gc" "$SDIR/gc.hs" >/dev/null 2>&1
 
   echo "  Built supers + sequential baseline for N=$N"
@@ -156,12 +157,12 @@ for N in "${NS[@]}"; do
   # Warmup
   for ((w=1; w<=WARMUP; w++)); do
     echo "  SEQ      N=$N P=1 warmup=$w (discarded)"
-    taskset -c "$CORES_1" "$SDIR/gc" +RTS -N1 -RTS >/dev/null 2>/dev/null
+    taskset -c "$CORES_1" "$SDIR/gc" >/dev/null 2>/dev/null
   done
 
   for ((rep=1; rep<=REPS; rep++)); do
     OUT="$SDIR/out_r${rep}.txt"
-    taskset -c "$CORES_1" "$SDIR/gc" +RTS -N1 -RTS >"$OUT" 2>/dev/null
+    taskset -c "$CORES_1" "$SDIR/gc" >"$OUT" 2>/dev/null
     secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
     colors="$(awk -F= '/^COLORS=/{print $2}' "$OUT")"
     echo "  SEQ      N=$N P=1 rep=$rep -> ${secs}s  COLORS=$colors"
