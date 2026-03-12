@@ -64,8 +64,8 @@ GHC_LIBDIR="$("$GHC_BIN" --print-libdir)"
 # Detect cabal package-db for 'parallel' package
 CABAL_PKG_DB=""
 for cand in \
-  "$HOME/.cabal/store/ghc-${GHC_VER}/package.db" \
-  "/home/$USER/.cabal/store/ghc-${GHC_VER}/package.db"; do
+  "$HOME/.local/state/cabal/store/ghc-${GHC_VER}/package.db" \
+  "$HOME/.cabal/store/ghc-${GHC_VER}/package.db"; do
   if [[ -d "$cand" ]]; then
     CABAL_PKG_DB="-package-db $cand"
     break
