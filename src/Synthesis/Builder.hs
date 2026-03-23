@@ -70,13 +70,13 @@ data BuildS = BuildS
   , bsRetVals    :: !(M.Map Ident Port) -- ^ Return value port for each function.
   , bsGuard      :: !(Maybe Port)  -- ^ Optional guard for gating calls in branches.
   , bsCallIx     :: !(M.Map Ident Int) -- ^ Callgroup output indices per function.
-  , bsRecIx      :: !(M.Map Ident Int) -- ^ Self-recursive call-site counter per function.
-  , bsSelfCalls  :: !(M.Map Ident Int) -- ^ Max simultaneous self-calls per function (stride).
+  , bsSelfCalls  :: !(M.Map Ident Int) -- ^ Total concurrent calls per function scope (stride).
+  , bsScopeK     :: !Int               -- ^ Scope-level call counter for unique k values (reset on withActive).
   }
 
 -- | Initial empty builder state.
 emptyS :: BuildS
-emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty S.empty M.empty Nothing M.empty M.empty M.empty
+emptyS = BuildS emptyGraph [M.empty] M.empty [] S.empty S.empty M.empty Nothing M.empty M.empty 0
 
 -- | Builder monad with unique-id generation.
 newtype Build a = Build { unBuild :: StateT BuildS Unique a }
@@ -637,40 +637,53 @@ foldrM' f z0 = go
 
 -- API ------------------------------------------------------------------
 
--- | Count max simultaneous self-recursive calls in an expression.
+-- | Count calls per callee in an expression, returning a map callee→count.
 -- Uses MAX across if/case branches (only one branch executes at runtime).
-countSelfCalls :: Ident -> Expr -> Int
-countSelfCalls f = go
+-- Uses SUM for sequential code (let bindings, args, etc.).
+callCounts :: Expr -> M.Map Ident Int
+callCounts = go
   where
-    go (Var _)         = 0
-    go (Lit _)         = 0
+    go (Var _)         = M.empty
+    go (Lit _)         = M.empty
     go (Lambda _ e)    = go e
-    go (If c t e)      = go c + max (go t) (go e)
-    go (Case e alts)   = go e + maximum (0 : [go b | (_, b) <- alts])
-    go (Let ds e)      = sum [go b | FunDecl _ _ b <- ds] + go e
-    go (App (Var g) a) = (if g == f then 1 else 0) + go a
-    go (App fn a)      = go fn + go a
-    go (BinOp _ l r)   = go l + go r
+    go (If c t e)      = go c `addM` maxM (go t) (go e)
+    go (Case e alts)   = go e `addM` maxAll [go b | (_, b) <- alts]
+    go (Let ds b)      = sumAll [go body | FunDecl _ _ body <- ds] `addM` go b
+    go (App (Var g) a) = M.insertWith (+) g 1 (go a)
+    go (App fn a)      = go fn `addM` go a
+    go (BinOp _ l r)   = go l `addM` go r
     go (UnOp _ e)      = go e
-    go (List es)       = sum (map go es)
-    go (Tuple es)      = sum (map go es)
-    go (Cons h t)      = go h + go t
-    go (Super{})       = 0
+    go (List es)       = sumAll (map go es)
+    go (Tuple es)      = sumAll (map go es)
+    go (Cons h t)      = go h `addM` go t
+    go (Super{})       = M.empty
+    addM  = M.unionWith (+)
+    maxM  = M.unionWith max
+    maxAll [] = M.empty
+    maxAll ms = foldl1 maxM ms
+    sumAll    = foldl addM M.empty
 
--- | Pre-scan: max self-calls per function (= stride for tag increments).
+-- | Pre-scan: compute a GLOBAL stride — the max total concurrent calls
+-- across ALL functions. Using a uniform stride for every function ensures
+-- the tag tree has no collisions between different invocation contexts.
 preScanSelfCalls :: [Decl] -> M.Map Ident Int
-preScanSelfCalls decls = M.fromList
-  [ (f, max 1 (countSelfCalls f body)) | FunDecl f _ body <- decls ]
+preScanSelfCalls decls =
+  let counts = [ totalCount body | FunDecl _ _ body <- decls ]
+      globalStride = max 1 (maximum (0 : counts))
+  in M.fromList [ (f, globalStride) | FunDecl f _ _ <- decls ]
+  where
+    totalCount body = sum (M.elems (callCounts body))
 
--- | Allocate a self-recursive call-site index (1-based) for function @f@.
-nextRecIx :: Ident -> Build Int
-nextRecIx f = Build $ do
+-- | Allocate a scope-level call-site index (1-based).
+-- Unique across ALL calls within the current scope, regardless of callee.
+nextScopeK :: Build Int
+nextScopeK = Build $ do
   s <- get
-  let i = M.findWithDefault 0 f (bsRecIx s) + 1
-  put s { bsRecIx = M.insert f i (bsRecIx s) }
-  pure i
+  let k = bsScopeK s + 1
+  put s { bsScopeK = k }
+  pure k
 
--- | Get the stride (max self-calls) for the currently active function.
+-- | Get the stride (max calls to any single callee) for the currently active function.
 getActiveStride :: Build Int
 getActiveStride = Build $ do
   s <- get
@@ -692,7 +705,7 @@ buildProgram p0 =
     retName f = f
     -- | Build and expose zero-argument functions as graph roots.
     buildZero (FunDecl f ps body) | null ps = do
-      p <- withEnv (goExpr body)
+      p <- withActive f (withEnv (goExpr body))
       insertB f (BPort p)
       r <- retNodeId f
       setRetVal f p
@@ -819,12 +832,17 @@ goExpr = \case
     pc0 <- goExpr c
     pc <- boolify pc0
     pcTok <- guardToken pc
+    baseK <- Build $ gets bsScopeK
     vt0 <- withEnv (withGuard pc (goExpr t))
     vt <- alignExecTo pcTok vt0
+    kAfterT <- Build $ gets bsScopeK
+    Build $ modify (\s -> s { bsScopeK = baseK })
     npc <- notP pc
     npcTok <- guardToken npc
     ve0 <- withEnv (withGuard npc (goExpr e))
     ve <- alignExecTo npcTok ve0
+    kAfterE <- Build $ gets bsScopeK
+    Build $ modify (\s -> s { bsScopeK = max kAfterT kAfterE })
     stT <- newNode "if_t" (NSteer "")
     connect pc (InstPort stT "0")
     connect vt   (InstPort stT "1")
@@ -921,13 +939,15 @@ flattenApp = \case
   e -> (e, [])
 
 -- | Mark a function as active while executing an action, then restore.
+-- Resets the scope-level call counter so each function scope has its own k space.
 withActive :: Ident -> Build a -> Build a
 withActive f m = Build $ do
   s <- get
-  put s{ bsActive = f : bsActive s }
+  let oldK = bsScopeK s
+  put s{ bsActive = f : bsActive s, bsScopeK = 0 }
   r <- unBuild m
   s' <- get
-  put s'{ bsActive = tail (bsActive s') }
+  put s'{ bsActive = tail (bsActive s'), bsScopeK = oldK }
   pure r
 
 -- taskId determinístico
@@ -991,14 +1011,12 @@ goApp fun args = case fun of
     recCall <- isActiveFun f
     listCall <- isListFun f
     -- Determine tag scheme based on calling context:
-    -- Self-recursive call in tree-recursive function → multiplicative
-    -- Self-recursive call in linear-recursive function → additive
-    -- Non-recursive call → additive
+    -- stride > 1 → multiplicative (tag = parent * (stride+1) + k)
+    -- stride = 1 → additive (tag = parent + 1)
+    -- k is unique across ALL calls within the current scope.
     stride <- getActiveStride
-    let isTree = stride > 1
-    k <- if recCall
-           then nextRecIx f  -- unique call-site index (1, 2, ...)
-           else pure 1
+    let isTree = True  -- always use multiplicative to avoid tag chain overlap
+    k <- nextScopeK
     argv' <- pure argv
     tagTokParent <- case argv of
       (a0:_) -> pure a0
@@ -1152,7 +1170,8 @@ compileCase scr alts = do
         goExpr e
     _ -> do
       taken0 <- constFrom pscr 0
-      outs <- goAlts pscr taken0 alts []
+      baseK <- Build $ gets bsScopeK
+      outs <- goAlts pscr taken0 alts [] baseK
       case outs of
         []       -> falseP
         (h:rest) -> registerAlias h rest >> pure h
@@ -1163,8 +1182,8 @@ compileCase scr alts = do
       PTuple [_,_] -> True
       _           -> False
     -- Última alternativa: NÃO compute orP/taken' (evita nó morto).
-    goAlts _    _     []              acc = pure (reverse acc)
-    goAlts pscr taken [(p,e)]         acc = do
+    goAlts _    _     []              acc _maxK = pure (reverse acc)
+    goAlts pscr taken [(p,e)]         acc _maxK = do
       (pPred, binds, guardi) <- withNoGuard $ do
         (pp0, bs) <- patPred pscr p
         pp <- boolify pp0
@@ -1173,10 +1192,13 @@ compileCase scr alts = do
         nt' <- alignExecTo pp' nt
         g   <- andP pp' nt'
         pure (pp', bs, g)
+      baseK <- Build $ gets bsScopeK
       val0 <- withEnv $ withGuard guardi $ do
                mapM_ (\(x,v) -> insertB x (BPort v)) binds
                goExpr e
       val <- alignExecTo guardi val0
+      kAfter <- Build $ gets bsScopeK
+      Build $ modify (\s -> s { bsScopeK = max (max _maxK kAfter) baseK })
       tok <- guardToken guardi
       sid <- newNode "steer" (NSteer "")
       connect tok (InstPort sid "0")
@@ -1185,7 +1207,7 @@ compileCase scr alts = do
       pure (reverse (out:acc))
 
     -- Alternativas intermediárias: mantém o cálculo de taken'
-    goAlts pscr taken ((p,e):rs)     acc = do
+    goAlts pscr taken ((p,e):rs)     acc maxK0 = do
       (pPred, binds, guardi, taken') <- withNoGuard $ do
         (pp0, bs) <- patPred pscr p
         pp <- boolify pp0
@@ -1195,16 +1217,19 @@ compileCase scr alts = do
         g   <- andP pp' nt'
         tk  <- orP taken pp'
         pure (pp', bs, g, tk)
+      baseK <- Build $ gets bsScopeK
       val0 <- withEnv $ withGuard guardi $ do
                mapM_ (\(x,v) -> insertB x (BPort v)) binds
                goExpr e
       val <- alignExecTo guardi val0
+      kAfter <- Build $ gets bsScopeK
+      Build $ modify (\s -> s { bsScopeK = baseK })
       tok <- guardToken guardi
       sid <- newNode "steer" (NSteer "")
       connect tok (InstPort sid "0")
       connect val (InstPort sid "1")
       let out = SteerPort sid "t"
-      goAlts pscr taken' rs (out:acc)
+      goAlts pscr taken' rs (out:acc) (max maxK0 kAfter)
 
 -- | Build the predicate and bindings for matching a 'Pattern' against a scrutinee port.
 patPred :: Port -> Pattern -> Build (Port, [(Ident, Port)])
