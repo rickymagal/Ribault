@@ -105,9 +105,9 @@ for N in "${NS[@]}"; do
     TDIR="$OUTROOT/talm/N${N}_C${CUTOFF}"
     if [[ -z "${TALM_BUILT[$TKEY]:-}" ]]; then
       mkdir -p "$TDIR/supers"
-      "$PY3" "$GEN_TALM" --out "$TDIR/nq.hsk" --N "$N" --cutoff "$CUTOFF" 2>/dev/null
-      "$CODEGEN" "$TDIR/nq.hsk" > "$TDIR/nq.fl" 2>/dev/null
-      CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/nq.hsk" "$TDIR/supers/Supers.hs" >/dev/null 2>&1
+      "$PY3" "$GEN_TALM" --out "$TDIR/nq.hss" --N "$N" --cutoff "$CUTOFF" 2>/dev/null
+      "$CODEGEN" "$TDIR/nq.hss" > "$TDIR/nq.fl" 2>/dev/null
+      CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/nq.hss" "$TDIR/supers/Supers.hs" >/dev/null 2>&1
       TALM_BUILT[$TKEY]="$TDIR"
     fi
     TDIR="${TALM_BUILT[$TKEY]}"

@@ -762,15 +762,27 @@ freeVar x = do
 -- detecta se um Port carrega float (por origem)
 
 -- | Heuristically check if a port originates from floating-point ops/values.
+-- Traces back through tag-management nodes (NIncTagI, NValTag, NAddI, NArg)
+-- to find the originating operation.
 portIsFloat :: Port -> Build Bool
-portIsFloat p = Build $ gets $ \s -> case M.lookup (pNode p) (dgNodes (bsGraph s)) of
-  Just NConstF{}     -> True
-  Just NFAdd{}       -> True
-  Just NFSub{}       -> True
-  Just NFMul{}       -> True
-  Just NFDiv{}       -> True
-  Just (NRetSnd f _ _) -> S.member f (bsFloatFuns s)
-  _                  -> False
+portIsFloat p = Build $ gets $ \s -> isFloatNode s (pNode p)
+  where
+    isFloatNode s nid = case M.lookup nid (dgNodes (bsGraph s)) of
+      Just NConstF{}         -> True
+      Just NFAdd{}           -> True
+      Just NFSub{}           -> True
+      Just NFMul{}           -> True
+      Just NFDiv{}           -> True
+      Just (NRetSnd f _ _)   -> S.member f (bsFloatFuns s)
+      Just NIncTagI{}        -> tracePort0 s nid
+      Just NValTag{}         -> tracePort0 s nid
+      Just NAddI{}           -> tracePort0 s nid
+      Just NArg{}            -> tracePort0 s nid
+      _                      -> False
+    tracePort0 s nid =
+      case [ srcId | (srcId, _, d, dp) <- dgEdges (bsGraph s), d == nid, dp == "0" ] of
+        (srcId:_) -> isFloatNode s srcId
+        []        -> False
 
 -- | Is the current operation in a floating-point context?
 isFloatContext :: Port -> Port -> Build Bool

@@ -8,7 +8,7 @@ Single-head self-attention: O = softmax(Q * K^T / sqrt(D)) * V
 Each block handles rows [lo, hi) of Q.
 
 Generates:
-  1. Minimal .hsk with separate block supers
+  1. Minimal .hss with separate block supers
   2. supers_inject.hs with Haskell implementation
 """
 
@@ -29,7 +29,7 @@ def emit(path, N, D, n_funcs, data_dir):
     nblocks = len(blocks)
     SHIFT = N + 1
 
-    # ---- 1. .hsk with separate supers per block ----
+    # ---- 1. .hss with separate supers per block ----
     super_defs = []
     for idx, (lo, hi) in enumerate(blocks):
         rows = hi - lo
@@ -49,7 +49,7 @@ block_{idx} dummy =
 
     sum_expr = " + ".join(f"b{i}" for i in range(nblocks))
 
-    hsk = f"""-- attention.hsk  (auto-generated, file IO, separate supers)
+    hsk = f"""-- attention.hss  (auto-generated, file IO, separate supers)
 -- N={N}  D={D}  N_FUNCS={nblocks}
 
 {"".join(super_defs)}

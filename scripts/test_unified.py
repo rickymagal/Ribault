@@ -24,9 +24,9 @@ def ensure_dir(d: pathlib.Path):
     d.mkdir(parents=True, exist_ok=True)
 
 # ----------------------------------------------------------------------
-# BUSCA todos os arquivos .hsk do diretório de teste
+# BUSCA todos os arquivos .hss do diretório de teste
 # ----------------------------------------------------------------------
-hsk_files = sorted(TEST_DIR.glob("*.hsk"))
+hsk_files = sorted(TEST_DIR.glob("*.hss"))
 
 @pytest.mark.parametrize("hsk_path", hsk_files, ids=lambda p: p.stem)
 def test_ast_dot(hsk_path: pathlib.Path):

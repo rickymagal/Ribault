@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generate a parametric N-Queens .hsk for the TALM benchmark.
+"""Generate a parametric N-Queens .hss for the TALM benchmark.
 
 Uses UNROLLED column iteration (no try_col recursion) to keep tag depth
 within TALM's base-9 limit (~19). Each row's column attempts are generated
@@ -47,7 +47,7 @@ def emit_hsk(path, N, CUTOFF):
     # tagRadix=16 supports up to 15 calls to the same callee per function body.
     try_all_body = _gen_try_body(0, N)
 
-    hsk = f"""-- nqueens.hsk  (auto-generated)
+    hsk = f"""-- nqueens.hss  (auto-generated)
 -- N={N}  CUTOFF={CUTOFF}
 
 -- SUPER: sequential backtracking from packed state

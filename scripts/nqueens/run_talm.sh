@@ -117,10 +117,10 @@ for N in "${NS[@]}"; do
     BUILD_KEY="${N}_${CUTOFF}"
     CASE_DIR="$OUTROOT/talm/N_${N}_C${CUTOFF}"
 
-    # Build .hsk, .fl, supers only once per (N, cutoff)
+    # Build .hss, .fl, supers only once per (N, cutoff)
     if [[ -z "${BUILT_CUTOFFS[$BUILD_KEY]:-}" ]]; then
       mkdir -p "$CASE_DIR/supers"
-      HSK="$CASE_DIR/nqueens.hsk"
+      HSK="$CASE_DIR/nqueens.hss"
       FL="$CASE_DIR/nqueens.fl"
 
       "$PY3" "$GEN_PY" --out "$HSK" --N "$N" --cutoff "$CUTOFF"

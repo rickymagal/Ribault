@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a parametric text-search .hsk for the TALM benchmark.
+"""Generate a parametric text-search .hss for the TALM benchmark.
 
 Equivalent structure to GHC benchmarks: K independent range-supers,
 each processing a contiguous range of files (readFile + countOcc for
@@ -36,7 +36,7 @@ def emit_hsk(path, n_files, keyword, corpus_dir, n_funcs, pad_width=None):
     n_funcs = len(ranges)
 
     lines = []
-    lines.append(f"-- textsearch.hsk  (auto-generated)")
+    lines.append(f"-- textsearch.hss  (auto-generated)")
     lines.append(f"-- N_FILES={n_files}  KEYWORD=\"{keyword}\"  N_FUNCS={n_funcs}")
     lines.append(f"-- Range packing: packed = lo * {PACK_SHIFT} + hi")
     lines.append("")

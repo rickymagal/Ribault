@@ -97,9 +97,9 @@ get_supers_dir() {
   mkdir -p "$d"
   d="$(cd "$d" && pwd)"
   echo "[sup ] building supers for N=${N}..." >&2
-  # Generate a representative .hsk (P=1) for super compilation
-  "$PY3" "$GEN_PY" --out "$d/representative.hsk" --N "$N" --P 1 >&2
-  CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$d/representative.hsk" "$d/Supers.hs" >&2
+  # Generate a representative .hss (P=1) for super compilation
+  "$PY3" "$GEN_PY" --out "$d/representative.hss" --N "$N" --P 1 >&2
+  CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$d/representative.hss" "$d/Supers.hs" >&2
   [[ -f "$d/libsupers.so" ]] || { echo "[ERRO] super build failed for N=${N}" >&2; exit 1; }
   echo "[sup ] built: $d/libsupers.so" >&2
   echo "$d"
@@ -115,14 +115,14 @@ for N in "${NS[@]}"; do
     CASE_DIR="$OUTROOT/talm/N_${N}/P_${P}"
     mkdir -p "$CASE_DIR"
 
-    HSK="$CASE_DIR/matmul.hsk"
+    HSK="$CASE_DIR/matmul.hss"
     FL="$CASE_DIR/matmul.fl"
     PREFIX_P="$CASE_DIR/matmul"
 
-    # Generate .hsk (P-specific: unrolled block structure)
+    # Generate .hss (P-specific: unrolled block structure)
     "$PY3" "$GEN_PY" --out "$HSK" --N "$N" --P "$P"
 
-    # Codegen: .hsk -> .fl
+    # Codegen: .hss -> .fl
     "$CODEGEN" "$HSK" > "$FL" 2>/dev/null
 
     # Assemble with P PEs

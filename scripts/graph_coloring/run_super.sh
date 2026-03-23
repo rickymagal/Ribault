@@ -9,7 +9,7 @@ set -euo pipefail
 # dataflow execution model with GHC-compiled superinstructions.
 #
 # Pipeline:
-#   1. Generate .hsk file (gen_graph_input.py)
+#   1. Generate .hss file (gen_graph_input.py)
 #   2. Compile to dataflow IR (codegen)
 #   3. Assemble to bytecode (assembler.py)
 #   4. Build superinstructions (build_supers.sh -> libsupers.so)
@@ -221,7 +221,7 @@ get_supers_dir() {
   mkdir -p "$d"
   d="$(cd "$d" && pwd)"
   echo "[sup ] building supers for N=${N}..." >&2
-  "$PY3" "$GEN_PY" --out "$d/representative.hsk" --N "$N" --P 1 --edge-prob "$EDGE_PROB" --seed "$SEED" >&2
+  "$PY3" "$GEN_PY" --out "$d/representative.hss" --N "$N" --P 1 --edge-prob "$EDGE_PROB" --seed "$SEED" >&2
 
   # Set CFLAGS to include GHC RTS headers
   local rts_inc; rts_inc="$(detect_ghc_rts_include)"
@@ -230,7 +230,7 @@ get_supers_dir() {
     export CFLAGS="-O2 -fPIC -I$rts_inc"
   fi
 
-  bash "$BUILD_SUPERS" "$d/representative.hsk" "$d/Supers.hs" >&2
+  bash "$BUILD_SUPERS" "$d/representative.hss" "$d/Supers.hs" >&2
 
   # Restore CFLAGS
   if [[ -n "$old_cflags" ]]; then
@@ -270,7 +270,7 @@ for N in "${NS[@]}"; do
   for P in "${PROCS[@]}"; do
     CASE_DIR="$OUTROOT/super/N_${N}/P_${P}"
     mkdir -p "$CASE_DIR"
-    HSK="$CASE_DIR/graph_color.hsk"
+    HSK="$CASE_DIR/graph_color.hss"
     FL="$CASE_DIR/graph_color.fl"
     PREFIX="$CASE_DIR/graph_color"
 

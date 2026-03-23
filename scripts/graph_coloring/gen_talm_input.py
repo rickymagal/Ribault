@@ -6,7 +6,7 @@ as a Haskell [[Int]], then colors its vertex range using the pre-built
 neighbor lists.
 
 Generates:
-  1. Minimal .hsk with separate chunk supers + max merge tree
+  1. Minimal .hss with separate chunk supers + max merge tree
   2. supers_inject.hs with Haskell implementation
 """
 
@@ -51,7 +51,7 @@ def emit(path, N, n_funcs, data_dir):
     nchunks = len(chunks)
     SHIFT = N + 1
 
-    # ---- 1. .hsk with separate supers per chunk ----
+    # ---- 1. .hss with separate supers per chunk ----
     super_defs = []
     for idx, (start, count) in enumerate(chunks):
         packed = start * SHIFT + count
@@ -72,7 +72,7 @@ chunk_{idx} dummy =
 
     max_lines, final_var = gen_max_tree(nchunks)
 
-    hsk = f"""-- graph_coloring.hsk  (auto-generated, adjacency-list representation)
+    hsk = f"""-- graph_coloring.hss  (auto-generated, adjacency-list representation)
 -- N={N}  N_FUNCS={nchunks}
 
 {"".join(super_defs)}

@@ -186,7 +186,7 @@ get_supers_dir() {
   mkdir -p "$d"
   d="$(cd "$d" && pwd)"
   echo "[sup ] building supers for N=${N}..." >&2
-  "$PY3" "$GEN_PY" --out "$d/representative.hsk" --N "$N" --P 1 --vec "$VEC_MODE" --cutoff 256 --mode "$MS_LEAF" >&2
+  "$PY3" "$GEN_PY" --out "$d/representative.hss" --N "$N" --P 1 --vec "$VEC_MODE" --cutoff 256 --mode "$MS_LEAF" >&2
   local inject_env=""
   if [[ -f "$d/supers_inject.hs" ]]; then
     inject_env="SUPERS_INJECT_FILE=$d/supers_inject.hs"
@@ -201,7 +201,7 @@ get_supers_dir() {
       extra_c_env="SUPERS_EXTRA_C_FILES=$d/msort_helpers.c"
     fi
   fi
-  env $inject_env $flags_env $extra_c_env bash "$BUILD_SUPERS" "$d/representative.hsk" "$d/Supers.hs" >&2
+  env $inject_env $flags_env $extra_c_env bash "$BUILD_SUPERS" "$d/representative.hss" "$d/Supers.hs" >&2
   [[ -f "$d/libsupers.so" ]] || { echo "[ERR ] super build failed for N=${N}" >&2; exit 1; }
   echo "[sup ] built: $d/libsupers.so" >&2
   echo "$d"
@@ -510,7 +510,7 @@ stage_supers_fixed() {
     fi
     GHC_LIBDIR="$ghc_libdir" CFLAGS="-O2 -fPIC -I${ghc_inc}" \
       DYNLIB_DIR="$rts_dir" RTS_SO="$rts_so" \
-      "$rr/tools/build_supers.sh" "$rr/test/21_merge_sort_super.hsk" \
+      "$rr/tools/build_supers.sh" "$rr/test/21_merge_sort_super.hss" \
       "$rr/test/supers/21_merge_sort_super/Supers.hs" >/dev/null
   fi
 
@@ -682,7 +682,7 @@ for N in $(seq "$START_N" "$STEP" "$N_MAX"); do
     LOGS_DIR="$CASE_DIR/logs"
     mkdir -p "$CASE_DIR" "$LOGS_DIR"
 
-    HSK="$CASE_DIR/mergesort_super_N${N}_P${P}.hsk"
+    HSK="$CASE_DIR/mergesort_super_N${N}_P${P}.hss"
     FL="$CASE_DIR/mergesort_super_N${N}_P${P}.fl"
     PREFIX="$CASE_DIR/mergesort_super_N${N}_P${P}"
 

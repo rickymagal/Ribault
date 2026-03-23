@@ -43,6 +43,9 @@ SUPERS_EXTRACT := $(SRC_DIR)/Synthesis/SuperExtract.hs
 SUPERS_EMIT    := $(SRC_DIR)/Synthesis/SupersEmit.hs
 SUPERS_DIR     := $(TEST_DIR)/supers
 
+MAIN_RIBAULT_HS := $(SRC_DIR)/Synthesis/MainRibault.hs
+EXE_RIBAULT     := ribault
+
 # -------- executáveis -----------------------------------------
 EXE_DF       := synthesis
 EXE_AST      := analysis
@@ -52,22 +55,24 @@ SHELL := /bin/bash
 # ============================================================
 # Casos de teste
 # ============================================================
-TESTS        := $(wildcard $(TEST_DIR)/*.hsk)
+TESTS        := $(wildcard $(TEST_DIR)/*.hss)
 
-DF_DOTS      := $(patsubst $(TEST_DIR)/%.hsk,$(DF_OUT_DIR)/%.dot,$(TESTS))
+DF_DOTS      := $(patsubst $(TEST_DIR)/%.hss,$(DF_OUT_DIR)/%.dot,$(TESTS))
 DF_IMGS      := $(patsubst $(DF_OUT_DIR)/%.dot,$(DF_IMG_DIR)/%.png,$(DF_DOTS))
 
-AST_DOTS     := $(patsubst $(TEST_DIR)/%.hsk,$(AST_OUT_DIR)/%.dot,$(TESTS))
+AST_DOTS     := $(patsubst $(TEST_DIR)/%.hss,$(AST_OUT_DIR)/%.dot,$(TESTS))
 AST_IMGS     := $(patsubst $(AST_OUT_DIR)/%.dot,$(AST_IMG_DIR)/%.png,$(AST_DOTS))
 
-CODE_FL      := $(patsubst $(TEST_DIR)/%.hsk,$(CODE_OUT_DIR)/%.fl,$(TESTS))
+CODE_FL      := $(patsubst $(TEST_DIR)/%.hss,$(CODE_OUT_DIR)/%.fl,$(TESTS))
 
 # ------------------------------------------------------------
 # Alvos de alto nível
 # ------------------------------------------------------------
-.PHONY: all df ast code tokens images ast-dots ast-images supers clean
+.PHONY: all examples df ast code tokens images ast-dots ast-images supers trebuchet clean
 
-all: df ast code supers
+all: $(EXE_RIBAULT) $(EXE_SUPERS) trebuchet
+
+examples: df ast code supers
 
 GHC_VER   := $(shell $(GHC) --numeric-version)
 GHC_MAJOR := $(shell echo $(GHC_VER) | cut -d. -f1)
@@ -198,6 +203,25 @@ $(EXE_SUPERS): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
 	  $(SUPERS_EXTRACT) $(SUPERS_EMIT)
 	@chmod +x $@
 
+# Compila o driver unificado (ribault)
+$(EXE_RIBAULT): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
+                $(BUILDER_HS) $(CODEGEN_HS) $(UNIQUE_HS) \
+                $(TYPES_HS) $(PORT_HS) $(NODE_HS) $(MAIN_RIBAULT_HS)
+	@echo "[GHC  ] $@"
+	@mkdir -p $(EXE_RIBAULT).obj $(EXE_RIBAULT).hi
+	GHC_ENVIRONMENT=- $(GHC) -O2 -package mtl -package array -package containers -package text \
+	  -package process -package directory -package filepath \
+	  -odir $(EXE_RIBAULT).obj -hidir $(EXE_RIBAULT).hi \
+	  -o $@ \
+	  $(MAIN_RIBAULT_HS) $(LEXER_HS) $(PARSER_HS) \
+	  $(SYNTAX_HS) $(SEMANTIC_HS) $(BUILDER_HS) $(CODEGEN_HS) $(UNIQUE_HS) \
+	  $(TYPES_HS) $(PORT_HS) $(NODE_HS)
+	@chmod +x $@
+
+# Compila o trebuchet (interpretador TALM)
+trebuchet:
+	$(MAKE) -C TALM/interp
+
 supers: supers_prepare $(EXE_SUPERS)
 	@mkdir -p $(SUPERS_DIR)
 	@EXE_SUPERS="./$(EXE_SUPERS)" \
@@ -284,7 +308,7 @@ $(EXE_CODE): $(LEXER_HS) $(PARSER_HS) $(SYNTAX_HS) $(SEMANTIC_HS) \
 
 # ------------------------------------------------------------
 # Dataflow .dot
-$(DF_OUT_DIR)/%.dot: $(TEST_DIR)/%.hsk | $(EXE_DF)
+$(DF_OUT_DIR)/%.dot: $(TEST_DIR)/%.hss | $(EXE_DF)
 	@mkdir -p $(DF_OUT_DIR)
 	@echo "[DOT-DF] $< → $@"
 	./$(EXE_DF) --ddg $< > $@
@@ -298,7 +322,7 @@ $(DF_IMG_DIR)/%.png: $(DF_OUT_DIR)/%.dot
 
 # ------------------------------------------------------------
 # AST .dot
-$(AST_OUT_DIR)/%.dot: $(TEST_DIR)/%.hsk | $(EXE_AST)
+$(AST_OUT_DIR)/%.dot: $(TEST_DIR)/%.hss | $(EXE_AST)
 	@mkdir -p $(AST_OUT_DIR)
 	@echo "[DOT-AST] $< → $@"
 	./$(EXE_AST) $< > $@
@@ -312,7 +336,7 @@ $(AST_IMG_DIR)/%.png: $(AST_OUT_DIR)/%.dot
 
 # ------------------------------------------------------------
 # TALM assembly
-$(CODE_OUT_DIR)/%.fl: $(TEST_DIR)/%.hsk | $(EXE_CODE)
+$(CODE_OUT_DIR)/%.fl: $(TEST_DIR)/%.hss | $(EXE_CODE)
 	@mkdir -p $(CODE_OUT_DIR)
 	@echo "[TALM ] $< → $@"
 	./$(EXE_CODE) $< > $@
@@ -325,8 +349,9 @@ clean:
 	        codegen.obj codegen.hi     \
 	        $(SRC_DIR)/Analysis/*.hi $(SRC_DIR)/Analysis/*.o \
 	        $(SRC_DIR)/Synthesis/*.hi $(SRC_DIR)/Synthesis/*.o \
-	        $(EXE_DF) $(EXE_AST) $(EXE_CODE) $(EXE_SUPERS) \
-		$(EXE_SUPERS).obj $(EXE_SUPERS).hi 
+	        $(EXE_DF) $(EXE_AST) $(EXE_CODE) $(EXE_SUPERS) $(EXE_RIBAULT) \
+		$(EXE_SUPERS).obj $(EXE_SUPERS).hi \
+		$(EXE_RIBAULT).obj $(EXE_RIBAULT).hi
 	@rm -f $(LEXER_HS) $(PARSER_HS) 
 	@rm -f Supers.hs supers_rts_init.o perf.data tools/supers_rts_init.o
 	@rm -rf $(DF_OUT_DIR) $(AST_OUT_DIR) $(CODE_OUT_DIR) $(SUPERS_DIR) build

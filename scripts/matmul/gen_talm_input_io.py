@@ -5,14 +5,14 @@ Like LCS wavefront: uses init/block/result supers with superi for block index.
 Each block_super independently reads its rows of A and all of BT from binary files.
 
 Generates:
-  1. Minimal .hsk (for supersgen / build_supers.sh)
+  1. Minimal .hss (for supersgen / build_supers.sh)
   2. Preprocessor .fl (flowasm macros)
   3. supers_inject.hs with Haskell super implementations
 """
 
 import argparse, os
 
-# Super IDs from codegen on the 3-super .hsk (same as LCS)
+# Super IDs from codegen on the 3-super .hss (same as LCS)
 SUPER_INIT   = 6
 SUPER_BLOCK  = 5
 SUPER_RESULT = 4
@@ -31,8 +31,8 @@ def emit(path, N, n_funcs, data_dir):
             blocks.append((lo, hi))
     nblocks = len(blocks)
 
-    # ---- 1. Minimal .hsk ----
-    hsk = f"""-- matmul_io.hsk  (auto-generated, file IO, minimal for supersgen)
+    # ---- 1. Minimal .hss ----
+    hsk = f"""-- matmul_io.hss  (auto-generated, file IO, minimal for supersgen)
 -- N={N}  N_FUNCS={nblocks}
 
 init_super seed =
@@ -186,11 +186,11 @@ main =
     #
     # The REAL solution: use the original separate-supers approach for
     # the dataflow graph (like gen_talm_input.py does for pure compute).
-    # Each block is a separate super in the .hsk, returns partial checksum,
+    # Each block is a separate super in the .hss, returns partial checksum,
     # dataflow sums them.
     #
     # But each super's implementation reads from files -- that's the IO part.
-    # The .hsk has N separate block supers, each calling the SAME Haskell
+    # The .hss has N separate block supers, each calling the SAME Haskell
     # function (mmBlock) but with different packed arguments.
     #
     # Wait -- the original gen_talm_input.py hardcodes packed=(lo*SHIFT+rows)
@@ -231,7 +231,7 @@ block_{idx} dummy =
 
     sum_expr = " + ".join(f"b{i}" for i in range(nblocks))
 
-    hsk = f"""-- matmul_io.hsk  (auto-generated, file IO, separate supers)
+    hsk = f"""-- matmul_io.hss  (auto-generated, file IO, separate supers)
 -- N={N}  N_FUNCS={nblocks}
 
 {"".join(super_defs)}

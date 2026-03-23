@@ -6,9 +6,9 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  tools/build_supers.sh <input.hsk> <output/Supers.hs>
+  tools/build_supers.sh <input.hss> <output/Supers.hs>
   tools/build_supers.sh
-    (auto: scan test/*.hsk and generate+build test/supers/*/Supers.hs + libsupers.so)
+    (auto: scan test/*.hss and generate+build test/supers/*/Supers.hs + libsupers.so)
 
 Environment:
   GHC                  (default: ghc)
@@ -381,6 +381,13 @@ build_libsupers_so() {
   local rts_init_src="$rr/tools/supers_rts_init.c"
   cflags="$cflags -I$rr/TALM/interp/include"
 
+  # Add RTS include dirs so gcc can find HsFFI.h
+  local rts_inc_dirs
+  rts_inc_dirs="$(ghc-pkg field rts include-dirs --simple-output 2>/dev/null || true)"
+  for d in $rts_inc_dirs; do
+    cflags="$cflags -I$d"
+  done
+
   local ghc_ver="${GHC_VER:-}"
   local ghc_libdir="${GHC_LIBDIR:-}"
   local dynlib_dir="${DYNLIB_DIR:-}"
@@ -550,17 +557,17 @@ generate_all() {
 
   local found=0
   shopt -s nullglob
-  for in_hsk in "$test_dir"/*.hsk; do
+  for in_hsk in "$test_dir"/*.hss; do
     found=1
     local base
-    base="$(basename "$in_hsk" .hsk)"
+    base="$(basename "$in_hsk" .hss)"
     local out_dir="$test_dir/supers/$base"
     local out_hs="$out_dir/Supers.hs"
     generate_one "$rr" "$in_hsk" "$out_hs" "$max"
   done
   shopt -u nullglob
 
-  [[ "$found" -eq 1 ]] || die "No .hsk files found in $test_dir"
+  [[ "$found" -eq 1 ]] || die "No .hss files found in $test_dir"
 }
 
 main() {

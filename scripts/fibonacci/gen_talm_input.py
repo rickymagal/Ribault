@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generate a parametric Fibonacci .hsk for the TALM benchmark.
+"""Generate a parametric Fibonacci .hss for the TALM benchmark.
 
-The .hsk uses:
+The .hss uses:
   - fib_seq: a super that computes fib(n) sequentially (iterative in Haskell)
   - fib: recursive, drops to fib_seq below cutoff; above cutoff, both
          branches fire as independent dataflow operations (implicit parallelism)
@@ -15,7 +15,7 @@ import argparse, os
 def emit_hsk(path, N, CUTOFF):
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
-    hsk = f"""-- fib.hsk  (auto-generated)
+    hsk = f"""-- fib.hss  (auto-generated)
 -- N={N}  CUTOFF={CUTOFF}
 
 -- SUPER: sequential fibonacci (iterative)

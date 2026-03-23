@@ -52,7 +52,7 @@ main = do
   args <- getArgs
   let isFnName s = not ("-" `isPrefixOf` s)
                  && '/' `notElem` s
-                 && not (".hsk" `isSuffixOf` s)
+                 && not (".hss" `isSuffixOf` s)
       (render, files) = case args of
         ("--full":rest)       -> (GV.toDot,                rest)
         ("--ddg":fn:rest)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generate a parametric MatMul .hsk for the TALM benchmark.
+"""Generate a parametric MatMul .hss for the TALM benchmark.
 
 Uses Haskell supers (normal pipeline, compiled by GHC).
 N_FUNCS independent block-multiply supers fire in parallel via dataflow.
@@ -67,7 +67,7 @@ block_{idx} dummy =
     else:
         sum_expr = " + ".join(f"b{i}" for i in range(nblocks))
 
-    hsk = f"""-- matmul.hsk  (auto-generated, Haskell supers)
+    hsk = f"""-- matmul.hss  (auto-generated, Haskell supers)
 -- N={N}  N_FUNCS={nblocks}
 
 {"".join(super_defs)}

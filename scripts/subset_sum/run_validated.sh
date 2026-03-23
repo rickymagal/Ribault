@@ -93,13 +93,13 @@ for N in "${NS[@]}"; do
   # ===== Build TALM =====
   TDIR="$NDIR/talm"
   mkdir -p "$TDIR/supers"
-  "$PY3" "$GEN_TALM" --out "$TDIR/ss.hsk" --items-dir "$ITEMS_DIR" \
+  "$PY3" "$GEN_TALM" --out "$TDIR/ss.hss" --items-dir "$ITEMS_DIR" \
       --n-items "$N" --nparts "$NPARTS"
-  DF_LIST_BUILTIN=1 "$CODEGEN" "$TDIR/ss.hsk" > "$TDIR/ss.fl" 2>/dev/null
+  DF_LIST_BUILTIN=1 "$CODEGEN" "$TDIR/ss.hss" > "$TDIR/ss.fl" 2>/dev/null
 
   INJECT_FILE="$TDIR/supers_inject.hs"
   DF_LIST_BUILTIN=1 SUPERS_INJECT_FILE="$INJECT_FILE" \
-      CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/ss.hsk" "$TDIR/supers/Supers.hs"
+      CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/ss.hss" "$TDIR/supers/Supers.hs"
 
   LIBSUP="$TDIR/supers/libsupers.so"
   LIBDIR="$(dirname "$LIBSUP")"

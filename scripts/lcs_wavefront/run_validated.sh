@@ -140,11 +140,11 @@ for N in "${NS[@]}"; do
     # --- Build TALM with DIM_ROWS=P, DIM_COLS ---
     TDIR="$NDIR/talm_P${P}"
     mkdir -p "$TDIR/supers"
-    "$PY3" "$GEN_TALM" --out "$TDIR/lcs_wf.hsk" --input-dir "$INPUT_DIR" \
+    "$PY3" "$GEN_TALM" --out "$TDIR/lcs_wf.hss" --input-dir "$INPUT_DIR" \
         --dim-rows "$CUR_ROWS" --dim-cols "$CUR_COLS"
 
     SUPERS_INJECT_FILE="$TDIR/supers_inject.hs" \
-        CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/lcs_wf.hsk" "$TDIR/supers/Supers.hs"
+        CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/lcs_wf.hss" "$TDIR/supers/Supers.hs"
 
     LIBSUP="$TDIR/supers/libsupers.so"
     LIBDIR="$(dirname "$LIBSUP")"

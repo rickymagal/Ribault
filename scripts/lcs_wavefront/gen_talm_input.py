@@ -2,7 +2,7 @@
 """Generate TALM files for LCS wavefront benchmark.
 
 Generates three files:
-  1. A minimal .hsk with super definitions (for supersgen / build_supers.sh)
+  1. A minimal .hss with super definitions (for supersgen / build_supers.sh)
   2. A preprocessor .fl using flowasm macros (bypasses codegen for the
      dataflow graph -- no call-site limit on DIM)
   3. supers_inject.hs with the Haskell super implementations
@@ -16,7 +16,7 @@ independently from parallelism level.
 Block super uses `superi` (super with immediate) to pass the block
 index.  The Haskell super retrieves it via FFI to `treb_get_tid()`.
 
-Super IDs (from codegen on the minimal .hsk, verified stable):
+Super IDs (from codegen on the minimal .hss, verified stable):
   init_super   -> super 6  (s6)
   block_super  -> super 5  (s5)
   result_super -> super 4  (s4)
@@ -25,7 +25,7 @@ Super IDs (from codegen on the minimal .hsk, verified stable):
 import argparse, os
 
 
-# Super IDs assigned by the codegen for our 3-super .hsk.
+# Super IDs assigned by the codegen for our 3-super .hss.
 # Verified stable: init=6, block=5, result=4.
 SUPER_INIT   = 6
 SUPER_BLOCK  = 5
@@ -42,9 +42,9 @@ def emit(path, input_dir, dim_rows, dim_cols):
         alphabet = int(parts[1])
         seed = int(parts[2])
 
-    # ---- 1. Minimal .hsk (for supersgen -> Supers.hs) ----
+    # ---- 1. Minimal .hss (for supersgen -> Supers.hs) ----
     hsk_lines = [
-        "-- lcs_wavefront.hsk  (auto-generated, minimal for supersgen)",
+        "-- lcs_wavefront.hss  (auto-generated, minimal for supersgen)",
         f"-- N={seq_len}  ALPHA={alphabet}  SEED={seed}  ROWS={dim_rows}  COLS={dim_cols}",
         "",
         "init_super seed =",
@@ -280,7 +280,7 @@ lcsResult _ = do
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True,
-                    help="Output .hsk path (minimal, for supersgen)")
+                    help="Output .hss path (minimal, for supersgen)")
     ap.add_argument("--input-dir", required=True)
     ap.add_argument("--dim-rows", type=int, default=None,
                     help="Row dimension of block grid")

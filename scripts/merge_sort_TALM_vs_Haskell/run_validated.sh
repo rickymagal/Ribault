@@ -117,13 +117,13 @@ for N in "${NS[@]}"; do
     # --- Build TALM ---
     TDIR="$NDIR/talm_P${P}"
     mkdir -p "$TDIR/supers"
-    "$PY3" "$GEN_TALM" --out "$TDIR/ms.hsk" --input-dir "$INPUT_DIR" --P "$P"
+    "$PY3" "$GEN_TALM" --out "$TDIR/ms.hss" --input-dir "$INPUT_DIR" --P "$P"
 
-    # Codegen: .hsk -> .fl
-    "$CODEGEN" "$TDIR/ms.hsk" > "$TDIR/ms.fl" 2>/dev/null
+    # Codegen: .hss -> .fl
+    "$CODEGEN" "$TDIR/ms.hss" > "$TDIR/ms.fl" 2>/dev/null
 
     # Build supers
-    CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/ms.hsk" "$TDIR/supers/Supers.hs" >/dev/null 2>&1
+    CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/ms.hss" "$TDIR/supers/Supers.hs" >/dev/null 2>&1
 
     LIBSUP="$TDIR/supers/libsupers.so"
     LIBDIR="$(dirname "$LIBSUP")"

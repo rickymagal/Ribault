@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a parametric 0/1 knapsack brute-force .hsk for the TALM benchmark.
+"""Generate a parametric 0/1 knapsack brute-force .hss for the TALM benchmark.
 
 K independent range-supers, each taking a chunk index (0..K-1).
 The super computes lo/hi from the chunk index using compile-time constants
@@ -61,7 +61,7 @@ def emit_hsk(path, items_dir, n_items, n_funcs):
     n_funcs = len(chunks)
 
     lines = []
-    lines.append(f"-- knapsack.hsk  (auto-generated)")
+    lines.append(f"-- knapsack.hss  (auto-generated)")
     lines.append(f"-- N_ITEMS={n_items}  CAPACITY={capacity}  N_FUNCS={n_funcs}")
     lines.append(f"-- Total subsets: {total_subsets}")
     lines.append("")

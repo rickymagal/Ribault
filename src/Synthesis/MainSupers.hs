@@ -38,7 +38,7 @@ main = do
     [file] -> readFile file
     []     -> getContents
     _      -> do
-      hPutStrLn stderr "Usage: supersgen <file.hsk>"
+      hPutStrLn stderr "Usage: supersgen <file.hss>"
       exitFailure
 
   -- Lexing

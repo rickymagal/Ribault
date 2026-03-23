@@ -140,12 +140,12 @@ for N_FILES in "${NS_LIST[@]}"; do
   # --- Build TALM ---
   TDIR="$NDIR/talm"
   mkdir -p "$TDIR/supers"
-  "$PY3" "$GEN_TALM" --out "$TDIR/ts.hsk" --n-files "$N_FILES" \
+  "$PY3" "$GEN_TALM" --out "$TDIR/ts.hss" --n-files "$N_FILES" \
       --keyword "$KEYWORD" --corpus-dir "$CORPUS" --n-funcs "$N_FUNCS" --pad-width "$PAD_WIDTH"
-  "$CODEGEN" "$TDIR/ts.hsk" > "$TDIR/ts.fl" 2>/dev/null
+  "$CODEGEN" "$TDIR/ts.hss" > "$TDIR/ts.fl" 2>/dev/null
   INJECT_FILE="$TDIR/supers_inject.hs"
   SUPERS_INJECT_FILE="$INJECT_FILE" SUPERS_GHC_PACKAGES="bytestring" \
-      CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/ts.hsk" "$TDIR/supers/Supers.hs"
+      CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/ts.hss" "$TDIR/supers/Supers.hs"
   LIBSUP="$TDIR/supers/libsupers.so"
   LIBDIR="$(dirname "$LIBSUP")"
   GHCDEPS="$LIBDIR/ghc-deps"

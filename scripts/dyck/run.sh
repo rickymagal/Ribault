@@ -224,8 +224,8 @@ get_supers_dir() {
   mkdir -p "$d"
   d="$(cd "$d" && pwd)"
   echo "[sup ] building supers for N=${N} delta=${DELTA}..." >&2
-  "$PY3" "$GEN_PY" --out "$d/representative.hsk" --N "$N" --P 1 --imb 0 --delta "$DELTA" --vec "$VEC_MODE" >&2
-  bash "$BUILD_SUPERS" "$d/representative.hsk" "$d/Supers.hs" >&2
+  "$PY3" "$GEN_PY" --out "$d/representative.hss" --N "$N" --P 1 --imb 0 --delta "$DELTA" --vec "$VEC_MODE" >&2
+  bash "$BUILD_SUPERS" "$d/representative.hss" "$d/Supers.hs" >&2
   [[ -f "$d/libsupers.so" ]] || { echo "[ERRO] super build failed for N=${N}" >&2; exit 1; }
   echo "[sup ] built: $d/libsupers.so" >&2
   echo "$d"
@@ -263,7 +263,7 @@ for N in "${NS[@]}"; do
         EXPECTED="$(expected_result "$DELTA")"
         CASE_DIR="$OUTROOT/super/N_${N}/P_${P}/imb_${IMB}/delta_${DELTA}"
         mkdir -p "$CASE_DIR"
-        HSK="$CASE_DIR/dyck.hsk"
+        HSK="$CASE_DIR/dyck.hss"
         FL="$CASE_DIR/dyck.fl"
         PREFIX="$CASE_DIR/dyck"
 

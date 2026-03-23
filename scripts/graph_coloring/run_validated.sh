@@ -16,7 +16,7 @@ set -euo pipefail
 #   - Sequential baseline (GHC Strategies P=1)
 #   - Parallel: TALM, GHC Strategies, GHC par/pseq at each P
 #   - GHC binaries rebuilt per P (chunk count = P, hardcoded)
-#   - TALM .hsk rebuilt per P (chunk supers = P), supers shared
+#   - TALM .hss rebuilt per P (chunk supers = P), supers shared
 # ============================================================
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -132,10 +132,10 @@ for N in "${NS[@]}"; do
   # --- Build TALM supers once per N (shared across all P) ---
   TDIR="$NDIR/talm"
   mkdir -p "$TDIR/supers"
-  # Generate a representative .hsk (P=1) for supers extraction
-  "$PY3" "$GEN_TALM" --out "$TDIR/representative.hsk" --N "$N" --P 1 --edge-prob "$EDGE_PROB" --seed "$SEED"
+  # Generate a representative .hss (P=1) for supers extraction
+  "$PY3" "$GEN_TALM" --out "$TDIR/representative.hss" --N "$N" --P 1 --edge-prob "$EDGE_PROB" --seed "$SEED"
   CFLAGS="$SUPERS_CFLAGS" \
-    bash "$BUILD_SUPERS" "$TDIR/representative.hsk" "$TDIR/supers/Supers.hs"
+    bash "$BUILD_SUPERS" "$TDIR/representative.hss" "$TDIR/supers/Supers.hs"
   LIBSUP="$TDIR/supers/libsupers.so"
   LIBDIR="$(dirname "$LIBSUP")"
   GHCDEPS="$LIBDIR/ghc-deps"
@@ -177,8 +177,8 @@ for N in "${NS[@]}"; do
     CORES_P="$(pin_cores "$P")"
 
     # --- Build TALM for this P ---
-    "$PY3" "$GEN_TALM" --out "$TDIR/gc_P${P}.hsk" --N "$N" --P "$P" --edge-prob "$EDGE_PROB" --seed "$SEED"
-    "$CODEGEN" "$TDIR/gc_P${P}.hsk" > "$TDIR/gc_P${P}.fl" 2>/dev/null
+    "$PY3" "$GEN_TALM" --out "$TDIR/gc_P${P}.hss" --N "$N" --P "$P" --edge-prob "$EDGE_PROB" --seed "$SEED"
+    "$CODEGEN" "$TDIR/gc_P${P}.hss" > "$TDIR/gc_P${P}.fl" 2>/dev/null
     pushd "$ASM_ROOT" >/dev/null
       "$PY3" assembler.py -a -n "$P" -o "$TDIR/gc_P${P}" "$TDIR/gc_P${P}.fl" >/dev/null 2>&1
     popd >/dev/null

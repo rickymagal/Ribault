@@ -128,11 +128,11 @@ for N in "${NS[@]}"; do
   # --- Build TALM ---
   TDIR="$NDIR/talm"
   mkdir -p "$TDIR/supers"
-  "$PY3" "$GEN_TALM" --out "$TDIR/mm.hsk" --N "$N" --n-funcs "$N_FUNCS" --data-dir "$DATADIR"
-  "$CODEGEN" "$TDIR/mm.hsk" > "$TDIR/mm.fl" 2>/dev/null
+  "$PY3" "$GEN_TALM" --out "$TDIR/mm.hss" --N "$N" --n-funcs "$N_FUNCS" --data-dir "$DATADIR"
+  "$CODEGEN" "$TDIR/mm.hss" > "$TDIR/mm.fl" 2>/dev/null
   CFLAGS="$SUPERS_CFLAGS" SUPERS_INJECT_FILE="$TDIR/supers_inject.hs" \
     SUPERS_GHC_PACKAGES="bytestring" \
-    bash "$BUILD_SUPERS" "$TDIR/mm.hsk" "$TDIR/supers/Supers.hs"
+    bash "$BUILD_SUPERS" "$TDIR/mm.hss" "$TDIR/supers/Supers.hs"
   LIBSUP="$TDIR/supers/libsupers.so"
   LIBDIR="$(dirname "$LIBSUP")"
   GHCDEPS="$LIBDIR/ghc-deps"

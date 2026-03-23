@@ -124,11 +124,11 @@ for N in "${NS[@]}"; do
   if [[ ! -f "$SUPERS_DIR/libsupers.so" ]]; then
     mkdir -p "$SUPERS_DIR"
     echo "[sup ] building supers for N=$N ..."
-    "$PY3" "$GEN_TALM" --out "$SUPERS_DIR/supers.hsk" --input-dir "$INPUT_DIR" --P 2 --G "$GRAIN"
+    "$PY3" "$GEN_TALM" --out "$SUPERS_DIR/supers.hss" --input-dir "$INPUT_DIR" --P 2 --G "$GRAIN"
     CFLAGS="$SUPERS_CFLAGS" SUPERS_INJECT_FILE="$SUPERS_DIR/supers_inject.hs" \
       SUPERS_GHC_PACKAGES="time" \
       SUPERS_GHC_FLAGS="-XMagicHash -XUnboxedTuples -fspec-constr-count=20 -fspec-constr-threshold=5000" \
-      "$BUILD_SUPERS" "$SUPERS_DIR/supers.hsk" "$SUPERS_DIR/Supers.hs"
+      "$BUILD_SUPERS" "$SUPERS_DIR/supers.hss" "$SUPERS_DIR/Supers.hs"
     echo "[sup ] built: $SUPERS_DIR/libsupers.so"
   fi
 
@@ -141,8 +141,8 @@ for N in "${NS[@]}"; do
     TDIR="$NDIR/talm_P${P}"
     mkdir -p "$TDIR/logs"
 
-    "$PY3" "$GEN_TALM" --out "$TDIR/ms.hsk" --input-dir "$INPUT_DIR" --P "$P" --G "$GRAIN"
-    "$CODEGEN" "$TDIR/ms.hsk" > "$TDIR/ms.fl" 2>"$TDIR/logs/codegen.err"
+    "$PY3" "$GEN_TALM" --out "$TDIR/ms.hss" --input-dir "$INPUT_DIR" --P "$P" --G "$GRAIN"
+    "$CODEGEN" "$TDIR/ms.hss" > "$TDIR/ms.fl" 2>"$TDIR/logs/codegen.err"
 
     pushd "$ASM_ROOT" >/dev/null
       "$PY3" assembler.py -a -n "$P" -o "$TDIR/ms" "$TDIR/ms.fl" >/dev/null 2>&1

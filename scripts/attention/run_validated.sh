@@ -130,11 +130,11 @@ for N in "${NS[@]}"; do
   # --- Build TALM ---
   TDIR="$NDIR/talm"
   mkdir -p "$TDIR/supers"
-  "$PY3" "$GEN_TALM" --out "$TDIR/attn.hsk" --N "$N" --D "$D" --n-funcs "$N_FUNCS" --data-dir "$DATADIR"
-  "$CODEGEN" "$TDIR/attn.hsk" > "$TDIR/attn.fl" 2>/dev/null
+  "$PY3" "$GEN_TALM" --out "$TDIR/attn.hss" --N "$N" --D "$D" --n-funcs "$N_FUNCS" --data-dir "$DATADIR"
+  "$CODEGEN" "$TDIR/attn.hss" > "$TDIR/attn.fl" 2>/dev/null
   CFLAGS="$SUPERS_CFLAGS" SUPERS_INJECT_FILE="$TDIR/supers_inject.hs" \
     SUPERS_GHC_PACKAGES="bytestring" \
-    bash "$BUILD_SUPERS" "$TDIR/attn.hsk" "$TDIR/supers/Supers.hs"
+    bash "$BUILD_SUPERS" "$TDIR/attn.hss" "$TDIR/supers/Supers.hs"
   LIBSUP="$TDIR/supers/libsupers.so"
   LIBDIR="$(dirname "$LIBSUP")"
   GHCDEPS="$LIBDIR/ghc-deps"

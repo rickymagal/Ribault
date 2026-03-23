@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # fibonacci/run_talm.sh — TALM Fibonacci benchmark runner
-# Generates .hsk, compiles to .fl, builds supers, assembles,
+# Generates .hss, compiles to .fl, builds supers, assembles,
 # runs with interp
 # ============================================================
 
@@ -104,17 +104,17 @@ for N in "${NS[@]}"; do
     CASE_DIR="$OUTROOT/talm/N_${N}/cutoff_${CUTOFF}"
     mkdir -p "$CASE_DIR"
 
-    HSK="$CASE_DIR/fib.hsk"
+    HSK="$CASE_DIR/fib.hss"
     FL="$CASE_DIR/fib.fl"
     PREFIX="$CASE_DIR/fib"
 
-    # Generate .hsk
+    # Generate .hss
     "$PY3" "$GEN_PY" --out "$HSK" --N "$N" --cutoff "$CUTOFF"
 
-    # Codegen: .hsk -> .fl
+    # Codegen: .hss -> .fl
     "$CODEGEN" "$HSK" > "$FL" 2>/dev/null
 
-    # Build supers: .hsk -> libsupers.so
+    # Build supers: .hss -> libsupers.so
     SUPERS_DIR="$CASE_DIR/supers"
     mkdir -p "$SUPERS_DIR"
     echo "[sup ] building supers for N=${N} cutoff=${CUTOFF}..."

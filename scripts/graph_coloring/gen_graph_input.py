@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Generate Graph Coloring .hsk for the Ribault/TALM Dataflow Benchmark
+Generate Graph Coloring .hss for the Ribault/TALM Dataflow Benchmark
 =====================================================================
 
-This script generates Ribault source files (.hsk) that implement parallel
+This script generates Ribault source files (.hss) that implement parallel
 graph coloring using superinstructions. The generated code demonstrates
 Ribault's dataflow parallelism model.
 
@@ -36,7 +36,7 @@ Data Encoding:
 
 Usage:
 ------
-    python3 gen_graph_input.py --out graph.hsk --N 1000 --P 8 --edge-prob 0.01
+    python3 gen_graph_input.py --out graph.hss --N 1000 --P 8 --edge-prob 0.01
 
 Author: Graph Coloring Benchmark for Ribault Project
 """
@@ -113,7 +113,7 @@ def emit_hsk(path: str, n: int, p: int, edge_prob: float, seed: int) -> None:
     ]
 
     # Generate the HSK file
-    hsk = f"""-- graph_coloring.hsk (auto-generated)
+    hsk = f"""-- graph_coloring.hss (auto-generated)
 -- N={n}  P={p}  edge_prob={edge_prob}  seed={seed}
 -- {n_chunks} chunks for parallel coloring
 
@@ -231,7 +231,7 @@ main =
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", required=True, help="Output .hsk file path")
+    ap.add_argument("--out", required=True, help="Output .hss file path")
     ap.add_argument("--N", type=int, required=True, help="Number of vertices")
     ap.add_argument("--P", type=int, required=True, help="Number of processors/chunks")
     ap.add_argument("--edge-prob", type=float, default=0.001, help="Edge probability")

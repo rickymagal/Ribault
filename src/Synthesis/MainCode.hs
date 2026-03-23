@@ -21,8 +21,8 @@
 --
 -- Usage:
 --
--- > lambdaflow-asm program.hsk
--- > cat prog.hsk | lambdaflow-asm
+-- > lambdaflow-asm program.hss
+-- > cat prog.hss | lambdaflow-asm
 -----------------------------------------------------------------------------
 module Main where
 

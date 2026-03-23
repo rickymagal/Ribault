@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate TALM .hsk for 0/1 Knapsack solved via parallel merge-sort aggregation.
+"""Generate TALM .hss for 0/1 Knapsack solved via parallel merge-sort aggregation.
 
 The algorithm:
   1. Enumerate ALL 2^N subsets, compute each subset's value (0 if infeasible)
@@ -38,7 +38,7 @@ def emit_hsk(path, items_dir, n_items, nparts):
     cutoff = max(1, total_subsets // nparts)
     depth = compute_depth(total_subsets, cutoff)
 
-    hsk = f"""-- knapsack_mergesort.hsk (auto-generated)
+    hsk = f"""-- knapsack_mergesort.hss (auto-generated)
 -- N_ITEMS={n_items}  CAPACITY={capacity}  TOTAL={total_subsets}
 -- nparts={nparts}  depth={depth}  cutoff={cutoff}
 -- Solving Subset Sum via parallel merge-sort aggregation

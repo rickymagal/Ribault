@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Generate an index-based Dyck path .hsk for the TALM benchmark.
+"""Generate an index-based Dyck path .hss for the TALM benchmark.
 
 Uses an UNROLLED tree: the gen script precomputes all P leaf boundaries
 based on IMB, then generates explicit code with no recursion.
@@ -161,7 +161,7 @@ myMin packed =
 """
 
     # Build full HSK
-    hsk = f"""-- dyck_path.hsk  (index-based, unrolled tree, auto-generated)
+    hsk = f"""-- dyck_path.hss  (index-based, unrolled tree, auto-generated)
 -- N={N}  P={P}  IMB={IMB}  DELTA={DELTA}
 -- {len(leaves)} leaves, no recursion
 

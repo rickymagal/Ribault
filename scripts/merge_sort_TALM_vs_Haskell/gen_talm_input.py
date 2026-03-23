@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate TALM .hsk + supers_inject.hs for array-based merge sort benchmark.
+"""Generate TALM .hss + supers_inject.hs for array-based merge sort benchmark.
 
 Same algorithm as all other variants: top-down merge sort on flat C array.
 TALM provides a thin DF wrapper; the actual parallel merge sort happens
@@ -200,7 +200,7 @@ def emit(path, n, p, g):
 
     cutoff = p * g
 
-    # Write .hsk with trivial DF body
+    # Write .hss with trivial DF body
     header = (SUPERS_TMPL
               .replace("__N__", str(n))
               .replace("__P__", str(p))
@@ -222,7 +222,7 @@ def emit(path, n, p, g):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", required=True, help="Output .hsk path")
+    ap.add_argument("--out", required=True, help="Output .hss path")
     ap.add_argument("--N", type=int, required=True, help="Array size")
     ap.add_argument("--P", type=int, required=True, help="Parallelism level")
     ap.add_argument("--G", type=int, default=1, help="Granularity multiplier (cutoff = N/(P*G))")

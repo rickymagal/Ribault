@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate TALM .hsk for LCS benchmark.
+"""Generate TALM .hss for LCS benchmark.
 
 K independent supers, each taking a chunk index (0..K-1).
 Each super computes LCS for its assigned string pairs and returns the
@@ -51,7 +51,7 @@ def emit_hsk(path, input_dir, n_funcs):
     n_funcs = len(chunks)
 
     lines = []
-    lines.append(f"-- lcs.hsk  (auto-generated)")
+    lines.append(f"-- lcs.hss  (auto-generated)")
     lines.append(f"-- N_PAIRS={n_pairs}  STR_LEN={str_len}  ALPHABET={alphabet}")
     lines.append(f"-- N_FUNCS={n_funcs}  SEED={seed}")
     lines.append(f"-- LCS benchmark: sum of LCS lengths for {n_pairs} string pairs")
