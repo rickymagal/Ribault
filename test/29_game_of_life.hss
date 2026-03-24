@@ -1,0 +1,70 @@
+-- Conway's Game of Life (5x5 grid, 5 generations)
+-- Grid is a flat list of 25 integers (0=dead, 1=alive)
+-- Uses a glider as initial pattern
+
+-- Compute next generation (super instruction)
+-- Random access on the grid is inherently sequential, so it goes
+-- in a super. The dataflow handles iteration between generations.
+step grid =
+  super single input (grid) output (out)
+#BEGINSUPER
+    out = unsafePerformIO
+      (do
+        let cells = toList grid
+        let nth' n = fromIntegral (cells !! (fromIntegral n)) :: Int64
+        let get r c = if r<0||r>=5||c<0||c>=5 then 0 else nth' (r*5+c)
+        let neighbors idx =
+              let row = idx `div` 5; col = idx `mod` 5
+              in get(row-1)(col-1) + get(row-1)col + get(row-1)(col+1) +
+                 get row (col-1) + get row (col+1) +
+                 get(row+1)(col-1) + get(row+1)col + get(row+1)(col+1)
+        let nextCell idx =
+              let alive = nth' idx; n = neighbors idx
+              in if alive == 1 then (if n==2||n==3 then 1 else 0)
+                 else (if n==3 then 1 else 0)
+        let newCells = map nextCell [0..24]
+        pure (fromList newCells))
+#ENDSUPER
+
+-- Print grid and return it (super instruction)
+print_grid grid =
+  super single input (grid) output (out)
+#BEGINSUPER
+    out = unsafePerformIO
+      (do
+        let cells = toList grid
+        let showRow [] = ""
+            showRow (c:cs) = (if c == 1 then '#' else '.') : showRow cs
+            go [] = pure ()
+            go cs = do let (row, rest) = splitAt 5 cs
+                       putStrLn (showRow row)
+                       go rest
+        go cells
+        putStrLn ""
+        pure (fromList cells))
+#ENDSUPER
+
+-- Glider on 5x5 grid:
+-- .#...
+-- ..#..
+-- ###..
+-- .....
+-- .....
+glider = [0,1,0,0,0,
+          0,0,1,0,0,
+          1,1,1,0,0,
+          0,0,0,0,0,
+          0,0,0,0,0]
+
+-- Chain: print → step → print → step → ... via data dependencies.
+-- Unrolled for 5 generations (gen 0 through gen 4).
+main =
+  let g0 = print_grid glider in
+  let g1 = step g0 in
+  let g1p = print_grid g1 in
+  let g2 = step g1p in
+  let g2p = print_grid g2 in
+  let g3 = step g2p in
+  let g3p = print_grid g3 in
+  let g4 = step g3p in
+  print_grid g4

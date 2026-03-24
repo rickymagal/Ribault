@@ -663,16 +663,27 @@ callCounts = go
     maxAll ms = foldl1 maxM ms
     sumAll    = foldl addM M.empty
 
--- | Pre-scan: compute a GLOBAL stride — the max total concurrent calls
--- across ALL functions. Using a uniform stride for every function ensures
--- the tag tree has no collisions between different invocation contexts.
+-- | Pre-scan: per-function stride.
+-- A function needs multiplicative tags (stride > 1) when:
+--   (a) it calls the same callee more than once (max_per_callee > 1), OR
+--   (b) it calls multiple DISTINCT recursive functions (their additive chains overlap)
+-- In those cases, stride = total concurrent calls (so k ≤ stride).
+-- Otherwise stride = 1 (additive, unlimited depth).
+-- Calls to the function's own parameters are excluded (they go to separate bodies).
 preScanSelfCalls :: [Decl] -> M.Map Ident Int
 preScanSelfCalls decls =
-  let counts = [ totalCount body | FunDecl _ _ body <- decls ]
-      globalStride = max 1 (maximum (0 : counts))
-  in M.fromList [ (f, globalStride) | FunDecl f _ _ <- decls ]
+  let recFuns = S.fromList [ f | FunDecl f _ body <- decls
+                                , M.member f (callCounts body) ]
+  in M.fromList [ (f, computeStride recFuns ps body) | FunDecl f ps body <- decls ]
   where
-    totalCount body = sum (M.elems (callCounts body))
+    computeStride recFuns ps body =
+      let cc = callCounts body
+          paramSet = S.fromList ps
+          ccF = M.filterWithKey (\k _ -> not (S.member k paramSet)) cc
+          maxPerCallee = case M.elems ccF of { [] -> 0; xs -> maximum xs }
+          distinctRecCallees = M.size (M.filterWithKey (\k _ -> S.member k recFuns) ccF)
+          needsMultiplicative = maxPerCallee > 1 || distinctRecCallees > 1
+      in if needsMultiplicative then max 1 (sum (M.elems ccF)) else 1
 
 -- | Allocate a scope-level call-site index (1-based).
 -- Unique across ALL calls within the current scope, regardless of callee.
@@ -1015,7 +1026,7 @@ goApp fun args = case fun of
     -- stride = 1 → additive (tag = parent + 1)
     -- k is unique across ALL calls within the current scope.
     stride <- getActiveStride
-    let isTree = True  -- always use multiplicative to avoid tag chain overlap
+    let isTree = stride > 1
     k <- nextScopeK
     argv' <- pure argv
     tagTokParent <- case argv of
