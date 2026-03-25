@@ -85,12 +85,13 @@ buildSig =
 -- | Create a function environment assigning fresh type variables to
 -- each function's arguments and a unique return type variable @r_f@.
 buildFuncEnv :: [Decl] -> FuncEnv
-buildFuncEnv =
-  Map.fromList . map
-    (\(FunDecl f args _) ->
-       let tvs = replicate (length args) (TVar "_")
-           tr  = TVar ("r_" ++ f)
-       in (f, (tvs, tr)))
+buildFuncEnv ds =
+  let userFns = map (\(FunDecl f args _) ->
+                  let tvs = replicate (length args) (TVar "_")
+                      tr  = TVar ("r_" ++ f)
+                  in (f, (tvs, tr))) ds
+      builtins = [("print", ([TVar "_"], TVar "r_print"))]
+  in Map.fromList (builtins ++ userFns)
 
 -- | Run semantic checks (no typing) over the program and collect all errors.
 semanticCheck :: Program -> [Error]
@@ -104,9 +105,13 @@ semanticCheck prog =
   in dupFs ++ errs
 
 -- | Check a single function declaration.
+-- | Built-in functions available in all scopes.
+builtinFuns :: Set.Set Ident
+builtinFuns = Set.fromList ["print"]
+
 checkDecl :: Sig -> Decl -> [SemanticError]
 checkDecl sig (FunDecl _ ps b) =
-  let env0 = Set.fromList ps
+  let env0 = Set.fromList ps `Set.union` builtinFuns
       dupParams = [ DuplicateParam x | x <- ps, length (filter (==x) ps) > 1 ]
   in dupParams ++ checkExpr sig env0 b
 
@@ -418,9 +423,9 @@ assignSuperNames :: Program -> Program
 assignSuperNames (Program ds) =
   Program (evalState (mapM goDecl ds) superBase)
   where
-    -- Reserve s0..s3 for builtin list/pair supers.
+    -- Reserve s0..s4 for builtin supers (list ops + print).
     superBase :: Int
-    superBase = 4
+    superBase = 5
     goDecl (FunDecl f ps e) = FunDecl f ps <$> goExpr e
     goExpr :: Expr -> State Int Expr
     goExpr = \case
