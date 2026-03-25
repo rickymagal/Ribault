@@ -723,6 +723,8 @@ buildProgram p0 =
     retName f = f
     -- | Build and expose zero-argument functions as graph roots.
     buildZero (FunDecl f ps body) | null ps = do
+      when (exprHasList body) (markListFun f)
+      when (exprHasFloat body) (markFloatFun f)
       p <- withActive f (withEnv (goExpr body))
       insertB f (BPort p)
       r <- retNodeId f
@@ -814,6 +816,39 @@ portIsFloat p = Build $ gets $ \s -> isFloatNode s (pNode p)
       case [ srcId | (srcId, _, d, dp) <- dgEdges (bsGraph s), d == nid, dp == "0" ] of
         (srcId:_) -> isFloatNode s srcId
         []        -> False
+
+-- | Heuristically check if a port originates from list operations.
+-- Traces through tag-management and steer nodes.
+portIsList :: Port -> Build Bool
+portIsList (SteerPort nid _) = Build $ gets $ \s ->
+  -- Steer nodes: check aliases (the other branches may be lists)
+  case M.lookup (nid, "t") (bsAliases s) of
+    Just (p:_) -> isListNode s (pNode p)
+    _          -> tracePort1 s nid
+portIsList p = Build $ gets $ \s -> isListNode s (pNode p)
+
+isListNode :: BuildS -> NodeId -> Bool
+isListNode s nid = case M.lookup nid (dgNodes (bsGraph s)) of
+  Just (NSuper { superNum = n }) -> n == 0  -- builtinListCons
+  Just (NRetSnd f _ _)   -> S.member f (bsListFuns s)
+  Just NSteer{}          -> tracePort1 s nid  -- steer: check input port 1
+  Just NIncTagI{}        -> tracePort0 s nid
+  Just NValTag{}         -> tracePort0 s nid
+  Just NAddI{}           -> tracePort0 s nid
+  Just NArg{}            -> tracePort0 s nid
+  _                      -> False
+
+tracePort0 :: BuildS -> NodeId -> Bool
+tracePort0 s nid =
+  case [ srcId | (srcId, _, d, dp) <- dgEdges (bsGraph s), d == nid, dp == "0" ] of
+    (srcId:_) -> isListNode s srcId
+    []        -> False
+
+tracePort1 :: BuildS -> NodeId -> Bool
+tracePort1 s nid =
+  case [ srcId | (srcId, _, d, dp) <- dgEdges (bsGraph s), d == nid, dp == "1" ] of
+    (srcId:_) -> isListNode s srcId
+    []        -> False
 
 -- | Is the current operation in a floating-point context?
 isFloatContext :: Port -> Port -> Build Bool
@@ -1012,14 +1047,13 @@ goApp fun args = case fun of
   -- Built-in print: dispatches to s4 (integer) or s5 (list) based on argument type
   Var "print" | length args == 1 -> do
     let argExpr = head args
+        (appHead, _) = flattenApp argExpr
     pArg <- goExpr argExpr
-    isList <- case argExpr of
-                Cons _ _  -> pure True
-                List _    -> pure True
-                App (Var f) _ -> isListFun f
-                Var v     -> isListFun v
-                _         -> pure (exprHasList argExpr)
-    callBuiltinSuper (if isList then builtinPrintList else builtinPrint) [pArg]
+    isListPort <- portIsList pArg
+    isListExpr <- case appHead of
+                    Var v -> isListFun v
+                    _     -> pure (exprHasList argExpr)
+    callBuiltinSuper (if isListPort || isListExpr then builtinPrintList else builtinPrint) [pArg]
 
   Var f -> do
     argv0 <- mapM goExpr args

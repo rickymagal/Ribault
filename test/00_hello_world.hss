@@ -34,9 +34,4 @@ hello_codes =
                                               case rest5 of
                                                 l:[] -> a : b : c : d : e : f : g : h : i : j : k : l : []
 
-print_final cs =
-  super printImpl cs (
-    printImpl cs = let { toChar = toEnum . fromIntegral ; s = map toChar $ toList cs :: String } in unsafePerformIO $ do { print s ; pure $ fromList [0] }
-  )
-
-main = print_final hello_codes
+main = print hello_codes
