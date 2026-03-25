@@ -919,18 +919,16 @@ goExpr = \case
       Neg -> do z <- constI 0; bin2 "sub" (NSub "") z pe
       Not -> notP pe
 
-  Super nm kind inp out _ -> do
-    pIn <- goExpr (Var inp)
+  Super nm inputs _ -> do
+    let args = if length inputs > 1 then tail inputs else inputs
+    pIns <- mapM (\v -> goExpr (Var v)) args
     nid <- naryNode nm NSuper
              { nName     = ""
              , superNum  = superNumFromName nm
              , superOuts = 1
-             -- Avoid speculative supers for HSK `super parallel` to preserve correctness
-             -- when no explicit commit/stopspec nodes are emitted.
              , superSpec = False
              , superImm  = Nothing
-             } [pIn]
-    insertB out (BPort (out0 nid))
+             } pIns
     pure (out0 nid)
 
 -- Declarações ----------------------------------------------------------

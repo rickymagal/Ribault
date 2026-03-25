@@ -35,13 +35,8 @@ hello_codes =
                                                 l:[] -> a : b : c : d : e : f : g : h : i : j : k : l : []
 
 print_final cs =
-  super single input (cs) output (out)
-#BEGINSUPER
-    out = unsafePerformIO
-      (do
-        let s = (map (toEnum . fromIntegral) (toList cs)) :: String
-        print s
-        pure (fromList [0]))
-#ENDSUPER
+  super printImpl cs (
+    printImpl cs = let { toChar = toEnum . fromIntegral ; s = map toChar $ toList cs :: String } in unsafePerformIO $ do { print s ; pure $ fromList [0] }
+  )
 
 main = print_final hello_codes

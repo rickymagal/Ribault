@@ -7,57 +7,21 @@
 -- clear screen -> draw grid -> sleep -> compute next -> repeat.
 
 run dummy =
-  super single input (dummy) output (out)
-#BEGINSUPER
-    out = unsafePerformIO
-      (do
-        hSetBuffering stdout (BlockBuffering (Just 4096))
-
-        let h0 = 20; w0 = 40; sr0 = 8; sc0 = 18
-        let pattern = [(0,1),(0,2),(1,0),(1,1),(2,1)]
-        let mkGrid h w sr sc =
-              [ if (r,c) `elem` map (\(dr,dc) -> (sr+dr,sc+dc)) pattern then 1 else 0
-              | r <- [0..h-1], c <- [0..w-1] ]
-        let grid0 = mkGrid h0 w0 sr0 sc0
-        let w = w0; h = h0
-
-        let neighbors cells idx =
-              let row = idx `div` w; col = idx `mod` w
-                  get r c = if r<0||r>=h||c<0||c>=w then 0 else cells !! (r*w+c)
-              in get(row-1)(col-1) + get(row-1)col + get(row-1)(col+1)
-                 + get row (col-1) + get row (col+1)
-                 + get(row+1)(col-1) + get(row+1)col + get(row+1)(col+1)
-
-        let step cells =
-              [ let alive = cells !! i; n = neighbors cells i
-                in if alive==1 then (if n==2||n==3 then 1 else 0)
-                   else (if n==3 then 1 else 0)
-              | i <- [0..h*w-1] ]
-
-        let render cells gen =
-              let header = "\ESC[H\ESC[2J" ++
-                           "Conway's Game of Life  |  Gen " ++ show gen ++
-                           "  |  " ++ show (sum cells) ++ " alive  |  Ctrl+C to quit\n" ++
-                           replicate (w+2) '-' ++ "\n"
-                  rows = [ "|" ++ [ if cells !! (r*w+c) == 1 then '\x2588' else ' '
-                                  | c <- [0..w-1] ] ++ "|"
-                         | r <- [0..h-1] ]
-                  footer = replicate (w+2) '-'
-              in header ++ unlines rows ++ footer ++ "\n"
-
+  super gameOfLife dummy (
+    gameOfLife _ = unsafePerformIO $ do
+        hSetBuffering stdout $ BlockBuffering $ Just 4096
+        let { h = 20 ; w = 40 ; sr = 8 ; sc = 18 }
+        let { pat = [(0,1),(0,2),(1,0),(1,1),(2,1)] }
+        let { mkAlive r c = any (\p -> fst p + sr == r && snd p + sc == c) pat }
+        let { grid0 = [ if mkAlive r c then 1 else 0 | r <- [0..h-1], c <- [0..w-1] ] }
+        let { getCell cells r c = if r<0||r>=h||c<0||c>=w then 0 else cells !! (r*w+c) }
+        let { neighbors cells i = let { row = i `div` w ; col = i `mod` w } in getCell cells (row-1) (col-1) + getCell cells (row-1) col + getCell cells (row-1) (col+1) + getCell cells row (col-1) + getCell cells row (col+1) + getCell cells (row+1) (col-1) + getCell cells (row+1) col + getCell cells (row+1) (col+1) }
+        let { step cells = [ let { alive = cells !! i ; n = neighbors cells i } in if alive==1 then if n==2||n==3 then 1 else 0 else if n==3 then 1 else 0 | i <- [0..h*w-1] ] }
+        let { showCell c = if c == 1 then '\x2588' else ' ' }
+        let { render cells gen = "\ESC[H\ESC[2J" ++ "Conway's Game of Life  |  Gen " ++ show gen ++ "  |  " ++ show (sum cells) ++ " alive  |  Ctrl+C to quit\n" ++ replicate (w+2) '-' ++ "\n" ++ unlines [ "|" ++ map (\c -> showCell $ cells !! (r*w+c)) [0..w-1] ++ "|" | r <- [0..h-1] ] ++ replicate (w+2) '-' ++ "\n" }
         ref <- newIORef grid0
-        let loop gen = do
-              cells <- readIORef ref
-              putStr (render cells gen)
-              hFlush stdout
-              threadDelay 100000
-              let cells' = step cells
-              if cells' == cells
-                then do putStrLn ("Stabilized at generation " ++ show gen ++ ".")
-                        pure 0
-                else do writeIORef ref cells'
-                        loop (gen + 1)
-        loop 0)
-#ENDSUPER
+        let { loop gen = do { cells <- readIORef ref ; putStr $ render cells gen ; hFlush stdout ; threadDelay 100000 ; let { cells' = step cells } ; if cells' == cells then do { putStrLn $ "Stabilized at generation " ++ show gen ++ "." ; pure 0 } else do { writeIORef ref cells' ; loop $ gen + 1 } } }
+        loop 0
+  )
 
 main = run 0

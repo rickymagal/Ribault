@@ -23,7 +23,7 @@ import Data.List (dropWhileEnd)
 -- | Generate a complete Supers.hs module for a given program and its supers.
 emitSupersModule :: String -> [SuperSpec] -> String
 emitSupersModule baseName specs =
-      let specs' = filter (\(SuperSpec nm _ _ _ _) -> nm `notElem` ["s0","s1","s2","s3"]) specs
+      let specs' = filter (\(SuperSpec nm _ _) -> nm `notElem` ["s0","s1","s2","s3"]) specs
       in unlines $
       [ "{-# LANGUAGE ForeignFunctionInterface #-}"
       , "-- Automatically generated for program: " ++ baseName
@@ -32,14 +32,12 @@ emitSupersModule baseName specs =
       , "import Foreign.Ptr      (Ptr, IntPtr, ptrToIntPtr, intPtrToPtr)"
       , "import Foreign.Storable (peek, poke, peekElemOff, peekByteOff)"
       , "import Foreign.StablePtr (StablePtr, newStablePtr, deRefStablePtr"
-      , "                        , freeStablePtr"
       , "                        , castStablePtrToPtr, castPtrToStablePtr)"
       , "import Data.Int         (Int64)"
       , "import Data.Word        (Word32)"
-      , "import Data.Bits        ((.&.), (.|.), shiftL, shiftR)"
+      , "import Data.Bits        ((.&.))"
       , "import GHC.Conc (par, pseq)"
       , "import GHC.Float (castWord32ToFloat, castFloatToWord32)"
-      , "import System.IO        (hFlush, stdout)"
       , "import System.IO.Unsafe (unsafePerformIO)"
       , "import Data.IORef       (IORef, newIORef, readIORef, writeIORef)"
       , "import Control.Monad    (when)"
@@ -180,44 +178,44 @@ emitSupersModule baseName specs =
       ]
       ++ concatMap emitOne specs'
 
--- | Emit one super (its FFI wrapper + pure @_impl@).
+-- | Emit one super (its FFI wrapper + the user's function body).
 emitOne :: SuperSpec -> [String]
-emitOne (SuperSpec nm _kind inp out bodyRaw) =
+emitOne (SuperSpec nm inputs bodyRaw) =
   let bodyCore = normalizeIndent (trimBlankHash bodyRaw)
+      -- inputs list: first element is the function name, rest are args
+      funcName = if null inputs then nm ++ "_f" else head inputs
+      args     = if length inputs > 1 then tail inputs else []
+      nArgs    = length args
   in if null bodyCore
      then
        [ ""
        , "-- " ++ nm
-      , "foreign export ccall \"" ++ nm ++ "\" " ++ nm ++ " :: Ptr Int64 -> Ptr Int64 -> IO ()"
+       , "foreign export ccall \"" ++ nm ++ "\" " ++ nm ++ " :: Ptr Int64 -> Ptr Int64 -> IO ()"
        , nm ++ " :: Ptr Int64 -> Ptr Int64 -> IO ()"
        , nm ++ " pin pout = do"
-       , "  x <- peek pin"
-       , "  let r = " ++ nm ++ "_impl x"
-       , "  poke pout r"
-       , ""
-       , nm ++ "_impl :: Int64 -> Int64"
-       , nm ++ "_impl _x = handleNil"
+       , "  _x <- peek pin"
+       , "  poke pout handleNil"
        ]
      else
        [ ""
-       , "-- " ++ nm
-      , "foreign export ccall \"" ++ nm ++ "\" " ++ nm ++ " :: Ptr Int64 -> Ptr Int64 -> IO ()"
+       , "-- " ++ nm ++ " (" ++ funcName ++ " " ++ unwords args ++ ")"
+       , "foreign export ccall \"" ++ nm ++ "\" " ++ nm ++ " :: Ptr Int64 -> Ptr Int64 -> IO ()"
        , nm ++ " :: Ptr Int64 -> Ptr Int64 -> IO ()"
        , nm ++ " pin pout = do"
-       , "  x <- peek pin"
-       , "  let r = " ++ nm ++ "_impl x"
-       , "  poke pout r"
-       , ""
-       , "-- Internal pure function:"
-       , "-- - decodes the Int64 input into list '" ++ inp ++ "'"
-       , "-- - executes the stored body (declarations + definition of '" ++ out ++ "')"
-       , "-- - encodes '" ++ out ++ "' back to Int64"
-       , nm ++ "_impl :: Int64 -> Int64"
-       , nm ++ "_impl " ++ inp ++ " ="
-       , "  let"
+       ]
+       -- Read inputs from the pin buffer
+       ++ ["  " ++ v ++ " <- peekElemOff pin " ++ show i
+          | (v, i) <- zip args [0 :: Int ..]]
+       -- If no args, still read pin[0] to have something
+       ++ (if null args then ["  _x <- peek pin"] else [])
+       ++
+       [ "  let"
        ]
        ++ indent 4 bodyCore
-       ++ [ "  in " ++ out ]
+       ++
+       [ "    result = " ++ funcName ++ " " ++ unwords args
+       , "  poke pout result"
+       ]
 
 ----------------------------------------------------------------
 -- Formatting helpers

@@ -69,15 +69,13 @@ mmult rows colsT = case rows of
 -- 6. print (super) ------------------------------------------------
 
 print_final xs =
-  super single input (xs) output (out)
-#BEGINSUPER
-    out = unsafePerformIO
-      (do
-        let rows = map toListF (toList xs)
+  super printImpl xs (
+    printImpl xs = unsafePerformIO $ do
+        let rows = map toListF $ toList xs
         print "MatrixMul:"
         print rows
-        pure (fromList [0]))
-#ENDSUPER
+        pure $ fromList [0]
+  )
 
 -- 7. main ----------------------------------------------------------
 
