@@ -30,13 +30,5 @@ mergeSort lst = case lst of
     _ -> case split lst of
            (left, right) -> merge (mergeSort left) (mergeSort right)
 
-print_final xs =
-  super printImpl xs (
-    printImpl xs = unsafePerformIO $ do
-        print "MergeSort:"
-        print $ toList xs
-        pure $ fromList [0]
-  )
-
 -- Main expression for testing
-main = print_final (mergeSort [34, 7, 23, 32, 5, 62])
+main = print (mergeSort [34, 7, 23, 32, 5, 62])

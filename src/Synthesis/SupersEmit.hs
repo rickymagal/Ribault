@@ -23,7 +23,7 @@ import Data.List (dropWhileEnd)
 -- | Generate a complete Supers.hs module for a given program and its supers.
 emitSupersModule :: String -> [SuperSpec] -> String
 emitSupersModule baseName specs =
-      let specs' = filter (\(SuperSpec nm _ _) -> nm `notElem` ["s0","s1","s2","s3","s4"]) specs
+      let specs' = filter (\(SuperSpec nm _ _) -> nm `notElem` ["s0","s1","s2","s3","s4","s5"]) specs
       in unlines $
       [ "{-# LANGUAGE ForeignFunctionInterface #-}"
       , "-- Automatically generated for program: " ++ baseName
@@ -176,12 +176,22 @@ emitSupersModule baseName specs =
       , "  h <- peek pin"
       , "  if h == handleNil then poke pout 1 else poke pout 0"
       , ""
-      , "-- s4: built-in print (prints value, returns it)"
+      , "-- s4: built-in print for scalars (prints Int64, returns it)"
       , "foreign export ccall \"s4\" s4 :: Ptr Int64 -> Ptr Int64 -> IO ()"
       , "s4 :: Ptr Int64 -> Ptr Int64 -> IO ()"
       , "s4 pin pout = do"
       , "  v <- peek pin"
       , "  print v"
+      , "  hFlush stdout"
+      , "  poke pout v"
+      , ""
+      , "-- s5: built-in print for lists (prints [Int64], returns handle)"
+      , "foreign export ccall \"s5\" s5 :: Ptr Int64 -> Ptr Int64 -> IO ()"
+      , "s5 :: Ptr Int64 -> Ptr Int64 -> IO ()"
+      , "s5 pin pout = do"
+      , "  v <- peek pin"
+      , "  if v == handleNil then putStrLn \"[]\""
+      , "  else print (toList v)"
       , "  hFlush stdout"
       , "  poke pout v"
       ]

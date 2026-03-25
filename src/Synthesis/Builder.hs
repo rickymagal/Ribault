@@ -490,6 +490,9 @@ builtinListIsNil = 3
 builtinPrint :: Int
 builtinPrint = 4
 
+builtinPrintList :: Int
+builtinPrintList = 5
+
 superNameFromNum :: Int -> String
 superNameFromNum n = "s" ++ show n
 
@@ -1006,10 +1009,17 @@ bindFormal fun i formal actual = do
 -- | Apply a function or lambda to argument expressions.
 goApp :: Expr -> [Expr] -> Build Port
 goApp fun args = case fun of
-  -- Built-in print: print x → super s4 that prints and returns x
+  -- Built-in print: dispatches to s4 (integer) or s5 (list) based on argument type
   Var "print" | length args == 1 -> do
-    pArg <- goExpr (head args)
-    callBuiltinSuper builtinPrint [pArg]
+    let argExpr = head args
+    pArg <- goExpr argExpr
+    isList <- case argExpr of
+                Cons _ _  -> pure True
+                List _    -> pure True
+                App (Var f) _ -> isListFun f
+                Var v     -> isListFun v
+                _         -> pure (exprHasList argExpr)
+    callBuiltinSuper (if isList then builtinPrintList else builtinPrint) [pArg]
 
   Var f -> do
     argv0 <- mapM goExpr args

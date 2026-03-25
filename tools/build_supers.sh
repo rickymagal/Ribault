@@ -259,6 +259,7 @@ inject_hs_io_init() {
     if (!inserted_import && $0 ~ /import[[:space:]]+System\.IO\.Unsafe/) {
       print "import System.IO (hSetBuffering, hFlush, BufferMode(..), stdout, stderr)"
       print "import Control.Concurrent (threadDelay)"
+      print "import qualified Control.Exception"
       inserted_import = 1
     }
   }
@@ -266,6 +267,7 @@ inject_hs_io_init() {
     if (!inserted_import) {
       print "import System.IO (hSetBuffering, hFlush, BufferMode(..), stdout, stderr)"
       print "import Control.Concurrent (threadDelay)"
+      print "import qualified Control.Exception"
     }
   }
   ' "$hs" >"$tmp"
