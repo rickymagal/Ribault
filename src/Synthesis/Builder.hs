@@ -680,10 +680,10 @@ preScanSelfCalls decls =
       let cc = callCounts body
           paramSet = S.fromList ps
           ccF = M.filterWithKey (\k _ -> not (S.member k paramSet)) cc
+          totalCalls = sum (M.elems ccF)
           maxPerCallee = case M.elems ccF of { [] -> 0; xs -> maximum xs }
           distinctRecCallees = M.size (M.filterWithKey (\k _ -> S.member k recFuns) ccF)
-          totalCalls = sum (M.elems ccF)
-          needsMultiplicative = totalCalls > 1
+          needsMultiplicative = maxPerCallee > 1 || distinctRecCallees > 1
       in if needsMultiplicative then max 1 totalCalls else 1
 
 -- | Allocate a scope-level call-site index (1-based).

@@ -1,18 +1,44 @@
 -- Conway's Game of Life — terminal animation
 --
--- R-pentomino on 20x20 grid. Ctrl+C to stop.
---
--- step = super (random access on grid is O(n) per cell, inherently sequential)
--- print_grid = super (I/O)
--- Iteration between generations = dataflow
+-- R-pentomino on 20x20 grid, 5 generations. Ctrl+C to stop.
+-- Computation is pure dataflow; only grid access and printing are supers.
 
--- Compute next generation (super — random access pattern)
-step grid =
-  super stepImpl grid (
-    stepImpl g = let { cells = toList g ; h = 20 ; w = 20 ; getCell r c = if r<0||r>=h||c<0||c>=w then 0 else cells !! fromIntegral (r*w+c) ; neighbors i = let { row = i `div` w ; col = i `mod` w } in getCell (row-1) (col-1) + getCell (row-1) col + getCell (row-1) (col+1) + getCell row (col-1) + getCell row (col+1) + getCell (row+1) (col-1) + getCell (row+1) col + getCell (row+1) (col+1) ; nextCell i = let { alive = cells !! fromIntegral i ; n = neighbors i } in if alive==1 then if n==2||n==3 then 1 else 0 else if n==3 then 1 else 0 } in fromList $ map nextCell [0..h*w-1]
+-- Random access on a list (super — O(n) sequential access)
+getCell grid idx =
+  super getCellImpl grid idx (
+    getCellImpl g i = let { cells = toList g } in if fromIntegral i < length cells then fromIntegral $ cells !! fromIntegral i else 0
   )
 
--- Print grid with ANSI clear screen (super — I/O)
+-- Bounds-checked grid access (pure dataflow)
+safeGet grid h w r c =
+  if r < 0 then 0 else if r >= h then 0 else if c < 0 then 0 else if c >= w then 0
+  else getCell grid (r * w + c)
+
+-- Count alive neighbors (pure dataflow, 8 calls to safeGet)
+neighbors grid h w idx =
+  let row = idx / w in
+  let col = idx - row * w in
+  safeGet grid h w (row - 1) (col - 1) + safeGet grid h w (row - 1) col + safeGet grid h w (row - 1) (col + 1) +
+  safeGet grid h w row (col - 1) + safeGet grid h w row (col + 1) +
+  safeGet grid h w (row + 1) (col - 1) + safeGet grid h w (row + 1) col + safeGet grid h w (row + 1) (col + 1)
+
+-- Next cell state (pure dataflow, no let bindings)
+nextCell grid h w idx =
+  if getCell grid idx == 1
+  then if neighbors grid h w idx == 2 then 1
+       else if neighbors grid h w idx == 3 then 1
+       else 0
+  else if neighbors grid h w idx == 3 then 1
+       else 0
+
+-- Compute next generation (pure dataflow, direct recursion)
+stepFrom grid h w i n =
+  if i >= n then []
+  else nextCell grid h w i : stepFrom grid h w (i + 1) n
+
+step grid = stepFrom grid 20 20 0 400
+
+-- Print grid with ANSI animation (super — I/O)
 print_grid grid =
   super printImpl grid (
     printImpl g = unsafePerformIO $ do
@@ -21,11 +47,12 @@ print_grid grid =
         let { showCell c = if c == 1 then '\x2588' else ' ' }
         let { go _ [] = pure () ; go r cs = do { putStr "|" ; mapM_ (\c -> putChar $ showCell c) $ take w cs ; putStrLn "|" ; go (r+1) $ drop w cs } }
         putStr "\ESC[H\ESC[2J"
+        putStrLn "Conway's Game of Life  |  Ctrl+C to quit"
         putStrLn $ replicate (w+2) '-'
         go 0 cells
         putStrLn $ replicate (w+2) '-'
         hFlush stdout
-        threadDelay 100000
+        threadDelay 150000
         pure $ fromList cells
   )
 
@@ -52,7 +79,7 @@ rpentomino =
    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
--- print → step → print → step (unrolled, dataflow iteration)
+-- Dataflow iteration: print → step → print → step (unrolled)
 main =
   let g0 = print_grid rpentomino in
   let g1 = step g0 in
