@@ -6,4 +6,4 @@ sumVec xs ys = case xs of
     [] -> []
     (y:yt) -> (x + y) : sumVec xt yt
 
-main = print (sumVec [1,2,3,4] [10,20,30,40])
+main = printl (sumVec [1,2,3,4] [10,20,30,40])

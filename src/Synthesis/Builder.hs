@@ -493,6 +493,18 @@ builtinPrint = 4
 builtinPrintList :: Int
 builtinPrintList = 5
 
+builtinPrintStr :: Int
+builtinPrintStr = 6
+
+builtinPrintFloat :: Int
+builtinPrintFloat = 7
+
+builtinPrintFloatList :: Int
+builtinPrintFloatList = 8
+
+builtinPrintFloatMatrix :: Int
+builtinPrintFloatMatrix = 9
+
 superNameFromNum :: Int -> String
 superNameFromNum n = "s" ++ show n
 
@@ -1044,16 +1056,22 @@ bindFormal fun i formal actual = do
 -- | Apply a function or lambda to argument expressions.
 goApp :: Expr -> [Expr] -> Build Port
 goApp fun args = case fun of
-  -- Built-in print: dispatches to s4 (integer) or s5 (list) based on argument type
-  Var "print" | length args == 1 -> do
-    let argExpr = head args
-        (appHead, _) = flattenApp argExpr
-    pArg <- goExpr argExpr
-    isListPort <- portIsList pArg
-    isListExpr <- case appHead of
-                    Var v -> isListFun v
-                    _     -> pure (exprHasList argExpr)
-    callBuiltinSuper (if isListPort || isListExpr then builtinPrintList else builtinPrint) [pArg]
+  -- Built-in print variants (C-style):
+  --   print x    → integer       prints xs   → string (ASCII list)
+  --   printl xs  → list of int   printf x    → float
+  --   printlf xs → list of float printmf xs  → matrix of floats
+  Var p | p `elem` ["print","prints","printl","printf","printlf","printmf"]
+        , length args == 1 -> do
+    pArg <- goExpr (head args)
+    let sn = case p of
+               "print"   -> builtinPrint
+               "prints"  -> builtinPrintStr
+               "printl"  -> builtinPrintList
+               "printf"  -> builtinPrintFloat
+               "printlf" -> builtinPrintFloatList
+               "printmf" -> builtinPrintFloatMatrix
+               _         -> builtinPrint
+    callBuiltinSuper sn [pArg]
 
   Var f -> do
     argv0 <- mapM goExpr args

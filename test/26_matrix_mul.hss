@@ -66,20 +66,10 @@ mmult rows colsT = case rows of
     let ts = mmult rs1 colsT in
     h : ts
 
--- 6. print matrix (needs custom super for float formatting)
-
-print_matrix xs =
-  super printImpl xs (
-    printImpl xs = unsafePerformIO $ do
-        let rows = map toListF $ toList xs
-        print rows
-        pure $ fromList [0]
-  )
-
--- 7. main ----------------------------------------------------------
+-- 6. main ----------------------------------------------------------
 
 main =
   let a = [[1.5, 2.25], [3.75, 4.5]] in
   let b = [[0.5, 1.25], [2.5, 3.5]] in
   let colsT = transpose b in
-  print_matrix (mmult a colsT)
+  printmf (mmult a colsT)

@@ -34,4 +34,4 @@ hello_codes =
                                               case rest5 of
                                                 l:[] -> a : b : c : d : e : f : g : h : i : j : k : l : []
 
-main = print hello_codes
+main = prints hello_codes

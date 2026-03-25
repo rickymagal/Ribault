@@ -90,7 +90,8 @@ buildFuncEnv ds =
                   let tvs = replicate (length args) (TVar "_")
                       tr  = TVar ("r_" ++ f)
                   in (f, (tvs, tr))) ds
-      builtins = [("print", ([TVar "_"], TVar "r_print"))]
+      builtins = [ (f, ([TVar "_"], TVar ("r_" ++ f)))
+                  | f <- ["print","prints","printl","printf","printlf","printmf"] ]
   in Map.fromList (builtins ++ userFns)
 
 -- | Run semantic checks (no typing) over the program and collect all errors.
@@ -107,7 +108,7 @@ semanticCheck prog =
 -- | Check a single function declaration.
 -- | Built-in functions available in all scopes.
 builtinFuns :: Set.Set Ident
-builtinFuns = Set.fromList ["print"]
+builtinFuns = Set.fromList ["print","prints","printl","printf","printlf","printmf"]
 
 checkDecl :: Sig -> Decl -> [SemanticError]
 checkDecl sig (FunDecl _ ps b) =
@@ -423,9 +424,9 @@ assignSuperNames :: Program -> Program
 assignSuperNames (Program ds) =
   Program (evalState (mapM goDecl ds) superBase)
   where
-    -- Reserve s0..s5 for builtin supers (list ops + print/printList).
+    -- Reserve s0..s9 for builtin supers (list ops + print variants).
     superBase :: Int
-    superBase = 6
+    superBase = 10
     goDecl (FunDecl f ps e) = FunDecl f ps <$> goExpr e
     goExpr :: Expr -> State Int Expr
     goExpr = \case
