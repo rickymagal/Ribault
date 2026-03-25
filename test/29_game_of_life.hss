@@ -1,27 +1,65 @@
 -- Conway's Game of Life — terminal animation
 --
--- Default: R-pentomino on 40x20 grid (lives 1103+ generations)
--- Ctrl+C to stop.
+-- R-pentomino on 20x20 grid. Ctrl+C to stop.
 --
--- The entire simulation loop runs inside a single super instruction:
--- clear screen -> draw grid -> sleep -> compute next -> repeat.
+-- step = super (random access on grid is O(n) per cell, inherently sequential)
+-- print_grid = super (I/O)
+-- Iteration between generations = dataflow
 
-run dummy =
-  super gameOfLife dummy (
-    gameOfLife _ = unsafePerformIO $ do
-        hSetBuffering stdout $ BlockBuffering $ Just 4096
-        let { h = 20 ; w = 40 ; sr = 8 ; sc = 18 }
-        let { pat = [(0,1),(0,2),(1,0),(1,1),(2,1)] }
-        let { mkAlive r c = any (\p -> fst p + sr == r && snd p + sc == c) pat }
-        let { grid0 = [ if mkAlive r c then 1 else 0 | r <- [0..h-1], c <- [0..w-1] ] }
-        let { getCell cells r c = if r<0||r>=h||c<0||c>=w then 0 else cells !! (r*w+c) }
-        let { neighbors cells i = let { row = i `div` w ; col = i `mod` w } in getCell cells (row-1) (col-1) + getCell cells (row-1) col + getCell cells (row-1) (col+1) + getCell cells row (col-1) + getCell cells row (col+1) + getCell cells (row+1) (col-1) + getCell cells (row+1) col + getCell cells (row+1) (col+1) }
-        let { step cells = [ let { alive = cells !! i ; n = neighbors cells i } in if alive==1 then if n==2||n==3 then 1 else 0 else if n==3 then 1 else 0 | i <- [0..h*w-1] ] }
-        let { showCell c = if c == 1 then '\x2588' else ' ' }
-        let { render cells gen = "\ESC[H\ESC[2J" ++ "Conway's Game of Life  |  Gen " ++ show gen ++ "  |  " ++ show (sum cells) ++ " alive  |  Ctrl+C to quit\n" ++ replicate (w+2) '-' ++ "\n" ++ unlines [ "|" ++ map (\c -> showCell $ cells !! (r*w+c)) [0..w-1] ++ "|" | r <- [0..h-1] ] ++ replicate (w+2) '-' ++ "\n" }
-        ref <- newIORef grid0
-        let { loop gen = do { cells <- readIORef ref ; putStr $ render cells gen ; hFlush stdout ; threadDelay 100000 ; let { cells' = step cells } ; if cells' == cells then do { putStrLn $ "Stabilized at generation " ++ show gen ++ "." ; pure 0 } else do { writeIORef ref cells' ; loop $ gen + 1 } } }
-        loop 0
+-- Compute next generation (super — random access pattern)
+step grid =
+  super stepImpl grid (
+    stepImpl g = let { cells = toList g ; h = 20 ; w = 20 ; getCell r c = if r<0||r>=h||c<0||c>=w then 0 else cells !! fromIntegral (r*w+c) ; neighbors i = let { row = i `div` w ; col = i `mod` w } in getCell (row-1) (col-1) + getCell (row-1) col + getCell (row-1) (col+1) + getCell row (col-1) + getCell row (col+1) + getCell (row+1) (col-1) + getCell (row+1) col + getCell (row+1) (col+1) ; nextCell i = let { alive = cells !! fromIntegral i ; n = neighbors i } in if alive==1 then if n==2||n==3 then 1 else 0 else if n==3 then 1 else 0 } in fromList $ map nextCell [0..h*w-1]
   )
 
-main = run 0
+-- Print grid with ANSI clear screen (super — I/O)
+print_grid grid =
+  super printImpl grid (
+    printImpl g = unsafePerformIO $ do
+        hSetBuffering stdout $ BlockBuffering $ Just 8192
+        let { cells = toList g ; w = 20 ; h = 20 }
+        let { showCell c = if c == 1 then '\x2588' else ' ' }
+        let { go _ [] = pure () ; go r cs = do { putStr "|" ; mapM_ (\c -> putChar $ showCell c) $ take w cs ; putStrLn "|" ; go (r+1) $ drop w cs } }
+        putStr "\ESC[H\ESC[2J"
+        putStrLn $ replicate (w+2) '-'
+        go 0 cells
+        putStrLn $ replicate (w+2) '-'
+        hFlush stdout
+        threadDelay 100000
+        pure $ fromList cells
+  )
+
+-- R-pentomino at (8,8) on 20x20
+rpentomino =
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+
+-- print → step → print → step (unrolled, dataflow iteration)
+main =
+  let g0 = print_grid rpentomino in
+  let g1 = step g0 in
+  let g1p = print_grid g1 in
+  let g2 = step g1p in
+  let g2p = print_grid g2 in
+  let g3 = step g2p in
+  let g3p = print_grid g3 in
+  let g4 = step g3p in
+  print_grid g4
