@@ -19,8 +19,6 @@ ident       = letter , { idchar } ;
 
 int_lit     = digit , { digit } ;
 float_lit   = digit , { digit } , "." , digit , { digit } ;
-char_lit    = "'" , ( ? any char except ' and \ ? | escape ) , "'" ;
-string_lit  = "\"" , { ? any char or escape except " ? } , "\"" ;
 
 comment     = "--" , { ? any char except newline ? } ;
 whitespace  = " " | "\t" | "\r" | "\n" ;
@@ -48,6 +46,7 @@ expr        = lambda
             | if_expr
             | case_expr
             | let_expr
+            | super_expr
             | expr_or
             | expr , ":" , expr ;
 
@@ -85,33 +84,132 @@ expr_unary  = "not" , expr_unary
 expr_app    = atom , { atom } ;
 ```
 
-## Atoms, literals, lists, tuples, supers
+## Atoms, literals, lists, tuples
 
 ```
 atom        = literal
             | ident
             | "(" , expr , ")"
             | list
-            | tuple
-            | super_expr ;
+            | tuple ;
 
-literal     = int_lit | float_lit | char_lit | string_lit
+literal     = int_lit | float_lit
             | "True" | "False" ;
 
 list        = "[" , [ expr_list ] , "]" ;
 expr_list   = expr , { "," , expr } ;
 
 tuple       = "(" , expr , "," , expr , { "," , expr } , ")" ;
+```
 
-super_expr  = "super" , super_kind ,
+Note: only **pair tuples** `(a,b)` are represented correctly at runtime.
+Larger tuples are parsed but not supported by the compiler backend.
+
+## Super instructions
+
+Super instructions embed opaque Haskell code that is compiled separately
+by GHC. The body is captured by balanced parenthesis tracking in the lexer.
+
+```
+super_expr  = "super" , ident , super_args , "(" , super_body , ")"
+            | "super" , super_kind ,
               "input"  , "(" , ident , ")" ,
               "output" , "(" , ident , ")" ,
-              super_body ;
+              legacy_body ;
 
+super_args  = { ident } ;
 super_kind  = "single" | "parallel" ;
+super_body  = ? balanced Haskell code (parens tracked by lexer) ? ;
+legacy_body = "#BEGINSUPER" , legacy_text , "#ENDSUPER" ;
+legacy_text = ? any characters including newlines ? ;
+```
 
-super_body  = "#BEGINSUPER" , super_text , "#ENDSUPER" ;
-super_text  = { ? any character including newlines ? } ;
+The first form is the **primary syntax**:
+
+```haskell
+myFunc input =
+  super implName input (
+    implName x = someHaskellExpression x
+  )
+```
+
+Here `implName` is the function name defined inside the body, and the
+remaining identifiers are the input arguments. The super instruction
+reads its inputs from the dataflow graph and writes the function's
+return value back.
+
+**Important**: the body is delimited by balanced parentheses. Top-level
+`(...)` inside the body will close it prematurely. Use `$` or `let`
+bindings instead of parentheses:
+
+```haskell
+-- WRONG: the (do closes at the matching )
+  super f x (
+    f x = unsafePerformIO (do ...)    -- broken!
+  )
+
+-- RIGHT: use $ to avoid top-level parens
+  super f x (
+    f x = unsafePerformIO $ do
+        ...
+  )
+```
+
+The second form is the **legacy syntax** (backward compatible):
+
+```haskell
+myFunc input =
+  super single input (input) output (out)
+#BEGINSUPER
+    out = someExpression
+#ENDSUPER
+```
+
+## Built-in functions
+
+### Print family
+
+The following built-in print functions are available without requiring
+a super instruction. Each prints the value and returns it (for chaining):
+
+```
+print x      — print integer (Int64)
+prints xs    — print list of ASCII codes as string
+printl xs    — print list of integers
+printf x     — print float
+printlf xs   — print list of floats
+printmf xs   — print matrix (list of list of floats)
+```
+
+Examples:
+
+```haskell
+main = print (fib 10)                     -- 55
+main = prints [72,101,108,108,111]         -- Hello
+main = printl (mergeSort [3,1,2])          -- [1,2,3]
+main = printf (1.5 * 2.0)                 -- 3.0
+main = printlf [1.5, 2.25, 3.75]          -- [1.5,2.25,3.75]
+main = printmf (mmult a b)                -- [[6.375,9.75],[13.125,20.4375]]
+```
+
+### List operations
+
+Lists are built-in via super instructions s0-s3:
+
+```
+:    (cons)     — construct a pair/cons cell
+head xs         — first element (via pattern matching)
+tail xs         — rest of list (via pattern matching)
+[]              — empty list (nil)
+```
+
+List operations are typically accessed through pattern matching syntax
+rather than direct function calls:
+
+```haskell
+case xs of
+  []     -> ...           -- nil check
+  (x:xt) -> ...           -- head/tail destructuring
 ```
 
 ## Patterns
@@ -127,14 +225,10 @@ pattern     = "_"
 list_pattern = "[" , [ pattern_list ] , "]" ;
 pattern_list = pattern , { "," , pattern } ;
 
-tuple_pattern = "(" , pattern , pattern_tuple_tail , ")" ;
-pattern_tuple_tail = "," , pattern , { "," , pattern } ;
+tuple_pattern = "(" , pattern , "," , pattern , { "," , pattern } , ")" ;
 ```
 
-Note: only **pair tuples** `(a,b)` are represented correctly at runtime.
-Larger tuples are parsed but not supported by the compiler backend.
-
-## Precedence and associativity (informal)
+## Precedence and associativity
 
 From lowest to highest:
 - `||`
@@ -145,6 +239,19 @@ From lowest to highest:
 - `*`, `/`, `%`
 - unary `not`, unary `-`
 - application (left-associative)
-- `:` (right-associative)
+- `:` (right-associative, cons)
 
 This matches the precedence declarations in `Parser.y`.
+
+## Reserved words
+
+```
+case    else    if      in      let     of      then
+not     super   single  parallel  input   output
+True    False
+print   prints  printl  printf  printlf printmf
+```
+
+## File extension
+
+Ribault source files use the `.hss` extension.
