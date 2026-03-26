@@ -34,34 +34,7 @@ splitCount lst = case lst of
 -- SUPER: full merge sort for small lists
 ms_super lst =
   super seqSort lst (
-    seqSort lst =
-      let
-        hlist = toList lst
-
-        forceList []     = ()
-        forceList (_:xs) = forceList xs
-
-        splitLocal []         = ([], [])
-        splitLocal [x]        = ([x], [])
-        splitLocal (x:y:rest) =
-          let (xs, ys) = splitLocal rest
-          in (x:xs, y:ys)
-
-        mergeLocal [] ys        = ys
-        mergeLocal xs []        = xs
-        mergeLocal (x:xt) (y:yt)
-          | x <= y              = x : mergeLocal xt (y:yt)
-          | otherwise           = y : mergeLocal (x:xt) yt
-
-        ms []  = []
-        ms [x] = [x]
-        ms xs  =
-          let (l, r) = splitLocal xs
-              l' = ms l
-              r' = ms r
-          in forceList l' `par` (forceList r' `pseq` mergeLocal l' r')
-      in
-        fromList (ms hlist)
+    seqSort lst = fromList (Data.List.sort (toList lst))
   )
 
 mergeSort0 lst =

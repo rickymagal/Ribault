@@ -260,6 +260,7 @@ inject_hs_io_init() {
       print "import System.IO (hSetBuffering, hFlush, BufferMode(..), stdout, stderr)"
       print "import Control.Concurrent (threadDelay)"
       print "import qualified Control.Exception"
+      print "import qualified Data.List"
       inserted_import = 1
     }
   }
@@ -268,6 +269,7 @@ inject_hs_io_init() {
       print "import System.IO (hSetBuffering, hFlush, BufferMode(..), stdout, stderr)"
       print "import Control.Concurrent (threadDelay)"
       print "import qualified Control.Exception"
+      print "import qualified Data.List"
     }
   }
   ' "$hs" >"$tmp"
