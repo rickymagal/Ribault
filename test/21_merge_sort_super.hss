@@ -31,10 +31,10 @@ splitCount lst = case lst of
     case splitCount zs of
       (xs, (ys, (nl, nr))) -> (x:xs, (y:ys, (nl + 1, nr + 1)))
 
--- SUPER: full merge sort for small lists
+-- SUPER: GHC-optimised sort for leaf subproblems
 ms_super lst =
   super seqSort lst (
-    seqSort lst = fromList (Data.List.sort (toList lst))
+    seqSort xs = fromList (Data.List.sort (toList xs))
   )
 
 mergeSort0 lst =
