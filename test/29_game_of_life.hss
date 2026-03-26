@@ -6,7 +6,11 @@
 -- Random access on a list (super — O(n) sequential access)
 getCell grid idx =
   super getCellImpl grid idx (
-    getCellImpl g i = let { cells = toList g } in if fromIntegral i < length cells then fromIntegral $ cells !! fromIntegral i else 0
+    getCellImpl g i =
+      let cells = toList g
+      in if fromIntegral i < length cells
+         then fromIntegral (cells !! fromIntegral i)
+         else 0
   )
 
 -- Bounds-checked grid access (pure dataflow)
@@ -42,18 +46,26 @@ step grid = stepFrom grid 20 20 0 400
 print_grid grid =
   super printImpl grid (
     printImpl g = unsafePerformIO $ do
-        hSetBuffering stdout $ BlockBuffering $ Just 8192
-        let { cells = toList g ; w = 20 ; h = 20 }
-        let { showCell c = if c == 1 then '\x2588' else ' ' }
-        let { go _ [] = pure () ; go r cs = do { putStr "|" ; mapM_ (\c -> putChar $ showCell c) $ take w cs ; putStrLn "|" ; go (r+1) $ drop w cs } }
+        hSetBuffering stdout (BlockBuffering (Just 8192))
+        let cells = toList g
+            w = 20
+            showCell c = if c == 1 then '\x2588' else ' '
+            go _ []  = pure ()
+            go r cs  = do
+              let row  = take w cs
+                  rest = drop w cs
+              putStr "|"
+              mapM_ (\c -> putChar (showCell c)) row
+              putStrLn "|"
+              go (r + 1) rest
         putStr "\ESC[H\ESC[2J"
         putStrLn "Conway's Game of Life  |  Ctrl+C to quit"
-        putStrLn $ replicate (w+2) '-'
+        putStrLn (replicate (w + 2) '-')
         go 0 cells
-        putStrLn $ replicate (w+2) '-'
+        putStrLn (replicate (w + 2) '-')
         hFlush stdout
         threadDelay 150000
-        pure $ fromList cells
+        pure (fromList cells)
   )
 
 -- R-pentomino at (8,8) on 20x20

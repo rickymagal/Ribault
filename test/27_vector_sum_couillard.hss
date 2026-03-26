@@ -9,13 +9,17 @@ init_vec dummy =
 -- super 2: parallel, builds encoded (a,b) pairs where b = a + 1
 fill_pairs xs =
   super fillImpl xs (
-    fillImpl xs = fromList $ map (\x -> encPair x $ x + 1) $ toList xs
+    fillImpl xs =
+      let pairs = map (\x -> encPair x (x + 1)) (toList xs)
+      in fromList pairs
   )
 
 -- super 3: parallel, computes c[i] = a[i] + b[i]
 add_pairs pairs =
   super addImpl pairs (
-    addImpl pairs = fromList $ map (\p -> fstDec p + sndDec p) $ toList pairs
+    addImpl pairs =
+      let sums = map (\p -> fstDec p + sndDec p) (toList pairs)
+      in fromList sums
   )
 
 main =
