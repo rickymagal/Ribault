@@ -94,7 +94,7 @@ main = mergeSort0 [34,7,23,32,5,62,1,9,8,4,3,11]
 
 The divide-and-conquer recursion splits the list in parallel until the sublist size `n` reaches `n0 / p`, at which point it stops forking and hands the remaining work to an inline super-instruction that simply calls `Data.List.sort` on the sublist. The reason this cutoff must exist at all is the coordination cost of the dataflow model itself: every super-instruction invocation carries a fixed token-passing overhead, and if the recursion were allowed to fork all the way down to single elements, that overhead would be paid at every leaf of the tree for a trivial amount of sequential work, drowning the computation in coordination noise and collapsing performance below the sequential baseline. The cutoff is therefore the mechanism that ensures each super invocation receives a sublist large enough that the sequential work it performs comfortably exceeds the cost of firing it — and `n0 / p`, the total input size divided by the parallelism factor `p = 4`, is what controls exactly where that transition happens.
 
-![Call graph for merge sort with p = 4](https://substack-post-media.s3.amazonaws.com/public/images/d33f2589-c398-45e7-b40c-172fae58ba95_1743x2131.png)
+![Call graph for merge sort with p = 4](https://substack-post-media.s3.amazonaws.com/public/images/79981b0a-b05a-45f2-adf5-15c53b34fd8a_1840x1561.png)
 
 **Fig.** Call graph for merge sort with `p = 4`. The recursion forks in parallel down the tree until `n ≤ n0 / p`, at which point each branch stops splitting and emits a leaf super-instruction (`S1`–`S4`) that sorts its sublist entirely in sequential native code. With `p = 4`, exactly four such leaves are produced, all of which are data-independent and therefore fire concurrently. Once all four complete, the merge nodes reduce the results back up the tree sequentially by dependency.
 
@@ -112,7 +112,7 @@ The front-end parses the source into an abstract syntax tree. Semantic analysis 
 
 The Fibonacci example makes the whole pipeline concrete. The source has no parallelism annotations whatsoever; just a straightforward recursive definition. The compiler reads the dependency structure: `fib (n-1)` and `fib (n-2)` share no directed path in the graph, so they are unconditionally parallel. The emitted assembly reflects this directly, with `callsnd`/`retsnd` pairs dispatching both recursive calls simultaneously and a single `add` node waiting for both results before firing. The programmer stated the recurrence; the parallelism was already there.
 
-![End-to-end compilation of recursive Fibonacci](https://substack-post-media.s3.amazonaws.com/public/images/f472a808-d54f-4738-8f90-3bb94678db4c_626x881.png)
+![End-to-end compilation of recursive Fibonacci](https://substack-post-media.s3.amazonaws.com/public/images/d33f2589-c398-45e7-b40c-172fae58ba95_1743x2131.png)
 
 **Fig.** *End-to-end compilation of recursive Fibonacci. (A) Hsub source with no parallelism annotations. (B) The compiled dataflow graph: solid edges carry data tokens; dashed edges carry recursive call/return tokens. The two recursive subgraphs share no directed path and are unconditionally parallel. (C) TALM assembly: one instruction per node; `callsnd`/`retsnd` pairs implement the call/return protocol; `steer` routes tokens rather than jumping to an address.*
 
