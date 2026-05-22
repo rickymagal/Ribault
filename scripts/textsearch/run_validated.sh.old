@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ensure UTF-8 locale: supersgen + ribault emit Unicode chars (en-dashes etc.)
-# in comments; default POSIX locale on some servers (e.g. scherbius) cannot
-# encode these, causing supersgen to abort with "cannot encode character".
-export LANG="${LANG:-C.utf8}"
-export LC_ALL="${LC_ALL:-C.utf8}"
-
 # ============================================================
 # Validated Text-Search benchmark: TALM + GHC Strategies + GHC par/pseq
 #
@@ -29,49 +23,19 @@ CODEGEN="$REPO/codegen"
 BUILD_SUPERS="$REPO/tools/build_supers.sh"
 GEN_CORPUS="$REPO/scripts/textsearch/gen_corpus.py"
 GEN_TALM="$REPO/scripts/textsearch/gen_talm_input.py"
-GEN_SEQ="$REPO/scripts/textsearch/gen_hs_sequential.py"
 GEN_STRAT="$REPO/scripts/textsearch/gen_hs_strategies.py"
 GEN_PARPSEQ="$REPO/scripts/textsearch/gen_hs_parpseq.py"
 
-REPS=${REPS:-7}
+REPS=${REPS:-3}
 FILE_SIZE=${FILE_SIZE:-10000000}
 KEYWORD=${KEYWORD:-FINDME}
 DENSITY=${DENSITY:-0.002}
 N_FUNCS=${N_FUNCS:-14}
-PS=(${PS:-1 2 4 8 16 24 32 40 48})
+PS=(${PS:-2 4 8 16})
 TALM_RTS_A=${TALM_RTS_A:-256m}
 
-# ---- Core pinning (architectural equivalence with attention runner) ----
-# Physical cores: 0..(N_PHYS_CORES-1). HT siblings: N_PHYS_CORES..(2*N_PHYS_CORES-1).
-# For P <= N_PHYS_CORES: pinning is strictly within physical cores (no HT).
-# For P >  N_PHYS_CORES: pinning extends into HT siblings (OVERSUBSCRIPTION).
-N_PHYS_CORES=${N_PHYS_CORES:-24}
-N_LOG_CORES=${N_LOG_CORES:-48}
-
-pin_cores() {
-  local p="$1"
-  if (( p > N_LOG_CORES )); then
-    echo "0-$((N_LOG_CORES - 1))"
-  else
-    echo "0-$((p - 1))"
-  fi
-}
-
-# Tag whether a given P is physical-only or oversubscribed (with HT).
-pin_tag() {
-  local p="$1"
-  if (( p <= N_PHYS_CORES )); then
-    echo "physical, cores 0-$((p-1)), no HT"
-  else
-    local ht=$(( p - N_PHYS_CORES ))
-    echo "oversubscribed, cores 0-$((p-1)) = $N_PHYS_CORES phys + $ht HT siblings"
-  fi
-}
-OS_BANNER_SHOWN=0
-
-# NS_CSV: comma-separated list of N_FILES values to benchmark.
-# Paper benchmark values (Table 1): 7000, 8500, 10000, 11500, 13000.
-NS_CSV="${NS_CSV:-7000,8500,10000,11500,13000}"
+# NS_CSV: comma-separated list of N_FILES values to benchmark
+NS_CSV="${NS_CSV:-2000,4000,6000,8000,10000}"
 IFS=',' read -r -a NS_LIST <<< "$NS_CSV"
 
 # Pre-generated corpus directory (skip generation if set and exists)
@@ -152,30 +116,13 @@ PAD_WIDTH="${#CORPUS_N}"
 CSV="$OUTROOT/metrics.csv"
 echo "variant,n_files,file_size,P,rep,seconds" > "$CSV"
 
-echo "================================================================"
-echo " Text-Search Benchmark (validated, equal-footing TALM vs GHC)"
-echo "================================================================"
-echo " Workload params:"
-echo "   FILE_SIZE=$FILE_SIZE  KEYWORD=$KEYWORD  N values: ${NS_LIST[*]}"
-echo "   N_FUNCS=$N_FUNCS  reps=$REPS"
-echo ""
-echo " Methodological equivalence preserved:"
-echo "   * RTS allocation: -A$TALM_RTS_A applied to TALM internal RTS *and*"
-echo "     to every GHC binary invocation (seq baseline, Strategies, par/pseq)"
-echo "   * Threads: TALM uses SUPERS_RTS_N=P; GHC uses +RTS -N\$P"
-echo "   * Core pinning: taskset -c 0..(P-1) on every execution (TALM and GHC)"
-echo "   * Repetitions: $REPS measured per (variant, N, P) with discarded warmups"
-echo "   * Variants compared: TALM/Trebuchet, GHC Strategies (parMap rdeepseq),"
-echo "     GHC par/pseq (manual sparking)"
-echo "   * Identical compile flags: -O2 (GHC -threaded for parallel variants)"
-echo "   * Identical input corpus and identical keyword for every variant"
-echo ""
-echo " P sweep: ${PS[*]}"
-echo "   physical cores 0..$((N_PHYS_CORES-1))  (no HT)"
-echo "   P > $N_PHYS_CORES => OVERSUBSCRIPTION (HT siblings $N_PHYS_CORES..$((N_LOG_CORES-1)))"
-echo ""
+echo "========================================="
+echo " Text-Search Benchmark (validated)"
+echo " FILE_SIZE=$FILE_SIZE  KEYWORD=$KEYWORD"
+echo " N values: ${NS_LIST[*]}"
+echo " P=${PS[*]}  reps=$REPS  TALM_RTS_A=$TALM_RTS_A"
 echo " Output: $OUTROOT"
-echo "================================================================"
+echo "========================================="
 
 # ===== Loop over N values =====
 for N_FILES in "${NS_LIST[@]}"; do
@@ -193,12 +140,12 @@ for N_FILES in "${NS_LIST[@]}"; do
   # --- Build TALM ---
   TDIR="$NDIR/talm"
   mkdir -p "$TDIR/supers"
-  "$PY3" "$GEN_TALM" --out "$TDIR/ts.hss" --n-files "$N_FILES" \
+  "$PY3" "$GEN_TALM" --out "$TDIR/ts.hsk" --n-files "$N_FILES" \
       --keyword "$KEYWORD" --corpus-dir "$CORPUS" --n-funcs "$N_FUNCS" --pad-width "$PAD_WIDTH"
-  "$CODEGEN" "$TDIR/ts.hss" > "$TDIR/ts.fl" 2>/dev/null
+  "$CODEGEN" "$TDIR/ts.hsk" > "$TDIR/ts.fl" 2>/dev/null
   INJECT_FILE="$TDIR/supers_inject.hs"
   SUPERS_INJECT_FILE="$INJECT_FILE" SUPERS_GHC_PACKAGES="bytestring" \
-      CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/ts.hss" "$TDIR/supers/Supers.hs"
+      CFLAGS="$SUPERS_CFLAGS" bash "$BUILD_SUPERS" "$TDIR/ts.hsk" "$TDIR/supers/Supers.hs"
   LIBSUP="$TDIR/supers/libsupers.so"
   LIBDIR="$(dirname "$LIBSUP")"
   GHCDEPS="$LIBDIR/ghc-deps"
@@ -219,56 +166,25 @@ for N_FILES in "${NS_LIST[@]}"; do
   "$GHC_BIN" -O2 -threaded -rtsopts -package time -package bytestring -package parallel \
       -outputdir "$PDIR/obj" -o "$PDIR/ts" "$PDIR/ts.hs" >/dev/null 2>&1
 
-  # --- Build pure-sequential baseline (NO -threaded, NO -package parallel) ---
-  # This is the speedup denominator: a Haskell program compiled as a normal
-  # single-threaded executable, with no spark/strategies infrastructure linked
-  # in. Per the paper's stated methodology: "the sequential baseline in every
-  # case is a single-threaded GHC executable compiled without -fPIC or -dynamic".
-  SDIR="$NDIR/seq"
-  mkdir -p "$SDIR/obj"
-  "$PY3" "$GEN_SEQ" --out "$SDIR/ts.hs" --n-files "$N_FILES" \
-      --keyword "$KEYWORD" --corpus-dir "$CORPUS" --pad-width "$PAD_WIDTH"
-  "$GHC_BIN" -O2 -rtsopts -package time -package bytestring \
-      -outputdir "$SDIR/obj" -o "$SDIR/ts" "$SDIR/ts.hs" >/dev/null 2>&1
-
   echo "  Built all variants for N=$N_FILES"
 
-  # ===== Sequential baseline =====
-  # Pure-sequential binary (no -threaded). Single capability, no spark/strategy
-  # overhead. This is the canonical Haskell sequential T_seq denominator;
-  # speedup of every parallel variant is computed as T_seq / T_parallel(P).
+  # ===== Sequential baseline (P=1) =====
   echo ""
-  echo "  ---- Sequential Baseline (pure GHC; cores: $(pin_cores 1); $(pin_tag 1)) ----"
-  CORES_1="$(pin_cores 1)"
+  echo "  ---- Sequential Baseline (P=1) ----"
   for ((rep=1; rep<=REPS; rep++)); do
     warm_cache "$CORPUS" "$N_FILES"
-    OUT="$SDIR/out_seq_r${rep}.txt"
-    taskset -c "$CORES_1" "$SDIR/ts" +RTS -A"$TALM_RTS_A" -RTS >"$OUT" 2>/dev/null
+    OUT="$GDIR/out_seq_r${rep}.txt"
+    "$GDIR/ts" +RTS -N1 -RTS >"$OUT" 2>/dev/null
     secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
     echo "  SEQ      N=$N_FILES P=1 rep=$rep -> ${secs}s"
     validate "Sequential N=$N_FILES P=1 rep=$rep" "$OUT" "$EXPECTED"
     echo "seq,$N_FILES,$FILE_SIZE,1,$rep,$secs" >> "$CSV"
   done
 
-  # ===== Parallel benchmarks =====
+  # ===== Parallel benchmarks (P>=2) =====
   for P in "${PS[@]}"; do
-    if [[ "$P" -gt "$N_PHYS_CORES" && "$OS_BANNER_SHOWN" -eq 0 ]]; then
-      echo ""
-      echo "  ################################################################"
-      echo "  ##  OVERSUBSCRIPTION BEGINS HERE                              ##"
-      echo "  ##  Next P values exceed $N_PHYS_CORES physical cores; HT siblings"
-      echo "  ##  (cores $N_PHYS_CORES..$((N_LOG_CORES-1))) are now used.            ##"
-      echo "  ##  Below this line, runtime numbers should be interpreted    ##"
-      echo "  ##  under SMT contention, not pure physical-core scaling.     ##"
-      echo "  ################################################################"
-      OS_BANNER_SHOWN=1
-    fi
-
-    CORES_P="$(pin_cores "$P")"
-    PIN_TAG="$(pin_tag "$P")"
-
     echo ""
-    echo "  ---- P=$P  (cores: $CORES_P; $PIN_TAG) ----"
+    echo "  ---- P=$P ----"
 
     # --- TALM ---
     pushd "$ASM_ROOT" >/dev/null
@@ -285,7 +201,7 @@ for N_FILES in "${NS_LIST[@]}"; do
       for attempt in 1 2 3; do
         set +e
         SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-          taskset -c "$CORES_P" "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
+          "$INTERP" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
         rc=$?
         set -e
         if [[ $rc -eq 0 ]]; then
@@ -304,7 +220,7 @@ for N_FILES in "${NS_LIST[@]}"; do
     for ((rep=1; rep<=REPS; rep++)); do
       warm_cache "$CORPUS" "$N_FILES"
       OUT="$GDIR/out_P${P}_r${rep}.txt"
-      taskset -c "$CORES_P" "$GDIR/ts" +RTS -N"$P" -A"$TALM_RTS_A" -RTS >"$OUT" 2>/dev/null
+      "$GDIR/ts" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
       echo "  GHC-Str  N=$N_FILES P=$P rep=$rep -> ${secs}s"
       validate "GHC-Strategies N=$N_FILES P=$P rep=$rep" "$OUT" "$EXPECTED"
@@ -315,7 +231,7 @@ for N_FILES in "${NS_LIST[@]}"; do
     for ((rep=1; rep<=REPS; rep++)); do
       warm_cache "$CORPUS" "$N_FILES"
       OUT="$PDIR/out_P${P}_r${rep}.txt"
-      taskset -c "$CORES_P" "$PDIR/ts" +RTS -N"$P" -A"$TALM_RTS_A" -RTS >"$OUT" 2>/dev/null
+      "$PDIR/ts" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
       echo "  GHC-PP   N=$N_FILES P=$P rep=$rep -> ${secs}s"
       validate "GHC-par/pseq N=$N_FILES P=$P rep=$rep" "$OUT" "$EXPECTED"

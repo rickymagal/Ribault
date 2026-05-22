@@ -3,126 +3,100 @@
 """
 Generate sequential graph coloring baseline (no parallelism).
 
-Same IntMap/IntSet greedy algorithm as GHC strategies, but purely
-sequential: build graph, color all vertices in order, report result.
-This is the shared baseline for computing speedup of all variants.
+Uses the same LCG hash-based edge test and IntMap/IntSet greedy
+algorithm as the TALM superinstruction for a fair comparison.
 """
 
 import argparse
 import os
 
-TMPL = r"""{-# LANGUAGE BangPatterns #-}
--- Auto-generated: Graph Coloring Sequential Baseline
--- N=__N__  EDGE_PROB=__EDGE_PROB__  SEED=__SEED__
+def emit(path, n, edge_prob, seed):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    eps_int = int(edge_prob * 1000000)
 
-import Control.DeepSeq (NFData(..), deepseq, force)
-import Data.Time.Clock (getCurrentTime, diffUTCTime)
+    src = f"""\
+{{-# LANGUAGE BangPatterns #-}}
+-- Auto-generated: Graph Coloring Sequential Baseline
+-- N={n}  EDGE_PROB={edge_prob}  SEED={seed}
+
 import Data.IntMap.Strict (IntMap)
 import qualified Data.IntMap.Strict as IM
 import Data.IntSet (IntSet)
 import qualified Data.IntSet as IS
-import Data.List (foldl')
-import Data.Bits (shiftR)
 import Data.Word (Word64)
+import Data.Bits (shiftR, (.&.))
+import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout)
 
-numVertices, seed :: Int
-numVertices = __N__
-seed = __SEED__
+numVertices, rngSeed, edgeProbScaled :: Int
+numVertices = {n}
+rngSeed = {seed}
+edgeProbScaled = {eps_int}
 
-edgeProb :: Double
-edgeProb = __EDGE_PROB__
-
-type RNG = Word64
-
-initRNG :: Int -> RNG
-initRNG s = fromIntegral s
-
-nextRNG :: RNG -> (Double, RNG)
-nextRNG !r =
-  let a = 6364136223846793005 :: Word64
+hasEdge :: Int -> Int -> Bool
+hasEdge !u !v =
+  let r0 = fromIntegral rngSeed + fromIntegral u * 31337 + fromIntegral v * 7919 :: Word64
+      a = 6364136223846793005 :: Word64
       c = 1442695040888963407 :: Word64
-      r' = a * r + c
-      val = fromIntegral (r' `shiftR` 33) / 4294967295.0
-  in (val, r')
+      r' = a * r0 + c
+      rVal = fromIntegral (shiftR r' 33 .&. 0xFFFFF) :: Int
+  in rVal < edgeProbScaled
 
-type Graph = IntMap IntSet
+isNeighbor :: Int -> Int -> Bool
+isNeighbor u v = hasEdge u v || hasEdge v u
 
-generateGraph :: Int -> Double -> Int -> Graph
-generateGraph n p s = foldl' addVertex IM.empty [0..n-1]
-  where
-    addVertex !g !v =
-      let ns = generateNeighbors v (initRNG (s + v * 31337))
-      in IM.insert v ns g
-    generateNeighbors v rng0 = go (v + 1) rng0 IS.empty
-      where
-        go !u !rng !acc
-          | u >= n = acc
-          | otherwise =
-              let (r, rng') = nextRNG rng
-              in if r < p
-                 then go (u + 1) rng' (IS.insert u acc)
-                 else go (u + 1) rng' acc
-
-symmetrize :: Graph -> Graph
-symmetrize g = IM.foldlWithKey' addReverse g g
-  where
-    addReverse !acc !v !ns =
-      IS.foldl' (\a u -> IM.adjust (IS.insert v) u a) acc ns
-
-type Coloring = IntMap Int
+buildAdj :: Int -> IntSet
+buildAdj !v = IS.fromList [u | u <- [0..numVertices-1], u /= v, isNeighbor u v]
 
 smallestMissing :: IntSet -> Int
-smallestMissing s = go 0
-  where go !c = if IS.member c s then go (c + 1) else c
+smallestMissing !s = go 0
+  where go !c = if IS.member c s then go (c+1) else c
 
-getNeighbors :: Graph -> Int -> IntSet
-getNeighbors g v = IM.findWithDefault IS.empty v g
-
-greedyColor :: Graph -> Coloring -> Int -> Int
-greedyColor g col v =
-  let ns = getNeighbors g v
-      usedColors = IS.fromList
-        [ c | u <- IS.toList ns, Just c <- [IM.lookup u col] ]
-  in smallestMissing usedColors
-
--- Color ALL vertices sequentially (single pass, no chunking)
-colorAll :: Graph -> [Int] -> Coloring
-colorAll g vs = foldl' colorOne IM.empty vs
+colorAll :: IntMap IntSet -> [Int] -> IntMap Int
+colorAll !adjMap = go IM.empty
   where
-    colorOne !col !v = IM.insert v (greedyColor g col v) col
+    go !colMap [] = colMap
+    go !colMap (v:vs) =
+      let ns = IM.findWithDefault IS.empty v adjMap
+          usedColors = IS.fromList [c | u <- IS.toList ns, Just c <- [IM.lookup u colMap]]
+          newColor = smallestMissing usedColors
+      in newColor `seq` go (IM.insert v newColor colMap) vs
 
-validateColoring :: Graph -> Coloring -> Bool
-validateColoring g col = IM.foldlWithKey' chk True g
+validateColoring :: IntMap IntSet -> IntMap Int -> Bool
+validateColoring adjMap coloring = IM.foldlWithKey' chk True adjMap
   where
     chk !acc !v !ns
       | not acc   = False
       | otherwise =
-          let myC = IM.findWithDefault (-1) v col
-          in all (\u -> IM.lookup u col /= Just myC) (IS.toList ns)
+          let myC = IM.findWithDefault (-1) v coloring
+          in all (\\u -> IM.lookup u coloring /= Just myC) (IS.toList ns)
 
-countColors :: Coloring -> Int
+countColors :: IntMap Int -> Int
 countColors col = IS.size (IS.fromList (IM.elems col))
 
 main :: IO ()
 main = do
-  let !g = force (symmetrize (generateGraph numVertices edgeProb seed))
-  g `deepseq` return ()
-
   t0 <- getCurrentTime
-  let !coloring = force (colorAll g [0..numVertices-1])
-  coloring `deepseq` return ()
+  let !adjMap = IM.fromList [(v, buildAdj v) | v <- [0..numVertices-1]]
+      !coloring = colorAll adjMap [0..numVertices-1]
+      !maxColor = if IM.null coloring then 0 else maximum (IM.elems coloring)
+      !nColored = IM.size coloring
+  maxColor `seq` nColored `seq` return ()
   t1 <- getCurrentTime
 
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
-      colors = countColors coloring
-      valid = validateColoring g coloring
+      colors = maxColor + 1
+      valid = validateColoring adjMap coloring
 
   putStrLn $ "COLORS=" ++ show colors
   putStrLn $ "VALID=" ++ show valid
   putStrLn $ "RUNTIME_SEC=" ++ show secs
   hFlush stdout
 """
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(src)
+    print(f"[gen_gc_seq] wrote {path} (N={n}, edge_prob={edge_prob})")
 
 
 def main():
@@ -132,15 +106,7 @@ def main():
     ap.add_argument("--edge-prob", type=float, default=0.001)
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
-
-    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    src = (TMPL
-           .replace("__N__", str(args.N))
-           .replace("__EDGE_PROB__", str(args.edge_prob))
-           .replace("__SEED__", str(args.seed)))
-    with open(args.out, "w") as f:
-        f.write(src)
-    print(f"[gen_gc_seq] wrote {args.out} (N={args.N}, edge_prob={args.edge_prob})")
+    emit(args.out, args.N, args.edge_prob, args.seed)
 
 
 if __name__ == "__main__":

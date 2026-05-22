@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure UTF-8 locale: supersgen + ribault emit Unicode chars (en-dashes etc.)
+# in comments; default POSIX locale on some servers cannot encode these.
+export LANG="${LANG:-C.utf8}"
+export LC_ALL="${LC_ALL:-C.utf8}"
+
 # ============================================================
 # Validated Attention benchmark with file-IO data pipeline
 #
@@ -35,31 +40,41 @@ GEN_SEQ="$REPO/scripts/attention/gen_hs_sequential.py"
 GEN_STRAT="$REPO/scripts/attention/gen_hs_strategies.py"
 GEN_PARPSEQ="$REPO/scripts/attention/gen_hs_parpseq.py"
 
-REPS=${REPS:-5}
+REPS=${REPS:-7}
 WARMUP=${WARMUP:-1}
 N_FUNCS=${N_FUNCS:-14}
 D=${D:-512}
-PS=(${PS:-2 4 8 16})
+PS=(${PS:-1 2 4 8 16 24 32 40 48})
 TALM_RTS_A=${TALM_RTS_A:-256m}
 
 NS=(${NS:-6144 6656 7168 7680 8192})
 
 # ---- Core pinning ----
-# Use physical cores only (no hyperthreads) for deterministic performance.
 # On Intel Xeon Gold 5412U: cores 0-23 are physical, 24-47 are HT siblings.
-# Detect: core N and core N+n_physical share the same physical core.
+# For P <= N_PHYS_CORES: pinning is strictly within physical cores (no HT).
+# For P >  N_PHYS_CORES: pinning extends into HT siblings (OVERSUBSCRIPTION).
 N_PHYS_CORES=${N_PHYS_CORES:-24}
+N_LOG_CORES=${N_LOG_CORES:-48}
 
-# Build taskset CPU list for P cores: "0-$((P-1))"
 pin_cores() {
   local p="$1"
-  if (( p > N_PHYS_CORES )); then
-    # If P > physical cores, use all physical cores (no HT)
-    echo "0-$((N_PHYS_CORES - 1))"
+  if (( p > N_LOG_CORES )); then
+    echo "0-$((N_LOG_CORES - 1))"
   else
     echo "0-$((p - 1))"
   fi
 }
+
+pin_tag() {
+  local p="$1"
+  if (( p <= N_PHYS_CORES )); then
+    echo "physical, cores 0-$((p-1)), no HT"
+  else
+    local ht=$(( p - N_PHYS_CORES ))
+    echo "oversubscribed, cores 0-$((p-1)) = $N_PHYS_CORES phys + $ht HT siblings"
+  fi
+}
+OS_BANNER_SHOWN=0
 
 # Detect GHC
 GHC_BIN="${GHC:-ghc}"
@@ -100,15 +115,30 @@ validate() {
 CSV="$OUTROOT/metrics.csv"
 echo "variant,N,D,n_funcs,P,rep,seconds" > "$CSV"
 
-echo "========================================="
-echo " Attention Data Pipeline Benchmark"
-echo " N values: ${NS[*]}"
-echo " D=$D  N_FUNCS=$N_FUNCS  P=${PS[*]}"
-echo " reps=$REPS  warmup=$WARMUP"
-echo " core pinning: physical cores 0-$((N_PHYS_CORES-1))"
-echo " TALM_RTS_A=$TALM_RTS_A"
+echo "================================================================"
+echo " Attention Data Pipeline Benchmark (equal-footing TALM vs GHC)"
+echo "================================================================"
+echo " Workload params:"
+echo "   N values: ${NS[*]}  D=$D  N_FUNCS=$N_FUNCS"
+echo "   reps=$REPS  warmup=$WARMUP (discarded)"
+echo ""
+echo " Methodological equivalence preserved:"
+echo "   * RTS allocation: -A$TALM_RTS_A applied to TALM internal RTS *and*"
+echo "     to every GHC binary invocation (seq baseline, Strategies, par/pseq)"
+echo "   * Threads: TALM uses SUPERS_RTS_N=P; GHC uses +RTS -N\$P"
+echo "   * Core pinning: taskset -c 0..(P-1) on every execution (TALM and GHC)"
+echo "   * Repetitions: $REPS measured per (variant, N, P) with $WARMUP warmup discarded"
+echo "   * Variants compared: TALM/Trebuchet, GHC Strategies (parMap rdeepseq),"
+echo "     GHC par/pseq (manual sparking)"
+echo "   * Identical compile flags: -O2 (GHC -threaded for parallel variants)"
+echo "   * Identical Q/K/V matrices for every variant (read from disk)"
+echo ""
+echo " P sweep: ${PS[*]}"
+echo "   physical cores 0..$((N_PHYS_CORES-1))  (no HT)"
+echo "   P > $N_PHYS_CORES => OVERSUBSCRIPTION (HT siblings $N_PHYS_CORES..$((N_LOG_CORES-1)))"
+echo ""
 echo " Output: $OUTROOT"
-echo "========================================="
+echo "================================================================"
 
 for N in "${NS[@]}"; do
   echo ""
@@ -139,11 +169,13 @@ for N in "${NS[@]}"; do
   LIBDIR="$(dirname "$LIBSUP")"
   GHCDEPS="$LIBDIR/ghc-deps"
 
-  # --- Build GHC Sequential ---
+  # --- Build GHC Sequential (pure: no -threaded, no -package parallel) ---
+  # This is the canonical Haskell sequential denominator (T_seq). All parallel
+  # speedups are computed as T_seq / T_parallel(P).
   SDIR="$NDIR/seq"
   mkdir -p "$SDIR/obj"
   "$PY3" "$GEN_SEQ" --out "$SDIR/attn.hs" --N "$N" --D "$D" --n-funcs "$N_FUNCS" --data-dir "$DATADIR"
-  "$GHC_BIN" -O2 -threaded -rtsopts -package time -package bytestring \
+  "$GHC_BIN" -O2 -rtsopts -package time -package bytestring \
       -outputdir "$SDIR/obj" -o "$SDIR/attn" "$SDIR/attn.hs" >/dev/null 2>&1
 
   # --- Build GHC Strategies ---
@@ -163,20 +195,20 @@ for N in "${NS[@]}"; do
   echo "  Built all variants for N=$N"
 
   # ===== Sequential baseline (P=1) =====
-  echo ""
-  echo "  ---- Sequential Baseline (P=1) ----"
-  EXPECTED=""
   CORES_1="$(pin_cores 1)"
+  echo ""
+  echo "  ---- Sequential Baseline (P=1; cores: $CORES_1; $(pin_tag 1)) ----"
+  EXPECTED=""
 
   # Warmup
   for ((w=1; w<=WARMUP; w++)); do
     echo "  SEQ      N=$N P=1 warmup=$w (discarded)"
-    taskset -c "$CORES_1" "$SDIR/attn" +RTS -N1 -RTS >/dev/null 2>/dev/null
+    taskset -c "$CORES_1" "$SDIR/attn" +RTS -A"$TALM_RTS_A" -RTS >/dev/null 2>/dev/null
   done
 
   for ((rep=1; rep<=REPS; rep++)); do
     OUT="$SDIR/out_r${rep}.txt"
-    taskset -c "$CORES_1" "$SDIR/attn" +RTS -N1 -RTS >"$OUT" 2>/dev/null
+    taskset -c "$CORES_1" "$SDIR/attn" +RTS -A"$TALM_RTS_A" -RTS >"$OUT" 2>/dev/null
     secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
     cs="$(awk -F= '/^CHECKSUM=/{print $2}' "$OUT")"
     if [[ -z "$EXPECTED" ]]; then
@@ -189,11 +221,24 @@ for N in "${NS[@]}"; do
     echo "seq,$N,$D,$N_FUNCS,1,$rep,$secs" >> "$CSV"
   done
 
-  # ===== Parallel benchmarks (P>=2) =====
+  # ===== Parallel benchmarks =====
   for P in "${PS[@]}"; do
-    echo ""
-    echo "  ---- P=$P ----"
+    if [[ "$P" -gt "$N_PHYS_CORES" && "$OS_BANNER_SHOWN" -eq 0 ]]; then
+      echo ""
+      echo "  ################################################################"
+      echo "  ##  OVERSUBSCRIPTION BEGINS HERE                              ##"
+      echo "  ##  Next P values exceed $N_PHYS_CORES physical cores; HT siblings"
+      echo "  ##  (cores $N_PHYS_CORES..$((N_LOG_CORES-1))) are now used.            ##"
+      echo "  ##  Below this line, runtime numbers should be interpreted    ##"
+      echo "  ##  under SMT contention, not pure physical-core scaling.     ##"
+      echo "  ################################################################"
+      OS_BANNER_SHOWN=1
+    fi
+
     CORES_P="$(pin_cores "$P")"
+    PIN_TAG="$(pin_tag "$P")"
+    echo ""
+    echo "  ---- P=$P  (cores: $CORES_P; $PIN_TAG) ----"
 
     # --- TALM ---
     pushd "$ASM_ROOT" >/dev/null
@@ -237,12 +282,12 @@ for N in "${NS[@]}"; do
     # Warmup
     for ((w=1; w<=WARMUP; w++)); do
       echo "  GHC-Str  N=$N P=$P warmup=$w (discarded)"
-      taskset -c "$CORES_P" "$GDIR/attn" +RTS -N"$P" -RTS >/dev/null 2>/dev/null
+      taskset -c "$CORES_P" "$GDIR/attn" +RTS -N"$P" -A"$TALM_RTS_A" -RTS >/dev/null 2>/dev/null
     done
 
     for ((rep=1; rep<=REPS; rep++)); do
       OUT="$GDIR/out_P${P}_r${rep}.txt"
-      taskset -c "$CORES_P" "$GDIR/attn" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      taskset -c "$CORES_P" "$GDIR/attn" +RTS -N"$P" -A"$TALM_RTS_A" -RTS >"$OUT" 2>/dev/null
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
       echo "  GHC-Str  N=$N P=$P rep=$rep -> ${secs}s"
       validate "GHC-Strategies N=$N P=$P rep=$rep" "$OUT" "$EXPECTED"
@@ -253,12 +298,12 @@ for N in "${NS[@]}"; do
     # Warmup
     for ((w=1; w<=WARMUP; w++)); do
       echo "  GHC-PP   N=$N P=$P warmup=$w (discarded)"
-      taskset -c "$CORES_P" "$PDIR/attn" +RTS -N"$P" -RTS >/dev/null 2>/dev/null
+      taskset -c "$CORES_P" "$PDIR/attn" +RTS -N"$P" -A"$TALM_RTS_A" -RTS >/dev/null 2>/dev/null
     done
 
     for ((rep=1; rep<=REPS; rep++)); do
       OUT="$PDIR/out_P${P}_r${rep}.txt"
-      taskset -c "$CORES_P" "$PDIR/attn" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      taskset -c "$CORES_P" "$PDIR/attn" +RTS -N"$P" -A"$TALM_RTS_A" -RTS >"$OUT" 2>/dev/null
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
       echo "  GHC-PP   N=$N P=$P rep=$rep -> ${secs}s"
       validate "GHC-par/pseq N=$N P=$P rep=$rep" "$OUT" "$EXPECTED"

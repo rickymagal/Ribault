@@ -87,6 +87,56 @@ def gen_merge_code(n_chunks: int) -> tuple:
     return lines, current[0]
 
 
+def color_chunk_body(n, edge_prob, seed, shift):
+    """Return the shared super body for colorChunk (between #BEGINSUPER / #ENDSUPER)."""
+    eps_int = int(edge_prob * 1000000)
+    return f"""\
+    result =
+      let
+        shift = {shift} :: Int
+        n_vertices = {n} :: Int
+        edge_prob_scaled = {eps_int} :: Int
+        rng_seed = {seed} :: Int
+
+        start = fromIntegral packed `div` shift :: Int
+        count = fromIntegral packed `mod` shift :: Int
+        endV = start + count :: Int
+
+        -- LCG RNG for deterministic graph generation (Word64, unboxed)
+        hasEdge u v =
+          let r0 = fromIntegral rng_seed + fromIntegral u * 31337 + fromIntegral v * 7919 :: Word64
+              a = 6364136223846793005 :: Word64
+              c = 1442695040888963407 :: Word64
+              r' = a * r0 + c
+              rVal = fromIntegral (shiftR r' 33 .&. 0xFFFFF) :: Int
+          in rVal < edge_prob_scaled
+
+        isNeighbor u v = hasEdge u v || hasEdge v u
+
+        -- Pre-compute adjacency set for each chunk vertex (O(chunk_size * N))
+        buildAdj !v = IS.fromList [u | u <- [0..n_vertices-1], u /= v, isNeighbor u v]
+        adjMap = IM.fromList [(v, buildAdj v) | v <- [start..endV-1]]
+        getNeighbors v = IM.findWithDefault IS.empty v adjMap
+
+        -- Smallest color not in the used set (IntSet)
+        smallestMissing !used = go 0
+          where go !c = if IS.member c used then go (c+1) else c
+
+        -- Greedy coloring with IntMap: iterate only actual neighbors
+        colorAll [] !colMap = colMap
+        colorAll (v:vs) !colMap =
+          let ns = getNeighbors v
+              usedColors = IS.fromList [c | u <- IS.toList ns, Just c <- [IM.lookup u colMap]]
+              newColor = smallestMissing usedColors
+          in newColor `seq` colorAll vs (IM.insert v newColor colMap)
+
+        coloring = colorAll [start..endV-1] IM.empty
+
+        maxColor = if IM.null coloring then 0 else maximum (IM.elems coloring)
+        nColored = IM.size coloring
+      in fromIntegral (maxColor * shift + nColored) :: Int64"""
+
+
 def emit_hsk(path: str, n: int, p: int, edge_prob: float, seed: int) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
@@ -97,12 +147,26 @@ def emit_hsk(path: str, n: int, p: int, edge_prob: float, seed: int) -> None:
     # We pack (start, count) into a single Int64: start * SHIFT + count
     shift = n + 1
 
-    # Generate chunk call lines
+    # Generate P separate colorChunk super definitions so each becomes
+    # its own super instruction in the dataflow graph, allowing the
+    # auto-placer to assign them to different PEs for true parallelism.
+    body = color_chunk_body(n, edge_prob, seed, shift)
+    super_defs = []
+    for i in range(n_chunks):
+        super_defs.append(f"""\
+colorChunk_{i} packed =
+  super single input (packed) output (result)
+#BEGINSUPER
+{body}
+#ENDSUPER;
+""")
+
+    # Generate chunk call lines (each calls its own super)
     chunk_lines = []
     for i, (start, count) in enumerate(chunks):
         kw = "let" if i == 0 else "in let"
         packed = start * shift + count
-        chunk_lines.append(f"  {kw} c{i} = colorChunk {packed}")
+        chunk_lines.append(f"  {kw} c{i} = colorChunk_{i} {packed}")
 
     # Generate merge tree
     merge_lines, final_var = gen_merge_code(n_chunks)
@@ -115,7 +179,7 @@ def emit_hsk(path: str, n: int, p: int, edge_prob: float, seed: int) -> None:
     # Generate the HSK file
     hsk = f"""-- graph_coloring.hss (auto-generated)
 -- N={n}  P={p}  edge_prob={edge_prob}  seed={seed}
--- {n_chunks} chunks for parallel coloring
+-- {n_chunks} chunks for parallel coloring (one super per chunk)
 
 -- Parameters available to supers
 -- N_VERTICES = {n}
@@ -123,60 +187,12 @@ def emit_hsk(path: str, n: int, p: int, edge_prob: float, seed: int) -> None:
 -- SEED = {seed}
 -- SHIFT = {shift}
 
--- SUPER: Color a chunk of vertices using greedy algorithm.
--- Input: packed = start * SHIFT + count
--- Output: packed = maxColor * SHIFT + nColored
-colorChunk packed =
-  super single input (packed) output (result)
-#BEGINSUPER
-    result =
-      let
-        shift = {shift} :: Int
-        n_vertices = {n} :: Int
-        edge_prob_scaled = {int(edge_prob * 1000000)} :: Int
-        rng_seed = {seed} :: Int
+"""
+    # Emit P separate colorChunk super definitions
+    for sd in super_defs:
+        hsk += sd + "\n"
 
-        start = fromIntegral packed `div` shift :: Int
-        count = fromIntegral packed `mod` shift :: Int
-        endV = start + count :: Int
-
-        -- LCG RNG for deterministic graph generation
-        hasEdge u v =
-          let r0 = toInteger rng_seed + toInteger u * 31337 + toInteger v * 7919
-              lcgA = 6364136223846793005 :: Integer
-              lcgC = 1442695040888963407 :: Integer
-              r' = (lcgA * r0 + lcgC) `mod` (2^(63 :: Int))
-              rVal = (r' `div` (2^(33 :: Int))) `mod` 1000000
-          in rVal < toInteger edge_prob_scaled
-
-        isNeighbor u v = hasEdge u v || hasEdge v u
-
-        -- Association-list lookup (O(n) per call --intentionally list-based)
-        lookupColor _ [] = Nothing
-        lookupColor v ((u,c):rest) = if u == v then Just c else lookupColor v rest
-
-        -- Smallest color not in the used list
-        smallestMissing used = go 0
-          where go c = if c `elem` used then go (c+1) else c
-
-        -- Greedy coloring: for each vertex, check ALL N vertices for neighbors,
-        -- then look up each neighbor's color in the association list.
-        -- This is O(N) per vertex for neighbor scan + O(degree * chunk_size) for lookups,
-        -- giving O(chunk_size^2 * degree) total --the dominant parallel work.
-        colorAll [] colList = colList
-        colorAll (v:vs) colList =
-          let usedColors = [c | u <- [0..n_vertices-1], u /= v, isNeighbor u v,
-                                Just c <- [lookupColor u colList]]
-              newColor = smallestMissing usedColors
-          in newColor `seq` colorAll vs ((v, newColor) : colList)
-
-        coloring = colorAll [start..endV-1] []
-
-        maxColor = if null coloring then 0 else maximum (map snd coloring)
-        nColored = length coloring
-      in fromIntegral (maxColor * shift + nColored) :: Int64
-#ENDSUPER;
-
+    hsk += f"""\
 -- SUPER: Merge two partial coloring results.
 -- Input: list of two packed results [packed1, packed2]
 -- Output: merged packed result

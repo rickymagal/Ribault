@@ -1,32 +1,31 @@
 #!/usr/bin/env python3
-"""Generate GHC Strategies (parList rseq) .hs for LCS wavefront benchmark.
+"""Generate a monad-par LCS wavefront benchmark (.hs).
 
-Same blocked wavefront and per-block compute as TALM-Hs / monad-par /
-Repa (Data.Vector.Unboxed.Mutable). Differences vs other variants are
-isolated to the inter-block scheduling layer:
-  * STRAT here: anti-diagonal barrier via `using` parList rseq sparks
-    (GHC RTS spark queue).
-  * TALM-Hs: explicit firing rule on Trebuchet (C runtime, FFI).
-  * Repa: anti-diagonal barrier via R.computeP (Repa thread pool).
+Uses Control.Monad.Par with IVars to express the wavefront dependencies
+explicitly: block (i,j) waits on IVars from (i-1,j) and (i,j-1) before
+firing, signals its own IVar when done. No diagonal barriers — pure
+data-driven firing, conceptually equivalent to TALM's firing rule.
 
-Memory: O((DIM_ROWS + DIM_COLS) * N) boundary arrays, identical layout
-to the other variants. Supports rectangular grids.
+Compute backend: Haskell-with-raw-pointers (same as STRAT/PARPSEQ/TALM-Hs),
+for fair language-level comparison.
 """
 
 import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (GHC Strategies parList rseq, Vector)
+
+HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (monad-par, IVar wavefront)
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
-import Control.Parallel.Strategies (using, parList, rseq)
+import Control.Monad (forM_, when, foldM)
+import Control.Monad.Par
 import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
-import Data.List (foldl')
 import qualified Data.Vector.Unboxed.Mutable as MV
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout)
 import System.IO.Unsafe (unsafePerformIO)
+import qualified Data.Map.Strict as Map
 
 -- ===== Constants =====
 
@@ -63,7 +62,9 @@ lcsGenSeq !rng0 len_ alpha = do
   rng' <- go 0 rng0
   return (arr, rng')
 
--- ===== Block computation (Data.Vector.Unboxed.Mutable, boundary arrays) =====
+-- ===== Block computation =====
+-- Same natural Haskell idiom as the Ribault Haskell super: mutable unboxed
+-- vector with read/write. Identical algorithm to TALM-Hs supers_inject.hs.
 
 computeBlock :: MV.IOVector Int -> MV.IOVector Int
              -> MV.IOVector Int -> MV.IOVector Int
@@ -124,7 +125,14 @@ computeBlock !sa !sb !hB !vB !bi !bj = do
             outerLoop cur prev (i + 1)
   outerLoop buf1 buf2 rowStart
 
--- ===== Pure wrapper for Strategies sparking =====
+-- ===== Wavefront via monad-par IVars =====
+--
+-- For each block (i,j), an IVar () serves as a "done" token. Block (i,j) is
+-- forked as a Par task that:
+--   1. Waits on IVars of (i-1, j) and (i, j-1) (whichever exist).
+--   2. Calls computeBlock (via unsafePerformIO since computeBlock is in IO).
+--   3. Puts () to its own IVar.
+-- The Par scheduler distributes ready tasks across capabilities.
 
 {-# NOINLINE evalBlock #-}
 evalBlock :: MV.IOVector Int -> MV.IOVector Int -> MV.IOVector Int -> MV.IOVector Int -> Int -> Int -> ()
@@ -132,75 +140,75 @@ evalBlock sa sb hB vB bi bj = unsafePerformIO $ do
   computeBlock sa sb hB vB bi bj
   return ()
 
--- ===== Wavefront with Strategies (parList rseq) =====
-
-wavefront :: MV.IOVector Int -> MV.IOVector Int -> MV.IOVector Int -> MV.IOVector Int -> IO ()
+wavefront :: MV.IOVector Int -> MV.IOVector Int
+          -> MV.IOVector Int -> MV.IOVector Int -> IO ()
 wavefront !sa !sb !hB !vB = do
-  let !dr = lcsDimRows
-      !dc = lcsDimCols
-  let loop !d
-        | d >= dr + dc - 1 = return ()
-        | otherwise = do
-            let blocks = [(i, d - i) | i <- [max 0 (d - dc + 1) .. min d (dr - 1)],
-                                        let j = d - i, j >= 0, j < dc]
-            let results = map (\(bi, bj) -> evalBlock sa sb hB vB bi bj) blocks
-                          `using` parList rseq
-            foldl' seq () results `seq` loop (d + 1)
-  loop 0
+  let dr = lcsDimRows
+      dc = lcsDimCols
+  runParIO $ do
+    -- Create an IVar for each block, indexed by (i, j).
+    let mkIVarFor (acc :: Map.Map (Int,Int) (IVar ())) (i, j) = do
+          v <- new
+          return (Map.insert (i, j) v acc)
+        coords = [(i, j) | i <- [0..dr-1], j <- [0..dc-1]]
+    ivars <- foldM mkIVarFor Map.empty coords
+    let getIV i j = ivars Map.! (i, j)
+    -- Fork each block as a Par task that waits on its dependencies.
+    forM_ coords $ \(i, j) -> fork $ do
+      when (i > 0) $ get (getIV (i-1) j) >> return ()
+      when (j > 0) $ get (getIV i (j-1)) >> return ()
+      let !() = evalBlock sa sb hB vB i j
+      put_ (getIV i j) ()
+    -- Wait for the last block.
+    get (getIV (dr-1) (dc-1))
 
 -- ===== Main =====
 
 main :: IO ()
 main = do
-  let !n = lcsSeqLen
-      !cols = n + 1
-  (seqA, rng1) <- lcsGenSeq lcsSeed n lcsAlpha
-  (seqB, _)    <- lcsGenSeq rng1    n lcsAlpha
+  (seqA, rng1) <- lcsGenSeq lcsSeed lcsSeqLen lcsAlpha
+  (seqB, _)    <- lcsGenSeq rng1    lcsSeqLen lcsAlpha
+  let !cols = lcsSeqLen + 1
   hBound <- MV.replicate ((lcsDimRows + 1) * cols) 0
   vBound <- MV.replicate ((lcsDimCols + 1) * cols) 0
+
   t0 <- getCurrentTime
   wavefront seqA seqB hBound vBound
-  !score <- MV.read hBound (lcsDimRows * cols + n)
   t1 <- getCurrentTime
   let secs = realToFrac (diffUTCTime t1 t0) :: Double
-  putStrLn $ "RESULT=" ++ show score
+  !score <- MV.read hBound (lcsDimRows * (lcsSeqLen + 1) + lcsSeqLen)
+  putStrLn $ "RESULT=" ++ show (score :: Int)
   putStrLn $ "RUNTIME_SEC=" ++ show secs
   hFlush stdout
 """
 
 
-def emit_hs(path, input_dir, dim_rows, dim_cols):
+def emit(path, input_dir, dim_rows, dim_cols):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-
     with open(os.path.join(input_dir, "params.txt")) as f:
         parts = f.read().split()
         seq_len = int(parts[0])
         alphabet = int(parts[1])
         seed = int(parts[2])
-
-    src = HS_TMPL
-    src = src.replace("__N__", str(seq_len))
-    src = src.replace("__ALPHA__", str(alphabet))
-    src = src.replace("__SEED__", str(seed))
-    src = src.replace("__DIM_ROWS__", str(dim_rows))
-    src = src.replace("__DIM_COLS__", str(dim_cols))
-
+    src = (HS_TMPL
+           .replace("__N__", str(seq_len))
+           .replace("__ALPHA__", str(alphabet))
+           .replace("__SEED__", str(seed))
+           .replace("__DIM_ROWS__", str(dim_rows))
+           .replace("__DIM_COLS__", str(dim_cols)))
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[gen_lcs_wf_strat] wrote {path}  (N={seq_len}, {dim_rows}x{dim_cols}, Vector)")
+    print(f"[gen_lcs_wf_monadpar] wrote {path}  (N={seq_len}, {dim_rows}x{dim_cols})")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--input-dir", required=True)
-    ap.add_argument("--dim-rows", type=int, default=None)
-    ap.add_argument("--dim-cols", type=int, default=None)
-    ap.add_argument("--dim", type=int, default=6)
+    ap.add_argument("--dim-rows", type=int, required=True)
+    ap.add_argument("--dim-cols", type=int, required=True)
     args = ap.parse_args()
-    dim_rows = args.dim_rows if args.dim_rows is not None else args.dim
-    dim_cols = args.dim_cols if args.dim_cols is not None else args.dim
-    emit_hs(args.out, args.input_dir, dim_rows, dim_cols)
+    emit(args.out, args.input_dir, args.dim_rows, args.dim_cols)
 
 
 if __name__ == "__main__":

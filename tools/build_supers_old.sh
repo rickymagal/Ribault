@@ -6,9 +6,9 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  tools/build_supers.sh <input.hss> <output/Supers.hs>
+  tools/build_supers.sh <input.hsk> <output/Supers.hs>
   tools/build_supers.sh
-    (auto: scan test/*.hss and generate+build test/supers/*/Supers.hs + libsupers.so)
+    (auto: scan test/*.hsk and generate+build test/supers/*/Supers.hs + libsupers.so)
 
 Environment:
   GHC                  (default: ghc)
@@ -258,18 +258,12 @@ inject_hs_io_init() {
     print $0
     if (!inserted_import && $0 ~ /import[[:space:]]+System\.IO\.Unsafe/) {
       print "import System.IO (hSetBuffering, hFlush, BufferMode(..), stdout, stderr)"
-      print "import Control.Concurrent (threadDelay)"
-      print "import qualified Control.Exception"
-      print "import qualified Data.List"
       inserted_import = 1
     }
   }
   END {
     if (!inserted_import) {
       print "import System.IO (hSetBuffering, hFlush, BufferMode(..), stdout, stderr)"
-      print "import Control.Concurrent (threadDelay)"
-      print "import qualified Control.Exception"
-      print "import qualified Data.List"
     }
   }
   ' "$hs" >"$tmp"
@@ -326,16 +320,11 @@ gen_super_wrappers_c() {
     while [[ "$n" -lt "$max" ]]; do
       echo "extern void s${n}(int64_t *in, int64_t *out) WEAK_FN;"
       echo "EXPORT_FN USED_FN void super${n}(oper_t **oper, oper_t *result) {"
-      # Supers may take up to 16 inputs. Iterate while non-NULL so any
-      # arity from 1..16 is forwarded correctly. Slots past the last
-      # valid operand are zeroed so the Haskell side never reads
-      # uninitialized memory.
-      echo "  int64_t in[64] = {0};"
+      echo "  int64_t in[2];"
       echo "  int64_t out[1];"
-      echo "  for (int _i = 0; _i < 64; ++_i) {"
-      echo "    if (oper[_i] == NULL) break;"
-      echo "    in[_i] = (int64_t)oper[_i]->value.li;"
-      echo "  }"
+      echo "  in[0] = (int64_t)oper[0]->value.li;"
+      echo "  in[1] = 0;"
+      echo "  if (oper[1] != NULL) { in[1] = (int64_t)oper[1]->value.li; }"
       echo "  if (s${n}) {"
       echo "    s${n}(in, out);"
       echo "    result[0].value.li = out[0];"
@@ -391,13 +380,6 @@ build_libsupers_so() {
   rr="$(repo_root)"
   local rts_init_src="$rr/tools/supers_rts_init.c"
   cflags="$cflags -I$rr/TALM/interp/include"
-
-  # Add RTS include dirs so gcc can find HsFFI.h
-  local rts_inc_dirs
-  rts_inc_dirs="$(ghc-pkg field rts include-dirs --simple-output 2>/dev/null || true)"
-  for d in $rts_inc_dirs; do
-    cflags="$cflags -I$d"
-  done
 
   local ghc_ver="${GHC_VER:-}"
   local ghc_libdir="${GHC_LIBDIR:-}"
@@ -568,17 +550,17 @@ generate_all() {
 
   local found=0
   shopt -s nullglob
-  for in_hsk in "$test_dir"/*.hss; do
+  for in_hsk in "$test_dir"/*.hsk; do
     found=1
     local base
-    base="$(basename "$in_hsk" .hss)"
+    base="$(basename "$in_hsk" .hsk)"
     local out_dir="$test_dir/supers/$base"
     local out_hs="$out_dir/Supers.hs"
     generate_one "$rr" "$in_hsk" "$out_hs" "$max"
   done
   shopt -u nullglob
 
-  [[ "$found" -eq 1 ]] || die "No .hss files found in $test_dir"
+  [[ "$found" -eq 1 ]] || die "No .hsk files found in $test_dir"
 }
 
 main() {

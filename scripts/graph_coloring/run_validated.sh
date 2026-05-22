@@ -16,7 +16,7 @@ set -euo pipefail
 #   - Sequential baseline (GHC Strategies P=1)
 #   - Parallel: TALM, GHC Strategies, GHC par/pseq at each P
 #   - GHC binaries rebuilt per P (chunk count = P, hardcoded)
-#   - TALM .hss rebuilt per P (chunk supers = P), supers shared
+#   - TALM .hsk rebuilt per P (chunk supers = P), supers shared
 # ============================================================
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -39,10 +39,10 @@ WARMUP=${WARMUP:-1}
 EDGE_PROB=${EDGE_PROB:-0.001}
 SEED=${SEED:-42}
 PS=(${PS:-2 4 8 16})
-TALM_RTS_A=${TALM_RTS_A:-64m}
+TALM_RTS_A=${TALM_RTS_A:-1g}
 SUPERS_RTS_N_OVERRIDE=${SUPERS_RTS_N:-}
 
-NS=(${NS:-1000 1500 2000})
+NS=(${NS:-10000 20000 30000})
 
 # ---- Core pinning ----
 N_PHYS_CORES=${N_PHYS_CORES:-24}
@@ -132,10 +132,11 @@ for N in "${NS[@]}"; do
   # --- Build TALM supers once per N (shared across all P) ---
   TDIR="$NDIR/talm"
   mkdir -p "$TDIR/supers"
-  # Generate a representative .hss (P=1) for supers extraction
-  "$PY3" "$GEN_TALM" --out "$TDIR/representative.hss" --N "$N" --P 1 --edge-prob "$EDGE_PROB" --seed "$SEED"
-  CFLAGS="$SUPERS_CFLAGS" \
-    bash "$BUILD_SUPERS" "$TDIR/representative.hss" "$TDIR/supers/Supers.hs"
+  # Generate a representative .hsk (P=1) for supers extraction
+  "$PY3" "$GEN_TALM" --out "$TDIR/representative.hsk" --N "$N" --P 1 --edge-prob "$EDGE_PROB" --seed "$SEED"
+  INJECT_FILE="$REPO/scripts/graph_coloring/supers_inject.hs"
+  CFLAGS="$SUPERS_CFLAGS" SUPERS_GHC_PACKAGES="containers" SUPERS_INJECT_FILE="$INJECT_FILE" \
+    bash "$BUILD_SUPERS" "$TDIR/representative.hsk" "$TDIR/supers/Supers.hs"
   LIBSUP="$TDIR/supers/libsupers.so"
   LIBDIR="$(dirname "$LIBSUP")"
   GHCDEPS="$LIBDIR/ghc-deps"
@@ -177,8 +178,8 @@ for N in "${NS[@]}"; do
     CORES_P="$(pin_cores "$P")"
 
     # --- Build TALM for this P ---
-    "$PY3" "$GEN_TALM" --out "$TDIR/gc_P${P}.hss" --N "$N" --P "$P" --edge-prob "$EDGE_PROB" --seed "$SEED"
-    "$CODEGEN" "$TDIR/gc_P${P}.hss" > "$TDIR/gc_P${P}.fl" 2>/dev/null
+    "$PY3" "$GEN_TALM" --out "$TDIR/gc_P${P}.hsk" --N "$N" --P "$P" --edge-prob "$EDGE_PROB" --seed "$SEED"
+    "$CODEGEN" "$TDIR/gc_P${P}.hsk" > "$TDIR/gc_P${P}.fl" 2>/dev/null
     pushd "$ASM_ROOT" >/dev/null
       "$PY3" assembler.py -a -n "$P" -o "$TDIR/gc_P${P}" "$TDIR/gc_P${P}.fl" >/dev/null 2>&1
     popd >/dev/null
@@ -236,12 +237,12 @@ for N in "${NS[@]}"; do
     # --- GHC Strategies ---
     for ((w=1; w<=WARMUP; w++)); do
       echo "  GHC-Str  N=$N P=$P warmup=$w (discarded)"
-      taskset -c "$CORES_P" "$GDIR/gc" +RTS -N"$P" -RTS >/dev/null 2>/dev/null
+      taskset -c "$CORES_P" "$GDIR/gc" +RTS -N"$P" -A256m -RTS >/dev/null 2>/dev/null
     done
 
     for ((rep=1; rep<=REPS; rep++)); do
       OUT="$GDIR/out_P${P}_r${rep}.txt"
-      taskset -c "$CORES_P" "$GDIR/gc" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      taskset -c "$CORES_P" "$GDIR/gc" +RTS -N"$P" -A256m -RTS >"$OUT" 2>/dev/null
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
       echo "  GHC-Str  N=$N P=$P rep=$rep -> ${secs}s"
       validate "GHC-Strategies N=$N P=$P rep=$rep" "$OUT"
@@ -251,12 +252,12 @@ for N in "${NS[@]}"; do
     # --- GHC par/pseq ---
     for ((w=1; w<=WARMUP; w++)); do
       echo "  GHC-PP   N=$N P=$P warmup=$w (discarded)"
-      taskset -c "$CORES_P" "$PDIR/gc" +RTS -N"$P" -RTS >/dev/null 2>/dev/null
+      taskset -c "$CORES_P" "$PDIR/gc" +RTS -N"$P" -A256m -RTS >/dev/null 2>/dev/null
     done
 
     for ((rep=1; rep<=REPS; rep++)); do
       OUT="$PDIR/out_P${P}_r${rep}.txt"
-      taskset -c "$CORES_P" "$PDIR/gc" +RTS -N"$P" -RTS >"$OUT" 2>/dev/null
+      taskset -c "$CORES_P" "$PDIR/gc" +RTS -N"$P" -A256m -RTS >"$OUT" 2>/dev/null
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT")"
       echo "  GHC-PP   N=$N P=$P rep=$rep -> ${secs}s"
       validate "GHC-par/pseq N=$N P=$P rep=$rep" "$OUT"

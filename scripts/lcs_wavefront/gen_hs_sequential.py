@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
 """Generate pure sequential Haskell for LCS wavefront benchmark.
 
-Uses a simple 2-row DP technique (prev_row / curr_row).
-No blocking, no wavefront — just the standard LCS recurrence
-row by row.  Memory: 2 * (N+1) * 8 bytes.
-
-Used as the P=1 baseline for speedup calculation.
+Uses a simple 2-row DP technique (prev_row / curr_row) backed by
+Data.Vector.Unboxed.Mutable — same idiom as the parallel Haskell
+variants (TALM-Hs, STRAT, Repa). This ensures the speedup denominator
+is measured on the same compute backend as the numerator, so the
+reported speedups reflect the parallel scheduler/runtime rather than
+a compute-backend swap.
 """
 
 import argparse, os
 
-HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (sequential baseline, 2-row)
+HS_TMPL = r"""-- Auto-generated: LCS wavefront benchmark (sequential baseline, 2-row, Vector)
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
 import Data.Word (Word64)
 import Data.Bits ((.&.), shiftR)
-import Foreign.Ptr (Ptr)
-import Foreign.Marshal.Alloc (callocBytes, free)
-import Foreign.Storable (peekElemOff, pokeElemOff)
+import qualified Data.Vector.Unboxed.Mutable as MV
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout)
 
@@ -38,51 +37,47 @@ lcsSeed = __SEED__
 lcsNextRng :: Word64 -> Word64
 lcsNextRng r = (6364136223846793005 * r + 1442695040888963407) .&. 0x7FFFFFFFFFFFFFFF
 
-lcsGenSeq :: Word64 -> Int -> Int -> IO (Ptr Int, Word64)
+lcsGenSeq :: Word64 -> Int -> Int -> IO (MV.IOVector Int, Word64)
 lcsGenSeq !rng0 len_ alpha = do
-  arr <- callocBytes (len_ * 8)
+  arr <- MV.replicate len_ 0
   let go !i !r
         | i >= len_ = return r
         | otherwise = do
             let !r' = lcsNextRng r
                 !c  = fromIntegral ((r' `shiftR` 33) `mod` fromIntegral alpha) :: Int
-            pokeElemOff arr i c
+            MV.write arr i c
             go (i + 1) r'
   rng' <- go 0 rng0
   return (arr, rng')
 
--- ===== 2-row sequential LCS =====
+-- ===== 2-row sequential LCS (Data.Vector.Unboxed.Mutable) =====
 
-lcsSequential :: Ptr Int -> Ptr Int -> IO Int
+lcsSequential :: MV.IOVector Int -> MV.IOVector Int -> IO Int
 lcsSequential !sa !sb = do
   let !n = lcsSeqLen
       !cols = n + 1
-  prevRow <- callocBytes (cols * 8)   -- zeroed
-  curRow  <- callocBytes (cols * 8)   -- zeroed
+  prevRow <- MV.replicate cols 0
+  curRow  <- MV.replicate cols 0
   let outerLoop !prev !cur !i
-        | i > n = do
-            !score <- peekElemOff prev n
-            free prev
-            free cur
-            return score
+        | i > n = MV.read prev n
         | otherwise = do
-            pokeElemOff cur 0 (0 :: Int)
-            !ai <- peekElemOff sa (i - 1)
+            MV.write cur 0 (0 :: Int)
+            !ai <- MV.read sa (i - 1)
             let innerLoop !j
                   | j > n = return ()
                   | otherwise = do
-                      !bj <- peekElemOff sb (j - 1)
+                      !bj <- MV.read sb (j - 1)
                       if ai == bj
                         then do
-                          !d <- peekElemOff prev (j - 1)
-                          pokeElemOff cur j (d + 1)
+                          !d <- MV.read prev (j - 1)
+                          MV.write cur j (d + 1)
                         else do
-                          !u <- peekElemOff prev j
-                          !l <- peekElemOff cur (j - 1)
-                          pokeElemOff cur j (max u l)
+                          !u <- MV.read prev j
+                          !l <- MV.read cur (j - 1)
+                          MV.write cur j (max u l)
                       innerLoop (j + 1)
             innerLoop 1
-            outerLoop cur prev (i + 1)   -- swap: cur becomes prev
+            outerLoop cur prev (i + 1)
   outerLoop prevRow curRow 1
 
 -- ===== Main =====
@@ -117,14 +112,13 @@ def emit_hs(path, input_dir, dim_rows, dim_cols):
 
     with open(path, "w", encoding="utf-8") as f:
         f.write(src)
-    print(f"[gen_lcs_wf_seq] wrote {path}  (N={seq_len}, 2-row sequential)")
+    print(f"[gen_lcs_wf_seq] wrote {path}  (N={seq_len}, 2-row sequential, Vector)")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--input-dir", required=True)
-    # Accept but ignore dim args (kept for CLI compatibility with run_validated.sh)
     ap.add_argument("--dim-rows", type=int, default=None)
     ap.add_argument("--dim-cols", type=int, default=None)
     ap.add_argument("--dim", type=int, default=6)

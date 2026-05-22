@@ -41,24 +41,23 @@ def emit_hsk(path, n_files, keyword, corpus_dir, n_funcs, pad_width=None):
     lines.append(f"-- Range packing: packed = lo * {PACK_SHIFT} + hi")
     lines.append("")
 
-    # K range-processing supers — each handles a contiguous range of files
+    # K range-processing supers — each handles a contiguous range of files.
+    # NEW super syntax: super <implName> <arg> ( <implName> <arg> = <body> )
     for i in range(n_funcs):
         lines.append(f"pf{i} packed =")
-        lines.append(f"  super single input (packed) output (count)")
-        lines.append("#BEGINSUPER")
-        lines.append(f"    count = unsafePerformIO $ do")
+        lines.append(f"  super pfImpl{i} packed (")
+        lines.append(f"    pfImpl{i} packed = unsafePerformIO $ do")
         lines.append(f"      let loI = fromIntegral (packed `div` {PACK_SHIFT}) :: Int")
         lines.append(f"          hiI = fromIntegral (packed `mod` {PACK_SHIFT}) :: Int")
         lines.append(f"      tsProcessRange loI hiI")
-        lines.append("#ENDSUPER")
+        lines.append("  )")
         lines.append("")
 
-    # Super: print result
+    # Super: print result (NEW syntax)
     lines.append("print_result r =")
-    lines.append("  super single input (r) output (out)")
-    lines.append("#BEGINSUPER")
-    lines.append('    out = unsafePerformIO (do putStrLn ("RESULT=" ++ show r); hFlush stdout; pure 0)')
-    lines.append("#ENDSUPER")
+    lines.append("  super printImpl r (")
+    lines.append('    printImpl r = unsafePerformIO (do putStrLn ("RESULT=" ++ show r); hFlush stdout; pure 0)')
+    lines.append("  )")
     lines.append("")
 
     # Main: nested lets calling each range super with packed args

@@ -8,7 +8,7 @@ Single-head self-attention: O = softmax(Q * K^T / sqrt(D)) * V
 Each block handles rows [lo, hi) of Q.
 
 Generates:
-  1. Minimal .hss with separate block supers
+  1. Minimal .hsk with separate block supers
   2. supers_inject.hs with Haskell implementation
 """
 
@@ -29,17 +29,17 @@ def emit(path, N, D, n_funcs, data_dir):
     nblocks = len(blocks)
     SHIFT = N + 1
 
-    # ---- 1. .hss with separate supers per block ----
+    # ---- 1. .hsk with separate supers per block ----
+    # NEW super syntax: super <implName> <arg> ( <implName> <arg> = <body> )
     super_defs = []
     for idx, (lo, hi) in enumerate(blocks):
         rows = hi - lo
         packed = lo * SHIFT + rows
         super_defs.append(f"""-- SUPER block_{idx}: attention rows [{lo}..{hi})
 block_{idx} dummy =
-  super single input (dummy) output (cs)
-#BEGINSUPER
-    cs = unsafePerformIO (attnBlock {packed})
-#ENDSUPER
+  super blockImpl{idx} dummy (
+    blockImpl{idx} dummy = unsafePerformIO (attnBlock {packed})
+  )
 """)
 
     leaf_lets = []
@@ -49,19 +49,18 @@ block_{idx} dummy =
 
     sum_expr = " + ".join(f"b{i}" for i in range(nblocks))
 
-    hsk = f"""-- attention.hss  (auto-generated, file IO, separate supers)
+    hsk = f"""-- attention.hsk  (auto-generated, file IO, separate supers)
 -- N={N}  D={D}  N_FUNCS={nblocks}
 
 {"".join(super_defs)}
 -- SUPER: print final checksum
 print_checksum cs =
-  super single input (cs) output (out)
-#BEGINSUPER
-    out = unsafePerformIO
+  super printImpl cs (
+    printImpl cs = unsafePerformIO
       (do
         putStrLn ("CHECKSUM=" ++ show cs)
         pure 0)
-#ENDSUPER
+  )
 
 main =
 {chr(10).join(leaf_lets)}
