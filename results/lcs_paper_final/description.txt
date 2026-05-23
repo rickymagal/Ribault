@@ -121,13 +121,51 @@ differ.
 5. VARIANTS AND WHY EACH WAS CHOSEN
 ----------------------------------------------------------------
 A. seq (Haskell sequential, P=1)
-   -- The denominator for speedup. Uses a 2-row sequential DP (no
-      blocking) backed by Data.Vector.Unboxed.Mutable — the same
-      mutable-vector idiom as the parallel Haskell variants. This is
-      critical: if the baseline used Foreign.Ptr (faster) and the
-      parallel variants used Vector (slower), reported speedups would
-      conflate the parallel scheduler with a compute-backend swap.
+   -- The denominator for the Haskell-tier variants (Ribault-Hs,
+      GHC Strat). Uses a 2-row sequential DP (no blocking) backed by
+      Data.Vector.Unboxed.Mutable — the same mutable-vector idiom as
+      the parallel Haskell variants. This is critical: if the
+      baseline used Foreign.Ptr (faster) and the parallel variants
+      used Vector (slower), reported speedups would conflate the
+      parallel scheduler with a compute-backend swap.
    -- variant column in CSV: "seq"
+
+A2. seq_c (C sequential, P=1)
+   -- The denominator for the C-tier variant (Ribault-C). Monolithic
+      2-row DP in pure C (gcc -O3 -march=native), structurally
+      identical to (A): same LCG (seed=42, alpha=4), same square N×N
+      DP loop, two int rows swapped per iteration, no bounds checks
+      (C has none anyway), no blocking, single thread pinned to
+      core 0 via taskset. Cross-validated: produces RESULT=65385 at
+      N=100k, 130837 at N=200k, 196253 at N=300k, 261674 at N=400k,
+      327182 at N=500k — identical to the seq_rust and Haskell seq
+      results at the corresponding N. This is the right denominator
+      for Ribault-C because comparing a C numerator against a
+      Haskell denominator would inflate the speedup by the GHC↔C
+      compute gap, not by the dataflow scheduler.
+   -- source: scripts/lcs_wavefront/lcs_seq.c
+   -- build: gcc -O3 -march=native -o lcs_seq_c lcs_seq.c
+   -- variant column in CSV: "seq_c"
+
+A3. seq_rust (Rust sequential, P=1)
+   -- The denominator for the Rust-tier variants (Ribault-Rust,
+      Timely, Timely-Rebalanced, Sucuri). Monolithic 2-row DP in
+      Rust, built with the same release profile as the parallel
+      Rust crates: opt-level=3, lto="thin", codegen-units=1, no
+      debug info. CRITICAL FAIRNESS NOTE: the parallel Rust leaf
+      compute (Ribault-Rust, Timely) uses raw pointers + `unsafe`
+      with NO bounds checking on the inner DP loop; if seq_rust
+      kept Rust's default bounds checking, it would be artificially
+      slow versus the parallel numerator and would inflate the
+      Rust-tier speedups. seq_rust therefore mirrors the leaf
+      compute exactly: `unsafe` block, raw `*const i32 / *mut i32`
+      pointers, `add(..)` arithmetic, no bounds check on the
+      O(N^2) inner loop. Same LCG, same square DP, same taskset
+      pin. Cross-validates RESULT byte-for-byte against seq_c at
+      every N.
+   -- source: scripts/lcs_wavefront/lcs_seq.rs (+ Cargo.toml)
+   -- build: cargo build --release  (release profile above)
+   -- variant column in CSV: "seq_rust"
 
 B. TALM-Hs (Ribault, natural Haskell super)
    -- Primary thesis variant. The user's Haskell source is compiled
@@ -325,6 +363,39 @@ d) Same GHC RTS allocator across ALL Haskell binaries. This is the
    reviewer complaint was precisely that the denominator was
    penalised by a smaller nursery than the numerator.
 
+d2) Per-language baselines (the OTHER fairness fix). The original
+    submission reported every parallel variant's speedup against the
+    Haskell sequential baseline. That is incorrect for cross-language
+    variants: the Ribault-C and Ribault-Rust speedups would conflate
+    the dataflow-scheduler win with the GHC↔C / GHC↔Rust compute gap
+    that lives outside the parallelism contribution. The Rust variants
+    (Timely, Sucuri) would do the same. The honest fix is to measure
+    each parallel numerator against a same-language sequential
+    denominator:
+
+      * Ribault-Hs, GHC Strat   -> seq         (Haskell, +RTS -A256m)
+      * Ribault-C               -> seq_c       (C, gcc -O3 -march=native)
+      * Ribault-Rust, Timely,
+        Timely-Reb, Sucuri      -> seq_rust    (Rust release, raw
+                                                pointers + unsafe inner
+                                                loop matching the
+                                                parallel leaf compute)
+
+    All three baselines run a monolithic 2-row DP, use the identical
+    LCG (seed=42, alpha=4), and produce the SAME RESULT at every N
+    (cross-validation hash: 65385 / 130837 / 196253 / 261674 / 327182
+    at N = 100k / 200k / 300k / 400k / 500k). Each baseline is the
+    fastest same-language single-thread idiom we could write while
+    still matching the parallel variant's compute backend; this gives
+    the conservative (smallest) honest speedup for each tier and
+    removes the cross-language inflation that the original numbers
+    contained. The seq_c / seq_rust runs were collected with the same
+    REPS=7, same taskset core-0 pin, and same percentile-bootstrap CI
+    machinery as every other variant. See sections A2, A3 above for
+    the source-level details; the per-language tables in
+    tables_with_ci.txt are split into a "Haskell tier", "C tier", and
+    "Rust tier" with the matching denominator quoted in each header.
+
 e) Same thread count plumbing. GHC binaries get `+RTS -N<P> -RTS`.
    TALM (Hs and C) gets `SUPERS_RTS_N=<P>`. Timely gets `-w <P>`.
    Sucuri uses its config that spawns <P> workers in the
@@ -349,9 +420,12 @@ g) Same number of repetitions and same medianing + confidence
    times, take the median of each resample, then report the 2.5th
    and 97.5th percentile of that bootstrap distribution as the
    lower/upper CI bound for the per-cell variant runtime. The CI
-   for a speedup (T_seq / T_variant) propagates uncertainty from
-   BOTH numerator and denominator: in each of the 10000 bootstrap
-   iterations we resample the seq runs and the variant runs
+   for a speedup (T_seq / T_variant, where T_seq is the
+   language-matched baseline from section 8d2 — seq for Haskell-tier
+   variants, seq_c for Ribault-C, seq_rust for Ribault-Rust /
+   Timely / Timely-Reb / Sucuri) propagates uncertainty from BOTH
+   numerator and denominator: in each of the 10000 bootstrap
+   iterations we resample the baseline runs and the variant runs
    INDEPENDENTLY (with replacement), recompute the medians, take
    their ratio, and read the 2.5th / 97.5th percentile of the
    resulting ratio distribution.
