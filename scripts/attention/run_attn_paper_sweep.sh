@@ -336,7 +336,11 @@ for N in $NS; do
         --py-driver "$VDIR/run_sucuri.py" \
         --data-dir "$DATA" \
         --n-blocks "$N_BLOCKS" >/dev/null
-      (cd "$VDIR/crate" && CARGO_TARGET_DIR="$VDIR/crate/target" \
+      # PYO3_PYTHON pins PyO3 to the free-threaded Python so the cdylib has
+      # the right ABI; otherwise the .so segfaults on load.
+      (cd "$VDIR/crate" && \
+         PYO3_PYTHON="$PYTHON_NOGIL" \
+         CARGO_TARGET_DIR="$VDIR/crate/target" \
          cargo build --release --quiet \
          >"$LOGDIR/sucuri_N${N}_P${P}.build.log" 2>&1)
       # cargo emits libsucuri_attn.so (cdylib); rename so PyO3 importlib finds it.

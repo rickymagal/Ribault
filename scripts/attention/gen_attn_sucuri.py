@@ -321,84 +321,114 @@ fn sucuri_attn(py: Python, module: &Bound<'_, PyModule>) -> PyResult<()> {
 PY_DRIVER = r"""#!/usr/bin/env python3
 '''Sucuri attention driver.
 
-Uses pyDF.DFGraph to wire 2 phases x N_BLOCKS nodes with a barrier.
-Each phase node calls into the Rust sucuri_attn module via PyO3.
+Wires the 2-phase dataflow graph with pyDF.DFGraph:
+  - 1 seed node (no inputs, emits "go")
+  - K phase-A nodes (each has 1 input from seed; calls mod.phase_a(b))
+  - 1 barrier node (K inputs from phase-A; emits "go" to phase B)
+  - K phase-B nodes (each has 1 input from barrier; calls mod.phase_b(b))
+  - 1 result node (K inputs from phase-B; final sentinel)
+
+All Oper values are sentinels (the actual activation state lives in the
+Rust module's static-mut pointer slots and is written via raw pointers
+into disjoint per-block row ranges — no Python-side data flow needed).
+
+Uses the Node(f, inputn) API + add_edge(dst, dstport): f receives a list
+of input values (or no args for inputn=0) and returns a value that is
+fan-broadcast over every outgoing edge.
 '''
 import argparse, os, sys, time
-from pathlib import Path
 
 SUCURI_ROOT = os.environ.get("SUCURI_ROOT")
 if SUCURI_ROOT is None:
     sys.stderr.write("ERROR: SUCURI_ROOT not set\n"); sys.exit(2)
 sys.path.insert(0, SUCURI_ROOT)
-from pyDF import DFGraph, Node, Oper, Scheduler
+from pyDF import DFGraph, Node, Scheduler
+
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--rust-so", required=True, help="Path to sucuri_attn.so")
+    ap.add_argument("--rust-so", required=True, help="Path to libsucuri_attn.so")
     ap.add_argument("--n-blocks", type=int, required=True)
     ap.add_argument("--workers", type=int, required=True)
     args = ap.parse_args()
 
-    # Load the compiled PyO3 extension module
+    # Load the compiled PyO3 extension module from a file path.
     import importlib.util
     spec = importlib.util.spec_from_file_location("sucuri_attn", args.rust_so)
-    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
 
     # Initialize all weights (single-threaded; called once before parallel phases).
     mod.init()
 
     K = args.n_blocks
+    g = DFGraph()
 
+    # Seed (inputn=0): emits a single "go" sentinel to every phase-A node.
+    def seed_fn():
+        return 0
+    seed = Node(seed_fn, 0)
+    g.add(seed)
+
+    # Phase-A nodes: inputn=1 (the go sentinel), call mod.phase_a(b), emit 0.
     def make_phase_a(b):
-        def f(_dummy=0):
+        def f(_args):
             mod.phase_a(b)
             return 0
         return f
+    phaseA_nodes = []
+    for b in range(K):
+        n = Node(make_phase_a(b), 1)
+        g.add(n)
+        phaseA_nodes.append(n)
+
+    # Seed -> each phase-A on dstport 0
+    for n in phaseA_nodes:
+        seed.add_edge(n, 0)
+
+    # Barrier: inputn=K (one per phase-A). When all fired, emit one "go".
+    def barrier_fn(_args):
+        return 0
+    barrier = Node(barrier_fn, K)
+    g.add(barrier)
+    for i, n in enumerate(phaseA_nodes):
+        n.add_edge(barrier, i)
+
+    # Phase-B nodes: inputn=1 (go from barrier), call mod.phase_b(b), emit 0.
     def make_phase_b(b):
-        def f(*_args):
+        def f(_args):
             mod.phase_b(b)
             return 0
         return f
-
-    g = DFGraph()
-    # Phase A nodes (each takes a dummy seed input)
-    seed = Node(lambda: 0, n_input=0, n_output=K)
-    g.add(seed)
-    phaseA_nodes = []
-    for b in range(K):
-        n = Node(make_phase_a(b), n_input=1, n_output=1)
-        g.add(n); g.connect(seed, n, output_idx=b)
-        phaseA_nodes.append(n)
-    # Barrier: fan-in K phaseA outputs to a single signal
-    def barrier(*args):
-        return 0
-    barr = Node(barrier, n_input=K, n_output=K)
-    g.add(barr)
-    for i, n in enumerate(phaseA_nodes):
-        g.connect(n, barr, input_idx=i)
-    # Phase B nodes
     phaseB_nodes = []
     for b in range(K):
-        n = Node(make_phase_b(b), n_input=1, n_output=1)
-        g.add(n); g.connect(barr, n, output_idx=b)
+        n = Node(make_phase_b(b), 1)
+        g.add(n)
         phaseB_nodes.append(n)
-    # Result aggregator
-    def result(*args):
-        return mod.result()
-    res = Node(result, n_input=K, n_output=0)
-    g.add(res)
+
+    # Barrier -> each phase-B on dstport 0
+    for n in phaseB_nodes:
+        barrier.add_edge(n, 0)
+
+    # Result aggregator: inputn=K, final sink. We do NOT compute the
+    # checksum inside the graph — it's deterministic from OUTPUT_PTR and
+    # the driver reads it via mod.result() after the scheduler returns.
+    def result_fn(_args):
+        return 0
+    result_node = Node(result_fn, K)
+    g.add(result_node)
     for i, n in enumerate(phaseB_nodes):
-        g.connect(n, res, input_idx=i)
+        n.add_edge(result_node, i)
 
     t0 = time.perf_counter()
-    sched = Scheduler(g, n_workers=args.workers)
-    sched.run()
+    scheduler = Scheduler(g, n_workers=args.workers, mpi_enabled=False)
+    scheduler.start()
     t1 = time.perf_counter()
 
     cs = mod.result()
     print(f"CHECKSUM={cs}")
     print(f"RUNTIME_SEC={t1 - t0}")
+
 
 if __name__ == "__main__":
     main()
