@@ -1,0 +1,14 @@
+[package]
+name = "attn_seq_rust"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "attn_seq_rust"
+path = "attn_seq.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false

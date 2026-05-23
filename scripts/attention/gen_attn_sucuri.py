@@ -3,9 +3,19 @@
 module with init/phaseA/phaseB/result, plus a Python driver that uses
 Sucuri's pyDF.DFGraph to wire the 2-phase parallel dataflow.
 
-The Rust module owns all global mutable state (weights, activations,
-output tokens) via `static mut`. Python invokes phaseA(b) and phaseB(b)
-across N_BLOCKS blocks; pyDF schedules them across worker threads.
+Rust state lives in `static mut *mut c_double` slots filled by init()
+via libc::malloc — the same raw-pointer pattern as gen_attn_rust.py and
+gen_attn_rs_timely.py. We previously used `static mut Vec<f64>`, which
+Rust 2024 treats as UB (Vec has Drop + complex layout under static mut).
+The raw-pointer version compiles cleanly and is the same idiom every
+other Rust variant in this benchmark uses for global activation buffers.
+
+Algorithmic race-freedom: each phase-A / phase-B block writes a DISJOINT
+range of rows in the activation buffers (rows [lo,hi)), and reads
+weights / boundary buffers either read-only or with no aliasing to the
+write region within a single phase. Within a phase, no two workers
+collide; between phases, the pyDF.DFGraph barrier (K-way fan-in to a
+sentinel node, then K-way fan-out to phase B) provides happens-before.
 """
 
 import argparse, os
@@ -22,125 +32,174 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.25", features = ["extension-module"] }
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
 """
 
 
-RS_TEMPLATE = r"""// Sucuri attention Rust leaf: PyO3 extension module exposing init/phaseA/phaseB/result.
+RS_TEMPLATE = r"""// Sucuri attention Rust leaf: PyO3 extension module.
+// Exposes init / phase_a / phase_b / result; the Python driver
+// (pyDF.DFGraph) calls these from worker threads.
+//
+// State stored as `static mut *mut c_double` slots — the same raw-
+// pointer pattern as ribault_rust and timely. NOT `static mut Vec<T>`
+// (Rust 2024 UB).
+
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(static_mut_refs)]
+
 use pyo3::prelude::*;
+use std::os::raw::c_double;
 use std::fs::File;
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-const N: usize       = __N__;
-const D: usize       = __D__;
-const N_HEADS: usize = __N_HEADS__;
-const HEAD_DIM: usize= __HEAD_DIM__;
-const D_FF: usize    = __D_FF__;
-const VOCAB: usize   = __VOCAB__;
-const N_BLOCKS: usize= __N_BLOCKS__;
-const DATA_DIR: &str = "__DATA_DIR__";
+const N: usize        = __N__;
+const D: usize        = __D__;
+const N_HEADS: usize  = __N_HEADS__;
+const HEAD_DIM: usize = __HEAD_DIM__;
+const D_FF: usize     = __D_FF__;
+const VOCAB: usize    = __VOCAB__;
+const N_BLOCKS: usize = __N_BLOCKS__;
+const DATA_DIR: &str  = "__DATA_DIR__";
 
+// Init guard — Python driver should call init() exactly once before any
+// phase_a / phase_b. The atomic flag short-circuits idempotent re-entry.
 static INIT_DONE: AtomicBool = AtomicBool::new(false);
 
-static mut E: Vec<f64> = Vec::new();
-static mut PE: Vec<f64> = Vec::new();
-static mut W_Q: Vec<f64> = Vec::new();
-static mut W_K_PTR: Vec<f64> = Vec::new();
-static mut W_V: Vec<f64> = Vec::new();
-static mut W_O: Vec<f64> = Vec::new();
-static mut W_1: Vec<f64> = Vec::new();
-static mut W_2: Vec<f64> = Vec::new();
-static mut W_U: Vec<f64> = Vec::new();
-static mut LN_1_W: Vec<f64> = Vec::new();
-static mut LN_1_B: Vec<f64> = Vec::new();
-static mut LN_2_W: Vec<f64> = Vec::new();
-static mut LN_2_B: Vec<f64> = Vec::new();
-static mut INPUT_TOKENS: Vec<u8> = Vec::new();
-static mut OUTPUT_TOKENS: Vec<u8> = Vec::new();
+// Weight + input pointers (raw, allocated via libc::malloc, never freed
+// — process lifetime). One pointer per tensor.
+static mut E_PTR:       *mut c_double = std::ptr::null_mut();
+static mut PE_PTR:      *mut c_double = std::ptr::null_mut();
+static mut WQ_PTR:      *mut c_double = std::ptr::null_mut();
+static mut WK_PTR:      *mut c_double = std::ptr::null_mut();
+static mut WV_PTR:      *mut c_double = std::ptr::null_mut();
+static mut WO_PTR:      *mut c_double = std::ptr::null_mut();
+static mut W1_PTR:      *mut c_double = std::ptr::null_mut();
+static mut W2_PTR:      *mut c_double = std::ptr::null_mut();
+static mut WU_PTR:      *mut c_double = std::ptr::null_mut();
+static mut LN1W_PTR:    *mut c_double = std::ptr::null_mut();
+static mut LN1B_PTR:    *mut c_double = std::ptr::null_mut();
+static mut LN2W_PTR:    *mut c_double = std::ptr::null_mut();
+static mut LN2B_PTR:    *mut c_double = std::ptr::null_mut();
+static mut INPUT_PTR:   *mut u8       = std::ptr::null_mut();
+static mut OUTPUT_PTR:  *mut u8       = std::ptr::null_mut();
 
-static mut X_BUF: Vec<f64> = Vec::new();
-static mut XA_BUF: Vec<f64> = Vec::new();
-static mut Q_BUF: Vec<f64> = Vec::new();
-static mut K_BUF: Vec<f64> = Vec::new();
-static mut V_BUF: Vec<f64> = Vec::new();
-static mut ATTN_BUF: Vec<f64> = Vec::new();
-static mut XB_BUF: Vec<f64> = Vec::new();
-static mut FFN_H: Vec<f64> = Vec::new();
-static mut LOGITS_BUF: Vec<f64> = Vec::new();
+// Activation buffers
+static mut X_PTR:       *mut c_double = std::ptr::null_mut();
+static mut XA_PTR:      *mut c_double = std::ptr::null_mut();
+static mut Q_PTR:       *mut c_double = std::ptr::null_mut();
+static mut K_PTR:       *mut c_double = std::ptr::null_mut();
+static mut V_PTR:       *mut c_double = std::ptr::null_mut();
+static mut ATTN_PTR:    *mut c_double = std::ptr::null_mut();
+static mut XB_PTR:      *mut c_double = std::ptr::null_mut();
+static mut FFN_PTR:     *mut c_double = std::ptr::null_mut();
+static mut LOGITS_PTR:  *mut c_double = std::ptr::null_mut();
 
-fn read_doubles(name: &str, count: usize) -> Vec<f64> {
+unsafe fn xmalloc_d(n: usize) -> *mut c_double {
+    let p = libc::malloc(n * std::mem::size_of::<c_double>()) as *mut c_double;
+    assert!(!p.is_null(), "malloc(d * {}) failed", n);
+    p
+}
+unsafe fn xmalloc_u(n: usize) -> *mut u8 {
+    let p = libc::malloc(n) as *mut u8;
+    assert!(!p.is_null(), "malloc(u * {}) failed", n);
+    p
+}
+
+unsafe fn read_bin_d(name: &str, dst: *mut c_double, count: usize) {
     let path = format!("{}/{}", DATA_DIR, name);
     let mut f = File::open(&path).unwrap_or_else(|e| panic!("open {}: {}", path, e));
     let mut buf = vec![0u8; count * 8];
-    f.read_exact(&mut buf).unwrap();
-    let mut out = vec![0.0_f64; count];
+    f.read_exact(&mut buf).unwrap_or_else(|e| panic!("read {}: {}", path, e));
     for i in 0..count {
         let mut b = [0u8; 8];
         b.copy_from_slice(&buf[i*8..(i+1)*8]);
-        out[i] = f64::from_le_bytes(b);
+        *dst.add(i) = f64::from_le_bytes(b);
     }
-    out
 }
-fn read_bytes(name: &str, count: usize) -> Vec<u8> {
+
+unsafe fn read_bin_u8(name: &str, dst: *mut u8, count: usize) {
     let path = format!("{}/{}", DATA_DIR, name);
-    let mut f = File::open(&path).unwrap();
-    let mut buf = vec![0u8; count]; f.read_exact(&mut buf).unwrap(); buf
+    let mut f = File::open(&path).unwrap_or_else(|e| panic!("open {}: {}", path, e));
+    let s = std::slice::from_raw_parts_mut(dst, count);
+    f.read_exact(s).unwrap_or_else(|e| panic!("read {}: {}", path, e));
 }
 
 #[inline] fn row_lo(b: usize) -> usize { b * N / N_BLOCKS }
 #[inline] fn row_hi(b: usize) -> usize { if b == N_BLOCKS - 1 { N } else { (b + 1) * N / N_BLOCKS } }
 
-unsafe fn matmul_block(lo: usize, hi: usize, a: &[f64], b: &[f64], c: &mut [f64], k_dim: usize, n_dim: usize) {
+unsafe fn matmul_block(lo: usize, hi: usize, a: *const c_double, b: *const c_double,
+                       c: *mut c_double, k_dim: usize, n_dim: usize) {
     for m in lo..hi {
-        for n in 0..n_dim { c[m * n_dim + n] = 0.0; }
+        let arow = a.add(m * k_dim);
+        let crow = c.add(m * n_dim);
+        for n in 0..n_dim { *crow.add(n) = 0.0; }
         for k in 0..k_dim {
-            let av = a[m * k_dim + k];
-            for n in 0..n_dim { c[m * n_dim + n] += av * b[k * n_dim + n]; }
+            let av = *arow.add(k);
+            let brow = b.add(k * n_dim);
+            for n in 0..n_dim { *crow.add(n) += av * *brow.add(n); }
         }
     }
 }
-unsafe fn layer_norm_block(lo: usize, hi: usize, x: &[f64], w: &[f64], b: &[f64], out: &mut [f64], dim: usize) {
+
+unsafe fn layer_norm_block(lo: usize, hi: usize, x: *const c_double, w: *const c_double,
+                            b: *const c_double, out: *mut c_double, dim: usize) {
     let eps = 1e-5;
     for i in lo..hi {
+        let xr = x.add(i * dim);
+        let or_ = out.add(i * dim);
         let mut mean = 0.0;
-        for j in 0..dim { mean += x[i*dim + j]; }
+        for j in 0..dim { mean += *xr.add(j); }
         mean /= dim as f64;
         let mut var = 0.0;
-        for j in 0..dim { let d = x[i*dim + j] - mean; var += d*d; }
+        for j in 0..dim { let d = *xr.add(j) - mean; var += d * d; }
         var /= dim as f64;
         let inv = 1.0 / (var + eps).sqrt();
-        for j in 0..dim { out[i*dim + j] = (x[i*dim + j] - mean) * inv * w[j] + b[j]; }
+        for j in 0..dim {
+            *or_.add(j) = (*xr.add(j) - mean) * inv * *w.add(j) + *b.add(j);
+        }
     }
 }
 
 #[pyfunction]
 fn init(py: Python<'_>) -> PyResult<i64> {
     py.allow_threads(|| unsafe {
-        if INIT_DONE.load(Ordering::SeqCst) { return; }
-        E       = read_doubles("E.bin",      VOCAB * D);
-        PE      = read_doubles("PE.bin",     N * D);
-        W_Q     = read_doubles("W_Q.bin",    D * D);
-        W_K_PTR = read_doubles("W_K.bin",    D * D);
-        W_V     = read_doubles("W_V.bin",    D * D);
-        W_O     = read_doubles("W_O.bin",    D * D);
-        W_1     = read_doubles("W_1.bin",    D * D_FF);
-        W_2     = read_doubles("W_2.bin",    D_FF * D);
-        W_U     = read_doubles("W_U.bin",    D * VOCAB);
-        LN_1_W  = read_doubles("LN_1_w.bin", D);
-        LN_1_B  = read_doubles("LN_1_b.bin", D);
-        LN_2_W  = read_doubles("LN_2_w.bin", D);
-        LN_2_B  = read_doubles("LN_2_b.bin", D);
-        INPUT_TOKENS  = read_bytes("input_tokens.bin", N);
-        OUTPUT_TOKENS = vec![0u8; N];
-        X_BUF      = vec![0.0; N * D];
-        XA_BUF     = vec![0.0; N * D];
-        Q_BUF      = vec![0.0; N * D];
-        K_BUF      = vec![0.0; N * D];
-        V_BUF      = vec![0.0; N * D];
-        ATTN_BUF   = vec![0.0; N * D];
-        XB_BUF     = vec![0.0; N * D];
-        FFN_H      = vec![0.0; N * D_FF];
-        LOGITS_BUF = vec![0.0; N * VOCAB];
+        if INIT_DONE.load(Ordering::SeqCst) {
+            return;
+        }
+        E_PTR      = xmalloc_d(VOCAB * D);    read_bin_d("E.bin", E_PTR, VOCAB * D);
+        PE_PTR     = xmalloc_d(N * D);        read_bin_d("PE.bin", PE_PTR, N * D);
+        WQ_PTR     = xmalloc_d(D * D);        read_bin_d("W_Q.bin", WQ_PTR, D * D);
+        WK_PTR     = xmalloc_d(D * D);        read_bin_d("W_K.bin", WK_PTR, D * D);
+        WV_PTR     = xmalloc_d(D * D);        read_bin_d("W_V.bin", WV_PTR, D * D);
+        WO_PTR     = xmalloc_d(D * D);        read_bin_d("W_O.bin", WO_PTR, D * D);
+        W1_PTR     = xmalloc_d(D * D_FF);     read_bin_d("W_1.bin", W1_PTR, D * D_FF);
+        W2_PTR     = xmalloc_d(D_FF * D);     read_bin_d("W_2.bin", W2_PTR, D_FF * D);
+        WU_PTR     = xmalloc_d(D * VOCAB);    read_bin_d("W_U.bin", WU_PTR, D * VOCAB);
+        LN1W_PTR   = xmalloc_d(D);            read_bin_d("LN_1_w.bin", LN1W_PTR, D);
+        LN1B_PTR   = xmalloc_d(D);            read_bin_d("LN_1_b.bin", LN1B_PTR, D);
+        LN2W_PTR   = xmalloc_d(D);            read_bin_d("LN_2_w.bin", LN2W_PTR, D);
+        LN2B_PTR   = xmalloc_d(D);            read_bin_d("LN_2_b.bin", LN2B_PTR, D);
+        INPUT_PTR  = xmalloc_u(N);            read_bin_u8("input_tokens.bin", INPUT_PTR, N);
+        OUTPUT_PTR = xmalloc_u(N);
+
+        X_PTR      = xmalloc_d(N * D);
+        XA_PTR     = xmalloc_d(N * D);
+        Q_PTR      = xmalloc_d(N * D);
+        K_PTR      = xmalloc_d(N * D);
+        V_PTR      = xmalloc_d(N * D);
+        ATTN_PTR   = xmalloc_d(N * D);
+        XB_PTR     = xmalloc_d(N * D);
+        FFN_PTR    = xmalloc_d(N * D_FF);
+        LOGITS_PTR = xmalloc_d(N * VOCAB);
+
         INIT_DONE.store(true, Ordering::SeqCst);
     });
     Ok(0)
@@ -149,17 +208,21 @@ fn init(py: Python<'_>) -> PyResult<i64> {
 #[pyfunction]
 fn phase_a(py: Python<'_>, block_idx: usize) -> PyResult<i64> {
     py.allow_threads(|| unsafe {
-        let lo = row_lo(block_idx); let hi = row_hi(block_idx);
+        let lo = row_lo(block_idx);
+        let hi = row_hi(block_idx);
+
+        // embed + sinusoidal pos
         for i in lo..hi {
-            let tok = INPUT_TOKENS[i] as usize;
-            for j in 0..D { X_BUF[i*D + j] = E[tok*D + j] + PE[i*D + j]; }
+            let tok = *INPUT_PTR.add(i) as usize;
+            let ei = E_PTR.add(tok * D);
+            let pi = PE_PTR.add(i * D);
+            let xi = X_PTR.add(i * D);
+            for j in 0..D { *xi.add(j) = *ei.add(j) + *pi.add(j); }
         }
-        // SAFETY: we re-split &mut references inline to avoid aliasing issues
-        let (x_buf_r, xa_buf_w) = (&X_BUF[..], &mut XA_BUF[..]);
-        layer_norm_block(lo, hi, x_buf_r, &LN_1_W, &LN_1_B, xa_buf_w, D);
-        matmul_block(lo, hi, &XA_BUF, &W_Q,     &mut Q_BUF, D, D);
-        matmul_block(lo, hi, &XA_BUF, &W_K_PTR, &mut K_BUF, D, D);
-        matmul_block(lo, hi, &XA_BUF, &W_V,     &mut V_BUF, D, D);
+        layer_norm_block(lo, hi, X_PTR, LN1W_PTR, LN1B_PTR, XA_PTR, D);
+        matmul_block(lo, hi, XA_PTR, WQ_PTR, Q_PTR, D, D);
+        matmul_block(lo, hi, XA_PTR, WK_PTR, K_PTR, D, D);
+        matmul_block(lo, hi, XA_PTR, WV_PTR, V_PTR, D, D);
     });
     Ok(0)
 }
@@ -167,19 +230,22 @@ fn phase_a(py: Python<'_>, block_idx: usize) -> PyResult<i64> {
 #[pyfunction]
 fn phase_b(py: Python<'_>, block_idx: usize) -> PyResult<i64> {
     py.allow_threads(|| unsafe {
-        let lo = row_lo(block_idx); let hi = row_hi(block_idx);
+        let lo = row_lo(block_idx);
+        let hi = row_hi(block_idx);
         let inv = 1.0 / (HEAD_DIM as f64).sqrt();
         let mut scores = vec![0.0_f64; N];
+
         for i in lo..hi {
-            for j in 0..D { ATTN_BUF[i*D + j] = 0.0; }
+            let ai = ATTN_PTR.add(i * D);
+            for j in 0..D { *ai.add(j) = 0.0; }
         }
         for i in lo..hi {
             for h in 0..N_HEADS {
+                let qhi = Q_PTR.add(i * D + h * HEAD_DIM);
                 for j in 0..N {
+                    let khj = K_PTR.add(j * D + h * HEAD_DIM);
                     let mut s = 0.0;
-                    for k in 0..HEAD_DIM {
-                        s += Q_BUF[i*D + h*HEAD_DIM + k] * K_BUF[j*D + h*HEAD_DIM + k];
-                    }
+                    for k in 0..HEAD_DIM { s += *qhi.add(k) * *khj.add(k); }
                     scores[j] = s * inv;
                 }
                 let mut m = scores[0];
@@ -187,33 +253,42 @@ fn phase_b(py: Python<'_>, block_idx: usize) -> PyResult<i64> {
                 let mut sum = 0.0;
                 for j in 0..N { scores[j] = (scores[j] - m).exp(); sum += scores[j]; }
                 for j in 0..N { scores[j] /= sum; }
+                let ahi = ATTN_PTR.add(i * D + h * HEAD_DIM);
                 for j in 0..N {
                     let a = scores[j];
-                    for k in 0..HEAD_DIM {
-                        ATTN_BUF[i*D + h*HEAD_DIM + k] += a * V_BUF[j*D + h*HEAD_DIM + k];
-                    }
+                    let vhj = V_PTR.add(j * D + h * HEAD_DIM);
+                    for k in 0..HEAD_DIM { *ahi.add(k) += a * *vhj.add(k); }
                 }
             }
         }
-        matmul_block(lo, hi, &ATTN_BUF, &W_O, &mut XA_BUF, D, D);
+        matmul_block(lo, hi, ATTN_PTR, WO_PTR, XA_PTR, D, D);
         for i in lo..hi {
-            for j in 0..D { X_BUF[i*D + j] += XA_BUF[i*D + j]; }
+            let xi = X_PTR.add(i * D);
+            let yi = XA_PTR.add(i * D);
+            for j in 0..D { *xi.add(j) += *yi.add(j); }
         }
-        let (x_buf_r2, xb_buf_w) = (&X_BUF[..], &mut XB_BUF[..]);
-        layer_norm_block(lo, hi, x_buf_r2, &LN_2_W, &LN_2_B, xb_buf_w, D);
-        matmul_block(lo, hi, &XB_BUF, &W_1, &mut FFN_H, D, D_FF);
+        layer_norm_block(lo, hi, X_PTR, LN2W_PTR, LN2B_PTR, XB_PTR, D);
+        matmul_block(lo, hi, XB_PTR, W1_PTR, FFN_PTR, D, D_FF);
         for i in lo..hi {
-            for j in 0..D_FF { if FFN_H[i*D_FF + j] < 0.0 { FFN_H[i*D_FF + j] = 0.0; } }
+            let hi_ = FFN_PTR.add(i * D_FF);
+            for j in 0..D_FF { if *hi_.add(j) < 0.0 { *hi_.add(j) = 0.0; } }
         }
-        matmul_block(lo, hi, &FFN_H, &W_2, &mut XA_BUF, D_FF, D);
+        matmul_block(lo, hi, FFN_PTR, W2_PTR, XA_PTR, D_FF, D);
         for i in lo..hi {
-            for j in 0..D { X_BUF[i*D + j] += XA_BUF[i*D + j]; }
+            let xi = X_PTR.add(i * D);
+            let yi = XA_PTR.add(i * D);
+            for j in 0..D { *xi.add(j) += *yi.add(j); }
         }
-        matmul_block(lo, hi, &X_BUF, &W_U, &mut LOGITS_BUF, D, VOCAB);
+        matmul_block(lo, hi, X_PTR, WU_PTR, LOGITS_PTR, D, VOCAB);
         for i in lo..hi {
-            let mut best = 0usize; let mut bv = LOGITS_BUF[i*VOCAB];
-            for v in 1..VOCAB { let lv = LOGITS_BUF[i*VOCAB + v]; if lv > bv { bv = lv; best = v; } }
-            OUTPUT_TOKENS[i] = best as u8;
+            let li = LOGITS_PTR.add(i * VOCAB);
+            let mut best = 0usize;
+            let mut bv = *li;
+            for v in 1..VOCAB {
+                let lv = *li.add(v);
+                if lv > bv { bv = lv; best = v; }
+            }
+            *OUTPUT_PTR.add(i) = best as u8;
         }
     });
     Ok(0)
@@ -224,7 +299,7 @@ fn result(py: Python<'_>) -> PyResult<u64> {
     let cs = py.allow_threads(|| unsafe {
         let mut cs: u64 = 0;
         for i in 0..N {
-            cs = (cs + (i as u64 + 1) * (OUTPUT_TOKENS[i] as u64)) & 0xFFFFFFFF_u64;
+            cs = (cs + (i as u64 + 1) * (*OUTPUT_PTR.add(i) as u64)) & 0xFFFFFFFF_u64;
         }
         cs
     });
@@ -246,7 +321,7 @@ fn sucuri_attn(py: Python, module: &Bound<'_, PyModule>) -> PyResult<()> {
 PY_DRIVER = r"""#!/usr/bin/env python3
 '''Sucuri attention driver.
 
-Uses pyDF.DFGraph to wire 2 phases × N_BLOCKS nodes with a barrier.
+Uses pyDF.DFGraph to wire 2 phases x N_BLOCKS nodes with a barrier.
 Each phase node calls into the Rust sucuri_attn module via PyO3.
 '''
 import argparse, os, sys, time
@@ -270,7 +345,7 @@ def main():
     spec = importlib.util.spec_from_file_location("sucuri_attn", args.rust_so)
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
 
-    # Initialize all weights (single-threaded; only block 0 does it).
+    # Initialize all weights (single-threaded; called once before parallel phases).
     mod.init()
 
     K = args.n_blocks

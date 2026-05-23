@@ -1,0 +1,535 @@
+================================================================
+RIBAULT — ATTENTION END-TO-END BENCHMARK (paper revision)
+================================================================
+
+Experiment timestamp: see ~/runs/attn_paper_final_<ts>/*.log on the server.
+Master CSV:           metrics.csv (this directory)
+Raw runner outputs:   server: ~/results/attn_paper_final/N_<N>/<variant>_P<P>/
+                      server: ~/results/attn_paper_final/N_<N>/seq_haskell/
+                      server: ~/results/attn_paper_final/seq_native/  (seq_c, seq_rust)
+
+
+1. PURPOSE
+----------------------------------------------------------------
+Second paper benchmark, designed to address reviewer complaints
+that the original evaluation was narrow (only mergesort and
+text-search). Self-attention exercises a qualitatively different
+workload class: matrix multiplications with cross-row dependencies
+(N x N attention scores), followed by a per-row FFN. The dataflow
+graph has a global gather (every row's MHSA reads every K and V),
+which stress-tests the dataflow scheduler differently than the
+local-neighborhood firing rule of LCS wavefront.
+
+The workload is an end-to-end one-shot forward pass of a single
+transformer block (lifted from llama2.c by Andrej Karpathy, MIT,
+simplified — see section 4). Input is a deterministic byte sequence
+(simulating a tokenized text input); output is the argmax token
+predicted at each position. Cross-validated via an integer checksum
+of the output tokens that every variant must reproduce exactly
+against the numpy reference (expected_checksum.txt).
+
+This benchmark inherits the SAME methodological rigor as the LCS
+wavefront benchmark — per-language sequential denominators with
+matching compute backends, REPS=7 with bootstrap CI, taskset core
+pinning, and uniform RTS-A256m across every GHC binary. See
+section 8 for the full equivalence checklist.
+
+
+2. HARDWARE
+----------------------------------------------------------------
+Host:      scherbius.vitorpy.com
+CPU:       Intel(R) Xeon(R) Gold 5412U
+           24 physical cores, 2 threads/core => 48 logical CPUs
+           Base 800 MHz, max 3.9 GHz, hwp_epp governor
+Caches:    L1d 48 KiB/core, L2 2 MiB/core, L3 45 MiB shared (1 socket)
+RAM:       251 GiB
+Kernel:    Linux 6.x
+
+PHYSICAL-CORE BOUNDARY: P = 24. For P > 24 (P = 32, P = 48 in this
+sweep), pinning extends into HT siblings (cores 24..47).
+
+
+3. SOFTWARE
+----------------------------------------------------------------
+GHC:        9.6.6 (system); -dynamic builds, parallel-3.3.0.0,
+            vector-0.13.2.0, bytestring, time.
+Rust:       cargo 1.95.0, rustc 1.95.0. Crate timely 0.13.0.
+Python:     CPython 3.x (for data generator + bootstrap CI; this
+            benchmark does NOT include a Sucuri variant — see
+            section 11).
+GCC:        15.2.x (for ribault_c super body AND seq_c baseline).
+Ribault:    local toolchain in ~/Ribault.
+
+
+4. WORKLOAD: ONE TRANSFORMER BLOCK, FULL SEQUENCE
+----------------------------------------------------------------
+Per forward pass (lifted from llama2.c, simplifications noted):
+
+  x[i, :]  = E[input_tokens[i], :] + PE[i, :]            # embed + sinusoidal pos
+  x_a      = LN(x; LN_1_w, LN_1_b)                       # LayerNorm (replaces RMSNorm)
+  Q        = x_a @ W_Q                                   # N x D
+  K        = x_a @ W_K
+  V        = x_a @ W_V
+  # No RoPE (used sinusoidal absolute positional encoding instead).
+  # No causal mask (full N x N attention).
+  # No KV cache (one-shot full-sequence pass).
+  scores[h,i,j] = (Q[h, i] . K[h, j]) / sqrt(head_dim)
+  A[h]         = softmax_j(scores[h, i, :])
+  attn[i, :]   = concat over h of sum_j A[h,i,j] V[h, j, :]
+  x        = x + attn @ W_O                              # residual
+  x_b      = LN(x; LN_2_w, LN_2_b)
+  h        = ReLU(x_b @ W_1) @ W_2                       # ReLU FFN (replaces SwiGLU)
+  x        = x + h                                       # residual
+  logits[i] = x[i] @ W_U                                 # unembed (D x VOCAB)
+  output_tokens[i] = argmax_v(logits[i, v])              # greedy decode
+  checksum = sum_i((i+1) * output_tokens[i]) mod 2^32    # cross-validation
+
+LayerNorm replaces RMSNorm; ReLU FFN replaces SwiGLU; sinusoidal PE
+replaces RoPE. All simplifications are along axes that DON'T change
+the dataflow shape — they only avoid the LLaMA-specific complexity
+that has no bearing on the scheduler comparison.
+
+CONFIG (defaults):
+  N (seq length): 1024, 2048, 4096, 6144, 8192
+  D (model dim):  512
+  N_HEADS:        8        (tunable; set via N_HEADS env var)
+  HEAD_DIM:       D / N_HEADS = 64
+  D_FF:           2048
+  VOCAB:          256      (byte-level "tokenizer")
+  SEED:           42       (deterministic LCG for weights + input tokens)
+
+
+5. DATAFLOW GRAPH (2-PHASE, K BLOCKS)
+----------------------------------------------------------------
+N rows split into K = n_blocks = P blocks of N/K rows each. Two
+phases separated by a barrier:
+
+  Phase A (independent per block):
+    1. read input_tokens[lo:hi]
+    2. embed via E lookup; add PE
+    3. LN_1
+    4. compute Q[lo:hi], K[lo:hi], V[lo:hi] via W_Q, W_K, W_V matmuls
+
+  BARRIER: every block's Q, K, V must be visible.
+
+  Phase B (independent per block, but reads ALL Q/K/V):
+    5. multi-head attention for rows [lo:hi] against all N keys/values
+    6. attn @ W_O + residual
+    7. LN_2
+    8. FFN: ReLU(x_b @ W_1) @ W_2 + residual
+    9. unembed + argmax for [lo:hi]; write output_tokens[lo:hi]
+
+Cross-block dependency: Phase B needs the COMPLETE Q, K, V (every
+block contributes a row range). This is qualitatively different
+from LCS wavefront (where each block only needed two immediate
+predecessors). The benchmark stress-tests how each scheduler
+handles a global-gather synchronization.
+
+For the Ribault variants the dataflow graph has 5 super types:
+  init    (id 13)  -- load weights, allocate activations (once)
+  phaseA  (id 12)  -- per block, K instances
+  barrier (id 14)  -- K-way fan-in, gates phase B on all of phase A
+  phaseB  (id 11)  -- per block, K instances
+  output  (id 10)  -- K-way fan-in, computes & prints CHECKSUM
+
+When K > 16, the barrier and output fan-ins are chunked into a
+tree of branch-16 sub-barriers to stay within the TALM assembler's
+5-bit src-count limit (max 31 inputs per super). The chunked
+intermediates are typed `barrier` (no side effects); only the top
+of the output fan-in is typed `output` (calls the checksum print).
+
+
+6. VARIANTS
+----------------------------------------------------------------
+Nine variants total: three sequential baselines (one per language
+tier) and six parallel variants. Per-language baseline mapping is
+fixed by section 8d2.
+
+A. seq_haskell (Haskell sequential, P=1)
+   The Haskell-tier denominator (against which ribault_hs and
+   strategies report their speedups). Monolithic single-thread
+   end-to-end transformer block; SAME compute backend as the
+   Haskell parallel variants (Data.Vector.Storable.Mutable Double,
+   GHC 9.6.6 -O2, +RTS -A256m), differing only in the absence of
+   parList rseq and the absence of the per-block row decomposition.
+   Built without -threaded (no RTS spark manager overhead in the
+   denominator).
+   - source:  scripts/attention/gen_attn_hs_sequential.py
+   - run:     taskset -c 0 ./attn_seq +RTS -A256m -RTS
+   - variant column in CSV: "seq_haskell"
+
+A2. seq_c (C sequential, P=1)
+   The C-tier denominator (against which ribault_c reports its
+   speedup). Monolithic single-thread end-to-end in pure C, gcc
+   -O3 -march=native, raw double arrays via malloc — same compute
+   backend as the ribault_c super body.
+   - source:  scripts/attention/attn_seq.c
+   - build:   gcc -O3 -march=native -o attn_seq_c attn_seq.c -lm
+   - run:     taskset -c 0 ./attn_seq_c DATA_DIR
+   - variant column in CSV: "seq_c"
+
+A3. seq_rust (Rust sequential, P=1)
+   The Rust-tier denominator (against which ribault_rust and
+   timely report their speedups). Monolithic single-thread
+   end-to-end in Rust, release profile (opt-level=3, lto="thin",
+   codegen-units=1). CRITICAL FAIRNESS NOTE: the parallel Rust
+   leaf kernels (ribault_rust super body, timely worker map)
+   use raw `*const f64` / `*mut f64` arithmetic with NO bounds
+   checking on the O(N^2) inner loops; if seq_rust kept Rust's
+   default bounds checking it would be artificially slow vs the
+   parallel numerator and would inflate the Rust-tier speedups.
+   seq_rust therefore mirrors the leaf compute exactly: `unsafe`
+   block, raw pointers, `.add(..)` arithmetic.
+   - source:  scripts/attention/attn_seq.rs (+ Cargo.toml.attn_seq)
+   - build:   cargo build --release  (with the matching Cargo.toml)
+   - run:     taskset -c 0 ./attn_seq_rust DATA_DIR
+   - variant column in CSV: "seq_rust"
+
+B. ribault_c
+   Trebuchet runtime + C super bodies. 5 super types in the .fl:
+     init (s13)   -- load all weights, allocate activations
+     phaseA (s12) -- per block: rows [lo:hi] embed/LN_1/Q/K/V
+     barrier (s14)-- K-way fan-in, emits single done signal
+     phaseB (s11) -- per block: MHSA + W_O + LN_2 + FFN + W_U + argmax
+     output (s10) -- K-way fan-in, computes & prints CHECKSUM
+   gen_attn_c.py emits attn.fl + attn_c_supers.c; built into
+   libsupers.so via tools/build_supers_c.sh.
+   - variant column in CSV: "ribault_c"
+
+C. ribault_rust
+   IDENTICAL .fl dataflow graph as ribault_c. Super body in Rust
+   (staticlib via libc malloc + raw pointers), linked with the C
+   wrappers via tools/build_supers_rust.sh. Provides the
+   language-tier pair for Rust dataflow competitors: ribault_rust
+   vs timely (both Rust per-block compute; only the scheduler
+   differs).
+   - variant column in CSV: "ribault_rust"
+
+D. ribault_hs   (Ribault, NATURAL Haskell super body)
+   Primary thesis variant for the attention benchmark. IDENTICAL
+   .fl dataflow graph as ribault_c. Super body in Haskell, using
+   IDIOMATIC mutable storage (top-level NOINLINE IORefs holding
+   Data.Vector.Storable.Mutable Double) — NO Foreign.Ptr, NO
+   mallocBytes, NO Foreign.Marshal.* in user code. The Trebuchet
+   C runtime carries the FFI cost at the super boundary; the
+   user-visible Haskell body uses Vector.Storable, the same
+   modern Haskell idiom as GHC Strategies (variant E). This is
+   the equivalent variant to LCS's "super" (Ribault-Hs).
+   gen_attn_hs.py emits attn.hsk + attn.fl + supers_inject.hs;
+   the .hsk declares the 5 supers in REVERSE order so that
+   supersgen assigns barrier=s14, init=s13, phaseA=s12, phaseB=s11,
+   output=s10, matching the .fl emission. The supersgen-derived
+   Supers.hs is augmented via SUPERS_INJECT_FILE with the actual
+   Haskell kernels (attnInit, attnPhaseA, attnBarrier, attnPhaseB,
+   attnOutput). +RTS -A256m via SUPERS_RTS_A.
+   - variant column in CSV: "ribault_hs"
+
+E. strategies (GHC Strategies)
+   Standalone Haskell program: top-level IORefs holding all
+   IOVectors (storable Doubles via Data.Vector.Storable.Mutable),
+   parList rseq sparks across K row-blocks per phase. Implicit
+   Haskell laziness barrier (foldl' seq () over Phase A results
+   before Phase B sparks).
+   Compute backend IDENTICAL to ribault_hs — only the parallel
+   scheduler (parList rseq sparks vs Trebuchet dataflow firing
+   rule) differs. This is the head-to-head pair the paper points
+   at: ribault_hs vs strategies, same per-block compute, only
+   scheduler changes.
+   - variant column in CSV: "strategies"
+
+F. timely (Timely Dataflow)
+   Modern descendant of Naiad. Rust crate using `timely` v0.13
+   with 2-epoch driver: epoch 0 = phase A, epoch 1 = phase B.
+   Worker 0 emits block indices into an InputHandle; an Exchange
+   operator shards by block index across workers; a map runs the
+   per-block compute; a probe barriers between epochs. Shared
+   mutable state via raw *mut f64 wrapped in a Send+Sync newtype
+   of usize. Algorithmically race-free because each block writes
+   disjoint rows in phase A and reads all rows in phase B (after
+   the inter-epoch frontier advance).
+   - variant column in CSV: "timely"
+
+G. sucuri (Tiago's pyDF.DFGraph + Rust PyO3)
+   Independent dataflow runtime, included by request of the
+   advisor. Free-threaded Python 3.14t orchestrator (no GIL, via
+   PEP 703) drives a pyDF.DFGraph: K phase-A nodes, K-way fan-in
+   barrier node, K phase-B nodes, K-way fan-in result node. The
+   per-block compute body is a Rust PyO3 extension module
+   (cdylib) that mirrors gen_attn_rust.py's leaf kernels exactly.
+   Tests whether a different research dataflow runtime — non-
+   Trebuchet, non-Haskell, Python-orchestrated — sees the same
+   scaling shape on attention as Trebuchet and Timely.
+
+   Rust state lives in `static mut *mut c_double` slots populated
+   by init() via libc::malloc — the SAME raw-pointer pattern used
+   by ribault_rust and timely, and the SAME pattern as LCS sucuri.
+   The earlier prototype used `static mut Vec<f64>`, which Rust
+   2024 treats as undefined behaviour (Vec has Drop + complex
+   layout under static mut); the current version uses the raw-
+   pointer pattern that compiles cleanly. Algorithmic race-freedom:
+   within each phase, every worker writes disjoint rows of the
+   activation buffers; the pyDF barrier provides happens-before
+   between phase A and phase B.
+
+   Build: cargo build --release  (opt-level=3, lto="thin",
+                                   codegen-units=1; libc::malloc
+                                   for buffer allocation).
+   Run:   PYTHON_GIL=0 python3.14t run_sucuri.py --rust-so libsucuri_attn.so
+   Requires: SUCURI_ROOT (Tiago's Sucuri repo) + PYTHON_NOGIL
+            (free-threaded Python 3.14t binary). If either is
+            absent the runner skips this variant gracefully with
+            a banner message; the rest of the sweep continues.
+   - variant column in CSV: "sucuri"
+
+F0. timely_rebalanced — N/A FOR THIS BENCHMARK
+   The LCS wavefront benchmark reports BOTH a natural Timely
+   variant and a rebalanced one (timely_rebalanced), because the
+   natural Timely choice — `exchange(|(i,j)| (i*DIM_COLS + j))` —
+   collapses anti-diagonal block coordinates onto fewer than P
+   distinct workers whenever gcd(DIM_COLS-1, P) > 1. For attention
+   the analogous question is whether Timely's exchange can collapse
+   block-to-worker assignment. The answer is NO, by construction:
+
+     - The attention exchange is `(_phase, b) -> b as u64` where
+       b = block_idx in [0, N_BLOCKS). The sweep sets
+       N_BLOCKS = P, so b ranges over [0, P).
+     - Timely's worker assignment is `hash(key) mod P`. With key =
+       b as u64 and P distinct block-ids being routed to P workers,
+       the mapping is bijective regardless of P or hash choice.
+       Each block goes to a unique worker; no two blocks land on
+       the same worker.
+     - There is no "diagonal" or compound coordinate structure that
+       could collide (unlike LCS, where two coordinates per block
+       interact with the modular hash). Attention has a flat 1-D
+       block index space.
+
+   We therefore do NOT report a separate `timely_rebalanced` for
+   attention. This is documented preemptively so the reviewer can
+   verify the analysis without re-running anything. The row-
+   distribution remainder (when N % P != 0 the last block absorbs
+   the leftover rows; e.g. P=23, N=1024 -> blocks 0..21 have 44
+   rows each, block 22 has 56) is a per-block load-imbalance
+   affecting ALL parallel variants identically — it is NOT a
+   Timely-specific scheduling artifact and does NOT bias the
+   timely-vs-ribault comparison.
+
+
+7. PARAMETER SWEEP
+----------------------------------------------------------------
+N values: 1024, 2048, 4096, 6144, 8192
+P values: 2, 3, 4, 7, 8, 13, 16, 19, 23, 24, 32, 48
+REPS per measurement: 7  (real paper protocol; median across 7)
+                     (REPS=3 only for exploratory/regime sondagem)
+
+P sweep matches the LCS final lineup — 10 physical-core points
+(2..24, including primes 3, 7, 13, 19, 23) plus two HT
+oversubscription points (32, 48).
+
+Total measurements:
+  Sequentials   : 3 variants * 5 N           * 7 reps =  105
+  Parallels     : 6 variants * 5 N * 12 P    * 7 reps = 2520
+  TOTAL                                              = 2625
+  (sucuri contributes 420 of the parallels; if SUCURI_ROOT /
+   PYTHON_NOGIL are unavailable on the host, sucuri is skipped
+   and TOTAL drops to 2205 with 5 parallel variants.)
+
+
+8. METHODOLOGICAL EQUIVALENCE
+----------------------------------------------------------------
+a) Same input. Weights and input tokens are LCG-derived (seed=42),
+   bit-identical across variants. gen_attn_data.py runs a numpy
+   reference forward and writes expected_checksum.txt; every
+   variant (sequentials and parallels) must match it.
+
+b) Same block grid. K = n_blocks = P for every parallel variant.
+   Phase A blocks are independent; Phase B blocks all read the
+   same shared Q, K, V arrays. Sequentials run with K=1
+   (monolithic full-N) since there is no scheduler to exercise.
+
+c) Same per-block compute idiom within each language tier:
+     C    (ribault_c, seq_c):                raw double arrays via malloc
+     Rust (ribault_rust, timely, sucuri,     raw f64 pointers via libc::malloc
+           seq_rust):                        + unsafe inner loops
+     Haskell (ribault_hs, strategies,        Data.Vector.Storable.Mutable
+              seq_haskell):                  Double
+   The cross-language gap is intentional and explicit. Within each
+   language tier the parallel scheduler is the only variable.
+
+d) Same GHC RTS allocator across ALL Haskell binaries. The Euro-
+   Par 2026 reviewer's specific fairness complaint about LCS
+   ("the original tuned `SUPERS_RTS_A=256m` only on the TALM side
+   and left every other Haskell binary at the GHC default") is
+   pre-empted here from the start: every GHC-compiled binary is
+   invoked with `+RTS -A256m -RTS` and the Trebuchet interp's
+   internal Haskell shim runs with `SUPERS_RTS_A=256m`.
+   Concretely, the value `TALM_RTS_A=256m` is threaded into ALL of:
+     * seq_haskell                (+RTS -A$TALM_RTS_A -RTS)
+     * ribault_hs                 (SUPERS_RTS_A=$TALM_RTS_A on the interp)
+     * strategies                 (+RTS -N$P -A$TALM_RTS_A -RTS)
+     * ribault_c                  (SUPERS_RTS_A=$TALM_RTS_A — the
+                                   Trebuchet C interp still has a
+                                   Haskell shim that allocates)
+     * ribault_rust               (SUPERS_RTS_A=$TALM_RTS_A — same)
+   See scripts/attention/run_attn_paper_sweep.sh. The Rust binaries
+   (seq_rust, timely) and the Timely runtime have no GHC RTS and
+   are not affected by -A256m.
+
+d2) Per-language baselines (cross-language inflation guard).
+    Every parallel numerator is measured against a SAME-LANGUAGE
+    sequential denominator. Comparing ribault_c against the
+    Haskell seq baseline would conflate the dataflow-scheduler
+    win with the GHC->C compute gap that lives outside the
+    parallelism contribution. The honest mapping:
+
+      * ribault_hs, strategies              -> seq_haskell
+      * ribault_c                           -> seq_c
+      * ribault_rust, timely, sucuri        -> seq_rust
+
+    All three baselines run a monolithic full-N transformer
+    block, use the identical config (seed=42, same weights, same
+    input tokens), and produce the SAME CHECKSUM at every N (this
+    is the cross-validation invariant — every variant must match
+    expected_checksum.txt). Each baseline is the fastest same-
+    language single-thread idiom we could write while still
+    matching the parallel variant's compute backend; this gives
+    the conservative (smallest) honest speedup for each tier and
+    removes the cross-language inflation that a single-baseline
+    table would contain. The seq_c / seq_rust / seq_haskell runs
+    are collected with the same REPS=7, same taskset core-0 pin,
+    and same percentile-bootstrap CI machinery as every other
+    variant. tables_with_ci.txt is split into three tiers (Haskell,
+    C, Rust) with the matched seq baseline quoted in each header.
+
+e) Same thread-count plumbing. GHC binaries get `+RTS -N<P> -RTS`.
+   Trebuchet (ribault_c / ribault_rust / ribault_hs) gets
+   `SUPERS_RTS_N=<P>`. Timely gets `-w <P>`.
+
+f) Same core pinning. Every measurement is launched via
+   `taskset -c 0-(P-1) ...` (sequentials use `taskset -c 0`). For
+   P <= 24 this keeps work on physical cores; for P > 24 (P=32,
+   P=48) it extends into HT siblings, so those numbers reflect
+   SMT contention and are interpretively distinct from the
+   pure-physical-core P=2..24 numbers.
+
+g) Same number of repetitions and same medianing + confidence
+   intervals. REPS=7 per (variant, N, P); the point estimate
+   reported in every table is the **median** of the seven runs
+   (sorted ascending, position 4 of 7).
+
+   In addition to the median, every reported speedup carries a
+   **95% confidence interval (IC)** computed by **percentile
+   bootstrap**: resample the 7 raw runtimes with replacement
+   10000 times, take the median of each resample, then report
+   the 2.5th and 97.5th percentile of that bootstrap distribution
+   as the lower/upper CI bound for the per-cell variant runtime.
+
+   The CI for a speedup (T_seq / T_variant, where T_seq is the
+   LANGUAGE-MATCHED baseline from section 8d2 — seq_haskell for
+   Haskell-tier variants, seq_c for ribault_c, seq_rust for
+   ribault_rust / timely / sucuri) propagates uncertainty from BOTH
+   numerator and denominator: in each of the 10000 bootstrap
+   iterations we resample the baseline runs and the variant runs
+   INDEPENDENTLY (with replacement), recompute the medians, take
+   their ratio, and read the 2.5th / 97.5th percentile of the
+   resulting ratio distribution.
+
+   Independent (not paired) resampling is the correct choice here
+   because the seq and variant runs were NOT collected in paired
+   trials: the runner runs all 7 seq reps consecutively at the
+   start of an N, then for each P runs all 7 variant reps
+   consecutively, with no shared seed or shared machine-state
+   between the i-th seq run and the i-th variant run. Resampling
+   independently gives the conservative (slightly wider) CI that
+   does not assume a phantom correlation.
+
+   Bootstrap with 10000 resamples is overkill for N=7 (the median
+   takes only one of 7 possible discrete values per resample) but
+   it is the standard nonparametric choice for small samples and
+   makes the CI reproducible by anyone who re-runs the analysis
+   from master.csv. We chose bootstrap over a parametric Student-t
+   CI because the 7-rep distribution is not symmetric — the
+   Trebuchet dispatch tail and HT-cache effects produce skewed
+   right tails at oversubscription.
+
+   Seven reps absorb single-rep outliers from CPU frequency
+   jitter, HT contention spikes (P>24), and the Trebuchet super-
+   dispatch tail. REPS=3 was used only during pre-experiment
+   regime exploration and is NOT the protocol for the data
+   reported in the paper.
+
+h) Same compile flags within each language tier:
+   - GHC: -O2 -dynamic for all parallel Haskell variants and
+     ribault_hs's super body; -O2 (no -threaded) for the
+     sequential baseline (no RTS spark manager overhead in the
+     denominator).
+   - Rust: --release (opt-level=3, lto="thin", codegen-units=1,
+     no debug info) for seq_rust and the timely crate; ribault_rust
+     uses lto="fat" via build_supers_rust.sh because the staticlib
+     produces a smaller leaf payload — the lto choice does not
+     affect the per-block kernel hot path (matmul tight loops
+     dominate; the extra LTO inlining only touches the FFI shim).
+   - C: -O3 -march=native for seq_c and ribault_c.
+
+
+9. CSV SCHEMA
+----------------------------------------------------------------
+metrics.csv: one row per (variant, N, D, n_heads, n_blocks, P, rep)
+  variant   text   one of {seq_haskell, seq_c, seq_rust,
+                          ribault_c, ribault_rust, ribault_hs,
+                          strategies, timely, sucuri}
+  N         int    sequence length
+  D         int    model dim (always 512)
+  n_heads   int    8
+  n_blocks  int    number of parallel row-blocks (= P for parallels,
+                   = 1 for sequentials)
+  P         int    worker count (= 1 for sequentials)
+  rep       int    1..7
+  seconds   float  wall-clock parallel-section runtime
+  checksum  int    output-token checksum
+  expected  int    numpy reference checksum (must equal checksum)
+
+
+10. FINDINGS  (filled in after the sweep completes)
+----------------------------------------------------------------
+This section will be edited with the cross-variant per-language
+tables once the sweep terminates and master.csv is harvested
+locally. Tables follow the LCS template:
+
+  === N=<N> | Haskell tier (baseline = seq_haskell, median=Xs, n=7) ===
+     P | ribault_hs | strategies
+  === N=<N> | C tier       (baseline = seq_c,       median=Xs, n=7) ===
+     P | ribault_c
+  === N=<N> | Rust tier    (baseline = seq_rust,    median=Xs, n=7) ===
+     P | ribault_rust | timely | sucuri
+
+
+11. WHAT'S DELIBERATELY OMITTED  (vs LCS lineup)
+----------------------------------------------------------------
+- monad-par, par/pseq: superseded by GHC Strategies as the
+  representative pure-Haskell parallel scheduler. Excluded to
+  keep the variant set focused (matches LCS final lineup).
+
+- Repa: same structural fairness objection as monad-par in LCS —
+  pure-Haskell scheduler, no FFI cost per block. Excluded for
+  consistency with the LCS lineup.
+
+- timely_rebalanced: N/A for this benchmark; see section F0
+  above for the mechanical justification (block-to-worker
+  assignment is bijective by construction, no gcd-style collapse
+  possible).
+
+
+12. ALGORITHM ATTRIBUTION
+----------------------------------------------------------------
+The transformer-block forward pass is lifted (with simplifications)
+from karpathy/llama2.c (Andrej Karpathy, MIT License). The
+simplifications — sinusoidal PE in place of RoPE, LayerNorm in
+place of RMSNorm, ReLU FFN in place of SwiGLU, byte-level vocab
+in place of SentencePiece, full one-shot pass in place of
+auto-regressive generation — are along axes that do not affect
+the dataflow shape relevant to the scheduler comparison. The
+original repository is at https://github.com/karpathy/llama2.c .
+
+The Timely Dataflow runtime is by Frank McSherry et al., crate
+`timely` v0.13 (https://crates.io/crates/timely), itself a Rust
+reimplementation of the Naiad system (Murray et al., SOSP 2013).
