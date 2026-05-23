@@ -178,6 +178,26 @@ E. Sucuri + Rust (Tiago's dataflow lib)
       the same scaling shape on LCS.
    -- variant column in CSV: "sucuri"
 
+F0. Timely Dataflow (Rust) — REBALANCED variant
+   Identical to F (below) in every aspect except the Exchange
+   function: instead of `exchange(|(i,j)| (i*DIM_COLS + j))`, the
+   rebalanced version uses `exchange(|(i,j)| i)`, distributing
+   blocks by their grid row. Inside any anti-diagonal d the active
+   blocks are (i, d-i) for i in [lo,hi]; with the original hash the
+   worker assignment becomes (i*(DIM_COLS-1) + d) mod P, which
+   collapses to fewer than P distinct workers whenever
+   gcd(DIM_COLS-1, P) > 1 (the diagonal serializes onto a single
+   worker in the worst case, e.g. N=100k P=3 with DIM_COLS=1000:
+   gcd(999,3)=3 sends every diagonal to one worker). The
+   rebalanced hash distributes (i, d-i) across P workers as i mod P,
+   uniform inside every diagonal regardless of gcd. The two Timely
+   results are reported side by side in master.csv (variants
+   `timely` and `timely_rebalanced`) so the paper can show both:
+   (a) the natural / idiomatic Timely choice and the load-imbalance
+   trap that comes with it, and (b) a hand-tuned exchange that
+   removes the trap. The Ribault firing-rule scheduler has no
+   exchange-by-hash and is structurally immune to either case.
+
 F. Timely Dataflow (Rust)
    -- Modern descendant of Naiad / Dryad / Materialize (all three
       cited as missing from related work by reviewer #116A). Dryad
