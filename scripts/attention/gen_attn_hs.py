@@ -105,7 +105,7 @@ import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Marshal.Alloc (mallocBytes)
 import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Storable (peek, poke, peekElemOff, pokeElemOff)
-import Foreign.Ptr (Ptr, plusPtr, nullPtr)
+import Foreign.Ptr (Ptr, plusPtr, nullPtr, castPtr)
 import Data.Word (Word8)
 import Data.Bits ((.&.))
 import Control.Monad (forM_)
@@ -201,19 +201,21 @@ g_outputT_attn :: IORef (Ptr Word8)
 g_outputT_attn = unsafePerformIO (newIORef nullPtr)
 
 -- Read a .bin file as a raw Ptr Double (memcpy from BS into a fresh malloc).
+-- Allocate as Ptr Word8 (matches the ByteString byte type for copyBytes),
+-- then castPtr to Ptr Double on return.
 attnReadDoublesPtr :: FilePath -> Int -> IO (Ptr Double)
 attnReadDoublesPtr path count = do
   bs <- BS.readFile path
   let !(BSI.BS fp _) = bs
-  p <- mallocBytes (count * 8)
+  p <- mallocBytes (count * 8) :: IO (Ptr Word8)
   withForeignPtr fp $ \src -> copyBytes p src (count * 8)
-  return p
+  return (castPtr p)
 
 attnReadBytesPtr :: FilePath -> Int -> IO (Ptr Word8)
 attnReadBytesPtr path count = do
   bs <- BS.readFile path
   let !(BSI.BS fp _) = bs
-  p <- mallocBytes count
+  p <- mallocBytes count :: IO (Ptr Word8)
   withForeignPtr fp $ \src -> copyBytes p src count
   return p
 
@@ -278,14 +280,14 @@ attnLayerNormBlock !lo !hi !x !w !b !out !dim = do
 -- Allocate a zero-initialized Ptr Double of `count` elements.
 attnAllocD :: Int -> IO (Ptr Double)
 attnAllocD count = do
-  p <- mallocBytes (count * 8)
-  forM_ [0..count-1] $ \i -> pokeElemOff p i 0.0
+  p <- mallocBytes (count * 8) :: IO (Ptr Double)
+  forM_ [0..count-1] $ \i -> pokeElemOff p i (0.0 :: Double)
   return p
 
 attnAllocU :: Int -> IO (Ptr Word8)
 attnAllocU count = do
-  p <- mallocBytes count
-  forM_ [0..count-1] $ \i -> pokeElemOff p i 0
+  p <- mallocBytes count :: IO (Ptr Word8)
+  forM_ [0..count-1] $ \i -> pokeElemOff p i (0 :: Word8)
   return p
 
 -- INIT (s13): load all weights and inputs, allocate every activation buffer.
