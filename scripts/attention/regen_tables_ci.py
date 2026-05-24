@@ -130,6 +130,9 @@ def main():
                "-> seq_rust      (rustc release, raw-pointer unsafe inner loops)")
     out.append("")
 
+    # =============================================================
+    # SECTION 1: per-language speedup tables (vs language-matched seq)
+    # =============================================================
     for N in Ns:
         for lang, base_v, variants in LAYOUT:
             base_samples = data.get(base_v, {}).get(N, {}).get(1, [])
@@ -161,6 +164,69 @@ def main():
                 out.append(f"  {P:>2} | " + " | ".join(cells))
             out.append("")
         out.append("")
+
+    # =============================================================
+    # SECTION 2: raw median walltime (seconds) for every variant
+    # =============================================================
+    all_variants = ["seq_haskell", "seq_c", "seq_rust",
+                    "ribault_hs", "strategies",
+                    "ribault_c",
+                    "ribault_rust", "timely", "sucuri"]
+    out.append("=" * 60)
+    out.append("RAW MEDIAN WALLTIME (seconds) — for direct head-to-head reading")
+    out.append("=" * 60)
+    out.append("")
+    for N in Ns:
+        present = [v for v in all_variants if data.get(v, {}).get(N)]
+        if not present:
+            continue
+        header = " | ".join(f"{v:>13}" for v in present)
+        out.append(f"=== N={N} ===")
+        out.append(f"   P | {header}")
+        for P in sorted({1} | set(Ps)):
+            cells = []
+            for v in present:
+                samples = data[v][N].get(P, [])
+                if not samples:
+                    cells.append(f"{'n/a':>13}")
+                else:
+                    med = statistics.median(samples)
+                    cells.append(f"{med:11.3f}s".rjust(13))
+            out.append(f"  {P:>2} | " + " | ".join(cells))
+        out.append("")
+    out.append("")
+
+    # =============================================================
+    # SECTION 3: head-to-head ribault_hs vs strategies (walltime ratio)
+    # The paper's central comparison: T_strategies / T_ribault_hs
+    # >1 = Ribault-Hs faster. Includes bootstrap CI on the ratio.
+    # =============================================================
+    out.append("=" * 60)
+    out.append("HEAD-TO-HEAD: Ribault-Hs vs GHC Strategies")
+    out.append("Ratio = T_strategies / T_ribault_hs  (>1 means Ribault-Hs is faster)")
+    out.append("=" * 60)
+    out.append("")
+    for N in Ns:
+        rh = data.get("ribault_hs", {}).get(N, {})
+        st = data.get("strategies", {}).get(N, {})
+        if not rh or not st:
+            continue
+        out.append(f"=== N={N} ===")
+        out.append(f"   P |  T_ribault_hs |  T_strategies | T_strat/T_rhs (median × [lo, hi])")
+        for P in Ps:
+            rhs = rh.get(P, [])
+            sts = st.get(P, [])
+            if not rhs or not sts:
+                out.append(f"  {P:>2} | {'n/a':>13} | {'n/a':>13} | {'n/a':>30}")
+                continue
+            med, lo, hi = bootstrap_ci(sts, rhs, B=B)
+            rh_med = statistics.median(rhs)
+            st_med = statistics.median(sts)
+            tag = "  <- Ribault-Hs faster" if med > 1.0 else "  <- STRAT faster"
+            out.append(f"  {P:>2} | {rh_med:11.3f}s | {st_med:11.3f}s | "
+                       f"{med:5.2f}× [{lo:5.2f}, {hi:5.2f}]{tag}")
+        out.append("")
+    out.append("")
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:
