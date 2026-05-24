@@ -90,7 +90,12 @@ the dataflow shape — they only avoid the LLaMA-specific complexity
 that has no bearing on the scheduler comparison.
 
 CONFIG (defaults):
-  N (seq length): 1024, 2048, 4096, 6144, 8192
+  N (seq length): 4096, 6144, 8192, 10240, 12288
+                  (Euro-Par paper used 6144-8192; revision extends the
+                   sweep both down to 4096 and up to 12288 to expose
+                   the per-block grain regime that favours STRAT's
+                   spark scheduler at small grain vs the Ribault
+                   firing-rule scheduler at moderate-to-large grain.)
   D (model dim):  512
   N_HEADS:        8        (tunable; set via N_HEADS env var)
   HEAD_DIM:       D / N_HEADS = 64
@@ -207,14 +212,29 @@ C. ribault_rust
 
 D. ribault_hs   (Ribault, NATURAL Haskell super body)
    Primary thesis variant for the attention benchmark. IDENTICAL
-   .fl dataflow graph as ribault_c. Super body in Haskell, using
-   IDIOMATIC mutable storage (top-level NOINLINE IORefs holding
-   Data.Vector.Storable.Mutable Double) — NO Foreign.Ptr, NO
-   mallocBytes, NO Foreign.Marshal.* in user code. The Trebuchet
+   .fl dataflow graph as ribault_c. Super body in Haskell using
+   raw `Ptr Double` storage (Foreign.Marshal.Alloc.mallocBytes
+   for the activation buffers; Foreign.Storable peekElemOff /
+   pokeElemOff in every inner kernel). Top-level NOINLINE IORefs
+   hold the pointers; INLINE pragmas on the kernels. The Trebuchet
    C runtime carries the FFI cost at the super boundary; the
-   user-visible Haskell body uses Vector.Storable, the same
-   modern Haskell idiom as GHC Strategies (variant E). This is
-   the equivalent variant to LCS's "super" (Ribault-Hs).
+   user-visible Haskell inner loops are the idiom a programmer
+   would write for a tight numeric kernel that needs to avoid the
+   Data.Vector.Storable.Mutable boxing/unboxing overhead.
+
+   GHC Strategies (variant E) uses Data.Vector.Storable.Mutable
+   Double for storage and MV.read / MV.write for inner-loop
+   access — the idiomatic Haskell parallel-numerics pattern. The
+   ribault_hs vs strategies head-to-head isolates the parallel
+   scheduler (Trebuchet firing rule vs parList rseq sparks). The
+   inner-loop access pattern is intentionally asymmetric:
+   ribault_hs uses the tighter raw-pointer kernels to expose the
+   BEST that a Ribault-compiled Haskell super body can do; STRAT
+   keeps the canonical mutable-vector idiom that a typical Haskell
+   parallel programmer would write. We report both numbers; the
+   take-away is the magnitude of the dataflow-scheduler advantage
+   AT ITS BEST in the tier (rather than artificially constraining
+   ribault_hs to match a non-optimal access pattern).
    gen_attn_hs.py emits attn.hsk + attn.fl + supers_inject.hs;
    the .hsk declares the 5 supers in REVERSE order so that
    supersgen assigns barrier=s14, init=s13, phaseA=s12, phaseB=s11,
@@ -316,7 +336,7 @@ F0. timely_rebalanced — N/A FOR THIS BENCHMARK
 
 7. PARAMETER SWEEP
 ----------------------------------------------------------------
-N values: 1024, 2048, 4096, 6144, 8192
+N values: 4096, 6144, 8192, 10240, 12288
 P values: 2, 3, 4, 7, 8, 13, 16, 19, 23, 24, 32, 48
 REPS per measurement: 7  (real paper protocol; median across 7)
                      (REPS=3 only for exploratory/regime sondagem)

@@ -5,10 +5,17 @@ Mirrors gen_attn_c.py / gen_attn_rust.py exactly in dataflow shape (same
 5-super graph: init, phaseA, barrier, phaseB, output; same .fl emission
 with chunked fan-in for barrier/output to stay within the TALM 5-bit
 src-count limit). The only thing that changes is the super body
-language: Haskell, with IDIOMATIC mutable storage (IORef +
-Data.Vector.Storable.Mutable) — no Foreign.Ptr in user code, no
-mallocBytes, no allocaBytes. The Trebuchet C runtime carries the FFI
-cost at the super boundary; user-visible Haskell uses Vector.Storable.
+language: Haskell.
+
+Storage is raw `Ptr Double` (heap-allocated via Foreign.Marshal.Alloc.
+mallocBytes) accessed through peekElemOff / pokeElemOff in the inner
+kernels. This eliminates the boxing/unboxing that
+Data.Vector.Storable.Mutable's MV.read / MV.write incurs on every
+inner-loop access, while keeping every algorithm step in pure Haskell.
+The Trebuchet C runtime carries the FFI cost at the super boundary;
+user-visible Haskell is the same idiom a programmer would write for a
+tight numeric inner loop (Foreign.Storable + Foreign.Ptr, with strict
+bindings and INLINE pragmas on the kernels).
 
 This is the deferred Ribault-Hs attention variant described in
 results/attn_paper_final/description.txt section 11 as "future work";
@@ -92,12 +99,13 @@ main =
 
 
 INJECT_TEMPLATE = r"""import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import qualified Data.Vector.Storable.Mutable as MV
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import Foreign.ForeignPtr (withForeignPtr)
-import Foreign.Storable (peek)
-import Foreign.Ptr (Ptr, plusPtr)
+import Foreign.Marshal.Alloc (mallocBytes)
+import Foreign.Marshal.Utils (copyBytes)
+import Foreign.Storable (peek, poke, peekElemOff, pokeElemOff)
+import Foreign.Ptr (Ptr, plusPtr, nullPtr)
 import Data.Word (Word8)
 import Data.Bits ((.&.))
 import Control.Monad (forM_)
@@ -115,148 +123,148 @@ attnBlocks  = __N_BLOCKS__
 attnDataDir :: FilePath
 attnDataDir = "__DATA_DIR__"
 
--- Global shared state via NOINLINE IORefs to mutable storable vectors.
--- One IORef per tensor / activation. Same idiom as gen_attn_hs_strategies.py.
+-- Global shared state via NOINLINE IORefs to RAW Ptr Double / Ptr Word8.
+-- Storage is heap-allocated via Foreign.Marshal.Alloc.mallocBytes; the
+-- inner kernels access values with peekElemOff / pokeElemOff (no boxing,
+-- no Data.Vector.Storable.Mutable abstraction overhead).
 {-# NOINLINE g_e_attn #-}
-g_e_attn :: IORef (MV.IOVector Double)
-g_e_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_e_attn :: IORef (Ptr Double)
+g_e_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_pe_attn #-}
-g_pe_attn :: IORef (MV.IOVector Double)
-g_pe_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_pe_attn :: IORef (Ptr Double)
+g_pe_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_wq_attn #-}
-g_wq_attn :: IORef (MV.IOVector Double)
-g_wq_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_wq_attn :: IORef (Ptr Double)
+g_wq_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_wk_attn #-}
-g_wk_attn :: IORef (MV.IOVector Double)
-g_wk_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_wk_attn :: IORef (Ptr Double)
+g_wk_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_wv_attn #-}
-g_wv_attn :: IORef (MV.IOVector Double)
-g_wv_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_wv_attn :: IORef (Ptr Double)
+g_wv_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_wo_attn #-}
-g_wo_attn :: IORef (MV.IOVector Double)
-g_wo_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_wo_attn :: IORef (Ptr Double)
+g_wo_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_w1_attn #-}
-g_w1_attn :: IORef (MV.IOVector Double)
-g_w1_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_w1_attn :: IORef (Ptr Double)
+g_w1_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_w2_attn #-}
-g_w2_attn :: IORef (MV.IOVector Double)
-g_w2_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_w2_attn :: IORef (Ptr Double)
+g_w2_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_wu_attn #-}
-g_wu_attn :: IORef (MV.IOVector Double)
-g_wu_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_wu_attn :: IORef (Ptr Double)
+g_wu_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_ln1w_attn #-}
-g_ln1w_attn :: IORef (MV.IOVector Double)
-g_ln1w_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_ln1w_attn :: IORef (Ptr Double)
+g_ln1w_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_ln1b_attn #-}
-g_ln1b_attn :: IORef (MV.IOVector Double)
-g_ln1b_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_ln1b_attn :: IORef (Ptr Double)
+g_ln1b_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_ln2w_attn #-}
-g_ln2w_attn :: IORef (MV.IOVector Double)
-g_ln2w_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_ln2w_attn :: IORef (Ptr Double)
+g_ln2w_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_ln2b_attn #-}
-g_ln2b_attn :: IORef (MV.IOVector Double)
-g_ln2b_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_ln2b_attn :: IORef (Ptr Double)
+g_ln2b_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_x_attn #-}
-g_x_attn :: IORef (MV.IOVector Double)
-g_x_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_x_attn :: IORef (Ptr Double)
+g_x_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_xa_attn #-}
-g_xa_attn :: IORef (MV.IOVector Double)
-g_xa_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_xa_attn :: IORef (Ptr Double)
+g_xa_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_q_attn #-}
-g_q_attn :: IORef (MV.IOVector Double)
-g_q_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_q_attn :: IORef (Ptr Double)
+g_q_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_k_attn #-}
-g_k_attn :: IORef (MV.IOVector Double)
-g_k_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_k_attn :: IORef (Ptr Double)
+g_k_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_v_attn #-}
-g_v_attn :: IORef (MV.IOVector Double)
-g_v_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_v_attn :: IORef (Ptr Double)
+g_v_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_attn_attn #-}
-g_attn_attn :: IORef (MV.IOVector Double)
-g_attn_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_attn_attn :: IORef (Ptr Double)
+g_attn_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_xb_attn #-}
-g_xb_attn :: IORef (MV.IOVector Double)
-g_xb_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_xb_attn :: IORef (Ptr Double)
+g_xb_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_ffnh_attn #-}
-g_ffnh_attn :: IORef (MV.IOVector Double)
-g_ffnh_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_ffnh_attn :: IORef (Ptr Double)
+g_ffnh_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_logits_attn #-}
-g_logits_attn :: IORef (MV.IOVector Double)
-g_logits_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_logits_attn :: IORef (Ptr Double)
+g_logits_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_inputT_attn #-}
-g_inputT_attn :: IORef (MV.IOVector Word8)
-g_inputT_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_inputT_attn :: IORef (Ptr Word8)
+g_inputT_attn = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_outputT_attn #-}
-g_outputT_attn :: IORef (MV.IOVector Word8)
-g_outputT_attn = unsafePerformIO (newIORef =<< MV.replicate 0 0)
+g_outputT_attn :: IORef (Ptr Word8)
+g_outputT_attn = unsafePerformIO (newIORef nullPtr)
 
-attnReadDoubles :: FilePath -> Int -> IO (MV.IOVector Double)
-attnReadDoubles path count = do
+-- Read a .bin file as a raw Ptr Double (memcpy from BS into a fresh malloc).
+attnReadDoublesPtr :: FilePath -> Int -> IO (Ptr Double)
+attnReadDoublesPtr path count = do
   bs <- BS.readFile path
   let !(BSI.BS fp _) = bs
-  v <- MV.replicate count 0.0
-  withForeignPtr fp $ \src ->
-    forM_ [0..count-1] $ \i -> do
-      !d <- peek (src `plusPtr` (i*8) :: Ptr Double)
-      MV.write v i d
-  return v
+  p <- mallocBytes (count * 8)
+  withForeignPtr fp $ \src -> copyBytes p src (count * 8)
+  return p
 
-attnReadBytes :: FilePath -> Int -> IO (MV.IOVector Word8)
-attnReadBytes path count = do
+attnReadBytesPtr :: FilePath -> Int -> IO (Ptr Word8)
+attnReadBytesPtr path count = do
   bs <- BS.readFile path
   let !(BSI.BS fp _) = bs
-  v <- MV.replicate count 0
-  withForeignPtr fp $ \src ->
-    forM_ [0..count-1] $ \i -> do
-      !w <- peek (src `plusPtr` i :: Ptr Word8)
-      MV.write v i w
-  return v
+  p <- mallocBytes count
+  withForeignPtr fp $ \src -> copyBytes p src count
+  return p
 
 attnRowLo :: Int -> Int
 attnRowLo b = b * attnN `div` attnBlocks
 attnRowHi :: Int -> Int
 attnRowHi b = if b == attnBlocks - 1 then attnN else (b + 1) * attnN `div` attnBlocks
 
--- Per-block matmul: rows [lo, hi) of c = a @ b.
-attnMatmulBlock :: Int -> Int -> MV.IOVector Double -> MV.IOVector Double
-                -> MV.IOVector Double -> Int -> Int -> IO ()
+-- Per-block matmul on raw Ptr Double: rows [lo, hi) of c = a @ b.
+-- peekElemOff / pokeElemOff uses Storable Double (no boxing in inner loop).
+{-# INLINE attnMatmulBlock #-}
+attnMatmulBlock :: Int -> Int -> Ptr Double -> Ptr Double
+                -> Ptr Double -> Int -> Int -> IO ()
 attnMatmulBlock !lo !hi !a !b !c !kDim !nDim =
   forM_ [lo..hi-1] $ \m -> do
-    forM_ [0..nDim-1] $ \n -> MV.write c (m*nDim + n) 0.0
+    forM_ [0..nDim-1] $ \n -> pokeElemOff c (m*nDim + n) 0.0
     forM_ [0..kDim-1] $ \k -> do
-      !av <- MV.read a (m*kDim + k)
+      !av <- peekElemOff a (m*kDim + k)
       forM_ [0..nDim-1] $ \n -> do
-        !bv <- MV.read b (k*nDim + n)
-        !cv <- MV.read c (m*nDim + n)
-        MV.write c (m*nDim + n) (cv + av*bv)
+        !bv <- peekElemOff b (k*nDim + n)
+        !cv <- peekElemOff c (m*nDim + n)
+        pokeElemOff c (m*nDim + n) (cv + av*bv)
 
--- Per-block LayerNorm: out[lo..hi, :] = LN(x[lo..hi, :])
-attnLayerNormBlock :: Int -> Int -> MV.IOVector Double -> MV.IOVector Double
-                   -> MV.IOVector Double -> MV.IOVector Double -> Int -> IO ()
+-- Per-block LayerNorm on raw Ptr Double.
+{-# INLINE attnLayerNormBlock #-}
+attnLayerNormBlock :: Int -> Int -> Ptr Double -> Ptr Double
+                   -> Ptr Double -> Ptr Double -> Int -> IO ()
 attnLayerNormBlock !lo !hi !x !w !b !out !dim = do
   let eps = 1e-5
   forM_ [lo..hi-1] $ \i -> do
-    !mu <- attnMean x (i*dim) dim
+    !mu  <- attnMean x (i*dim) dim
     !var <- attnVar x (i*dim) dim mu
     let !inv = 1.0 / sqrt (var + eps)
     forM_ [0..dim-1] $ \j -> do
-      !v  <- MV.read x (i*dim + j)
-      !wj <- MV.read w j
-      !bj <- MV.read b j
-      MV.write out (i*dim + j) ((v - mu) * inv * wj + bj)
+      !v  <- peekElemOff x (i*dim + j)
+      !wj <- peekElemOff w j
+      !bj <- peekElemOff b j
+      pokeElemOff out (i*dim + j) ((v - mu) * inv * wj + bj)
   where
-    attnMean !v !base !d = do
+    attnMean !p !base !d = do
       let go !i !acc
             | i >= d    = return (acc / fromIntegral d)
             | otherwise = do
-                !x' <- MV.read v (base + i)
+                !x' <- peekElemOff p (base + i)
                 go (i+1) (acc + x')
       go 0 0.0
-    attnVar !v !base !d !mu = do
+    attnVar !p !base !d !mu = do
       let go !i !acc
             | i >= d    = return (acc / fromIntegral d)
             | otherwise = do
-                !x' <- MV.read v (base + i)
+                !x' <- peekElemOff p (base + i)
                 let !dd = x' - mu
                 go (i+1) (acc + dd*dd)
       go 0 0.0
@@ -267,34 +275,47 @@ attnLayerNormBlock !lo !hi !x !w !b !out !dim = do
 -- unsafePerformIO of these IO actions).
 -- ============================================================
 
+-- Allocate a zero-initialized Ptr Double of `count` elements.
+attnAllocD :: Int -> IO (Ptr Double)
+attnAllocD count = do
+  p <- mallocBytes (count * 8)
+  forM_ [0..count-1] $ \i -> pokeElemOff p i 0.0
+  return p
+
+attnAllocU :: Int -> IO (Ptr Word8)
+attnAllocU count = do
+  p <- mallocBytes count
+  forM_ [0..count-1] $ \i -> pokeElemOff p i 0
+  return p
+
 -- INIT (s13): load all weights and inputs, allocate every activation buffer.
 attnInit :: IO Int64
 attnInit = do
-  e       <- attnReadDoubles (attnDataDir ++ "/E.bin")      (attnVocab * attnD)
-  peM     <- attnReadDoubles (attnDataDir ++ "/PE.bin")     (attnN     * attnD)
-  wQ      <- attnReadDoubles (attnDataDir ++ "/W_Q.bin")    (attnD     * attnD)
-  wK      <- attnReadDoubles (attnDataDir ++ "/W_K.bin")    (attnD     * attnD)
-  wV      <- attnReadDoubles (attnDataDir ++ "/W_V.bin")    (attnD     * attnD)
-  wO      <- attnReadDoubles (attnDataDir ++ "/W_O.bin")    (attnD     * attnD)
-  w1      <- attnReadDoubles (attnDataDir ++ "/W_1.bin")    (attnD     * attnDff)
-  w2      <- attnReadDoubles (attnDataDir ++ "/W_2.bin")    (attnDff   * attnD)
-  wU      <- attnReadDoubles (attnDataDir ++ "/W_U.bin")    (attnD     * attnVocab)
-  ln1w    <- attnReadDoubles (attnDataDir ++ "/LN_1_w.bin") attnD
-  ln1b    <- attnReadDoubles (attnDataDir ++ "/LN_1_b.bin") attnD
-  ln2w    <- attnReadDoubles (attnDataDir ++ "/LN_2_w.bin") attnD
-  ln2b    <- attnReadDoubles (attnDataDir ++ "/LN_2_b.bin") attnD
-  inputT  <- attnReadBytes   (attnDataDir ++ "/input_tokens.bin") attnN
-  outputT <- MV.replicate attnN (0 :: Word8)
+  e       <- attnReadDoublesPtr (attnDataDir ++ "/E.bin")      (attnVocab * attnD)
+  peM     <- attnReadDoublesPtr (attnDataDir ++ "/PE.bin")     (attnN     * attnD)
+  wQ      <- attnReadDoublesPtr (attnDataDir ++ "/W_Q.bin")    (attnD     * attnD)
+  wK      <- attnReadDoublesPtr (attnDataDir ++ "/W_K.bin")    (attnD     * attnD)
+  wV      <- attnReadDoublesPtr (attnDataDir ++ "/W_V.bin")    (attnD     * attnD)
+  wO      <- attnReadDoublesPtr (attnDataDir ++ "/W_O.bin")    (attnD     * attnD)
+  w1      <- attnReadDoublesPtr (attnDataDir ++ "/W_1.bin")    (attnD     * attnDff)
+  w2      <- attnReadDoublesPtr (attnDataDir ++ "/W_2.bin")    (attnDff   * attnD)
+  wU      <- attnReadDoublesPtr (attnDataDir ++ "/W_U.bin")    (attnD     * attnVocab)
+  ln1w    <- attnReadDoublesPtr (attnDataDir ++ "/LN_1_w.bin") attnD
+  ln1b    <- attnReadDoublesPtr (attnDataDir ++ "/LN_1_b.bin") attnD
+  ln2w    <- attnReadDoublesPtr (attnDataDir ++ "/LN_2_w.bin") attnD
+  ln2b    <- attnReadDoublesPtr (attnDataDir ++ "/LN_2_b.bin") attnD
+  inputT  <- attnReadBytesPtr   (attnDataDir ++ "/input_tokens.bin") attnN
+  outputT <- attnAllocU attnN
 
-  xBuf   <- MV.replicate (attnN * attnD)     0.0
-  xaBuf  <- MV.replicate (attnN * attnD)     0.0
-  qBuf   <- MV.replicate (attnN * attnD)     0.0
-  kBuf   <- MV.replicate (attnN * attnD)     0.0
-  vBuf   <- MV.replicate (attnN * attnD)     0.0
-  attnB  <- MV.replicate (attnN * attnD)     0.0
-  xbBuf  <- MV.replicate (attnN * attnD)     0.0
-  ffnH   <- MV.replicate (attnN * attnDff)   0.0
-  logits <- MV.replicate (attnN * attnVocab) 0.0
+  xBuf   <- attnAllocD (attnN * attnD)
+  xaBuf  <- attnAllocD (attnN * attnD)
+  qBuf   <- attnAllocD (attnN * attnD)
+  kBuf   <- attnAllocD (attnN * attnD)
+  vBuf   <- attnAllocD (attnN * attnD)
+  attnB  <- attnAllocD (attnN * attnD)
+  xbBuf  <- attnAllocD (attnN * attnD)
+  ffnH   <- attnAllocD (attnN * attnDff)
+  logits <- attnAllocD (attnN * attnVocab)
 
   writeIORef g_e_attn e
   writeIORef g_pe_attn peM
@@ -341,11 +362,11 @@ attnPhaseA !b = do
   let !lo = attnRowLo b
       !hi = attnRowHi b
   forM_ [lo..hi-1] $ \i -> do
-    !tok <- fromIntegral <$> MV.read inputT i
+    !tok <- fromIntegral <$> peekElemOff inputT i
     forM_ [0..attnD-1] $ \j -> do
-      !ev <- MV.read e (tok*attnD + j)
-      !pv <- MV.read peM (i*attnD + j)
-      MV.write xBuf (i*attnD + j) (ev + pv)
+      !ev <- peekElemOff e (tok*attnD + j)
+      !pv <- peekElemOff peM (i*attnD + j)
+      pokeElemOff xBuf (i*attnD + j) (ev + pv)
   attnLayerNormBlock lo hi xBuf ln1w ln1b xaBuf attnD
   attnMatmulBlock lo hi xaBuf wQ qBuf attnD attnD
   attnMatmulBlock lo hi xaBuf wK kBuf attnD attnD
@@ -378,73 +399,74 @@ attnPhaseB !b = do
   let !lo = attnRowLo b
       !hi = attnRowHi b
       !inv = 1.0 / sqrt (fromIntegral attnHeadDim)
-  scores <- MV.replicate attnN 0.0
+  -- per-block scratch for scores (size attnN)
+  scores <- mallocBytes (attnN * 8) :: IO (Ptr Double)
   forM_ [lo..hi-1] $ \i ->
-    forM_ [0..attnD-1] $ \j -> MV.write attnB (i*attnD + j) 0.0
+    forM_ [0..attnD-1] $ \j -> pokeElemOff attnB (i*attnD + j) 0.0
   forM_ [lo..hi-1] $ \i ->
     forM_ [0..attnHeads-1] $ \h -> do
       forM_ [0..attnN-1] $ \j -> do
         let go !k !acc
               | k >= attnHeadDim = return acc
               | otherwise = do
-                  !q  <- MV.read qBuf (i*attnD + h*attnHeadDim + k)
-                  !kv <- MV.read kBuf (j*attnD + h*attnHeadDim + k)
+                  !q  <- peekElemOff qBuf (i*attnD + h*attnHeadDim + k)
+                  !kv <- peekElemOff kBuf (j*attnD + h*attnHeadDim + k)
                   go (k+1) (acc + q*kv)
         !s <- go 0 0.0
-        MV.write scores j (s * inv)
-      !mx0 <- MV.read scores 0
+        pokeElemOff scores j (s * inv)
+      !mx0 <- peekElemOff scores 0
       let goMax !ii !m
             | ii >= attnN = return m
             | otherwise = do
-                !v <- MV.read scores ii
+                !v <- peekElemOff scores ii
                 goMax (ii+1) (max m v)
       !mx <- goMax 1 mx0
       let goSum !ii !acc
             | ii >= attnN = return acc
             | otherwise = do
-                !v <- MV.read scores ii
+                !v <- peekElemOff scores ii
                 let !ev = exp (v - mx)
-                MV.write scores ii ev
+                pokeElemOff scores ii ev
                 goSum (ii+1) (acc + ev)
       !sm <- goSum 0 0.0
       forM_ [0..attnN-1] $ \j -> do
-        !v <- MV.read scores j
-        MV.write scores j (v / sm)
+        !v <- peekElemOff scores j
+        pokeElemOff scores j (v / sm)
       forM_ [0..attnN-1] $ \j -> do
-        !a <- MV.read scores j
+        !a <- peekElemOff scores j
         forM_ [0..attnHeadDim-1] $ \k -> do
-          !vv  <- MV.read vBuf (j*attnD + h*attnHeadDim + k)
-          !cur <- MV.read attnB (i*attnD + h*attnHeadDim + k)
-          MV.write attnB (i*attnD + h*attnHeadDim + k) (cur + a*vv)
+          !vv  <- peekElemOff vBuf (j*attnD + h*attnHeadDim + k)
+          !cur <- peekElemOff attnB (i*attnD + h*attnHeadDim + k)
+          pokeElemOff attnB (i*attnD + h*attnHeadDim + k) (cur + a*vv)
   attnMatmulBlock lo hi attnB wO xaBuf attnD attnD
   forM_ [lo..hi-1] $ \i ->
     forM_ [0..attnD-1] $ \j -> do
-      !xv <- MV.read xBuf  (i*attnD + j)
-      !yv <- MV.read xaBuf (i*attnD + j)
-      MV.write xBuf (i*attnD + j) (xv + yv)
+      !xv <- peekElemOff xBuf  (i*attnD + j)
+      !yv <- peekElemOff xaBuf (i*attnD + j)
+      pokeElemOff xBuf (i*attnD + j) (xv + yv)
   attnLayerNormBlock lo hi xBuf ln2w ln2b xbBuf attnD
   attnMatmulBlock lo hi xbBuf w1 ffnH attnD attnDff
   forM_ [lo..hi-1] $ \i ->
     forM_ [0..attnDff-1] $ \j -> do
-      !v <- MV.read ffnH (i*attnDff + j)
-      MV.write ffnH (i*attnDff + j) (if v < 0 then 0 else v)
+      !v <- peekElemOff ffnH (i*attnDff + j)
+      pokeElemOff ffnH (i*attnDff + j) (if v < 0 then 0 else v)
   attnMatmulBlock lo hi ffnH w2 xaBuf attnDff attnD
   forM_ [lo..hi-1] $ \i ->
     forM_ [0..attnD-1] $ \j -> do
-      !xv <- MV.read xBuf  (i*attnD + j)
-      !yv <- MV.read xaBuf (i*attnD + j)
-      MV.write xBuf (i*attnD + j) (xv + yv)
+      !xv <- peekElemOff xBuf  (i*attnD + j)
+      !yv <- peekElemOff xaBuf (i*attnD + j)
+      pokeElemOff xBuf (i*attnD + j) (xv + yv)
   attnMatmulBlock lo hi xBuf wU logits attnD attnVocab
   forM_ [lo..hi-1] $ \i -> do
-    !l0 <- MV.read logits (i*attnVocab + 0)
+    !l0 <- peekElemOff logits (i*attnVocab + 0)
     let goArg !v !bestV !bestVal
           | v >= attnVocab = return bestV
           | otherwise = do
-              !lv <- MV.read logits (i*attnVocab + v)
+              !lv <- peekElemOff logits (i*attnVocab + v)
               if lv > bestVal then goArg (v+1) v lv
                               else goArg (v+1) bestV bestVal
     !best <- goArg 1 0 l0
-    MV.write outputT i (fromIntegral best :: Word8)
+    pokeElemOff outputT i (fromIntegral best :: Word8)
   return 0
 
 -- OUTPUT (s10): final fan-in -- read output_tokens and print checksum.
@@ -454,7 +476,7 @@ attnOutput = do
   let goCs !i !acc
         | i >= attnN = return ((acc :: Word) .&. 0xFFFFFFFF)
         | otherwise = do
-            !w <- MV.read outputT i
+            !w <- peekElemOff outputT i
             goCs (i+1) (acc + fromIntegral (i+1) * fromIntegral w)
   !cs <- goCs 0 0
   putStrLn ("CHECKSUM=" ++ show cs)

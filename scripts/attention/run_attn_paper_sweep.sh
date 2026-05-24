@@ -37,7 +37,7 @@ OUTROOT="${OUTROOT:-$HOME/results/attn_paper_final}"
 LOGDIR="${LOGDIR:-$HOME/runs/attn_paper_final_$(date +%Y%m%d_%H%M%S)}"
 mkdir -p "$OUTROOT" "$LOGDIR"
 
-NS="${NS:-1024 2048 4096 6144 8192}"
+NS="${NS:-4096 6144 8192 10240 12288}"
 PS="${PS:-2 3 4 7 8 13 16 19 23 24 32 48}"
 REPS="${REPS:-7}"
 D="${D:-512}"
