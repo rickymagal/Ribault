@@ -32,7 +32,7 @@ crate-type = ["staticlib"]
 
 [profile.release]
 opt-level = 3
-lto = "fat"
+lto = "thin"
 codegen-units = 1
 debug = false
 panic = "abort"
