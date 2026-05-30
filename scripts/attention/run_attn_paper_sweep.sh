@@ -202,12 +202,7 @@ for N in $NS; do
   # Parallel variants per P
   # =====================================================================
   for P in $PS; do
-    # n_blocks = 2*P (2 blocks per worker) — the sweet spot found by the legacy
-    # single-head N_FUNCS sweep: at N=8192 P=16, NF=32 gave the peak Ribault-Hs
-    # vs STRAT ratio (1.34x walltime). The heuristic "2 blocks per worker"
-    # generalises that finding across all P and exposes scheduler advantage by
-    # making per-block grain finer than the trivial n_blocks=P choice.
-    N_BLOCKS=$(( 2 * P ))
+    N_BLOCKS=$P  # one block per worker (matches LCS DIM_ROWS=P pattern)
     CORES_P="$(pin_cores "$P")"
     PIN_TAG="$(pin_tag "$P")"
     echo ""
