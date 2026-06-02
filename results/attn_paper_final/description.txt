@@ -509,18 +509,56 @@ metrics.csv: one row per (variant, N, D, n_heads, n_blocks, P, rep)
   expected  int    numpy reference checksum (must equal checksum)
 
 
-10. FINDINGS  (filled in after the sweep completes)
+10. FINDINGS
 ----------------------------------------------------------------
-This section will be edited with the cross-variant per-language
-tables once the sweep terminates and master.csv is harvested
-locally. Tables follow the LCS template:
+Sweep v4 completed 2026-06-01 with 2625 measurements (5 N x 12 P x
+7 reps x 6 parallel variants + 3 seqs x 5 N x 7 reps); every variant
+matches the numpy reference CHECKSUM at every (N, P). Full bootstrap-CI
+tables live in tables_with_ci.txt (regenerated via
+scripts/attention/regen_tables_ci.py from master.csv).
 
-  === N=<N> | Haskell tier (baseline = seq_haskell, median=Xs, n=7) ===
-     P | ribault_hs | strategies
-  === N=<N> | C tier       (baseline = seq_c,       median=Xs, n=7) ===
-     P | ribault_c
-  === N=<N> | Rust tier    (baseline = seq_rust,    median=Xs, n=7) ===
-     P | ribault_rust | timely | sucuri
+Headline (Ribault-Hs vs GHC Strategies, walltime ratio T_strat / T_rhs):
+
+  Ribault-Hs DOMINATES the physical-core regime (P=2..24) consistently
+  across every N, with ratios 1.23-2.49x.  Examples (peaks per N):
+
+    N=4096   P=13: 2.48x  (rhs 5.6s vs strat 14.0s)
+    N=6144   P=3:  1.79x  (rhs 44.6s vs strat 79.9s)
+    N=8192   P=13: 2.39x  (rhs 23.4s vs strat 55.8s)
+    N=10240  P=7:  2.40x  (rhs 61.7s vs strat 148.2s)
+    N=12288  P=7:  2.49x  (rhs 86.4s vs strat 215.0s)
+
+  GHC Strategies pulls ahead at P=32 and P=48 (HT oversubscription
+  region): STRAT's spark fizzling and stealing handle fine-grained
+  oversubscribed tasks better than Trebuchet's fixed-worker firing
+  rule. At N=12288 P=32 STRAT wins by 2.08x (rhs 44.0s vs strat 21.2s);
+  at P=48 STRAT wins by 2.16x. This is the cost-of-fairness trade-off:
+  STRAT's intrinsic over-allocation of threads vs Trebuchet's pinned
+  workers favours the spark scheduler when HT is in play.
+
+Peak speedup vs the language-matched sequential baseline (full bootstrap
+CIs in tables_with_ci.txt):
+
+  Haskell tier (N=8192):
+    Ribault-Hs  peak  11.66x  (P=24)
+    GHC Strat   peak  26.59x  (P=48, HT region; physical-core peak 9.83x at P=24)
+
+  C tier (N=8192):
+    Ribault-C   peak  13.51x  (P=23)
+
+  Rust tier (N=8192):
+    Ribault-Rust peak  17.44x (P=48)
+    Timely       peak  23.85x (P=48)
+    Sucuri       peak  25.31x (P=48, leads the tier consistently)
+
+Sucuri lead in the Rust tier reproduces across all N (typically 5-12%
+faster than Timely, 50-60% faster than Ribault-Rust at high P). The
+gap is attributed to: (i) Sucuri's pyDF.DFGraph K-way fan-in needing no
+chunked tree (Trebuchet 5-bit src-count limit forces a branch-16 tree
+for K>31); (ii) Trebuchet's libHSrts init/per-thread setup costs that
+apply even to Rust-only super bodies; (iii) Sucuri workers block on
+queue.Queue.get() between phases while Timely workers busy-wait via
+probe.less_than(input.time()).
 
 
 11. WHAT'S DELIBERATELY OMITTED  (vs LCS lineup)
