@@ -1,0 +1,17 @@
+[package]
+name = "ms_timely"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+timely = "0.13"
+
+[[bin]]
+name = "ms_timely"
+path = "ms_timely.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false

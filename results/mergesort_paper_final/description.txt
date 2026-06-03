@@ -1,0 +1,294 @@
+================================================================
+RIBAULT — MERGESORT BENCHMARK (paper, third workload)
+================================================================
+
+Experiment timestamp: see ~/runs/mergesort_paper_final_<ts>/*.log on the server.
+Master CSV:           metrics.csv (this directory)
+Raw runner outputs:   server: ~/results/mergesort_paper_final/N_<N>/<variant>_P<P>/
+                      server: ~/results/mergesort_paper_final/seq_native/  (seq_c, seq_rust)
+
+
+1. PURPOSE
+----------------------------------------------------------------
+Third paper benchmark, designed to expose the dataflow-scheduler
+advantage in a workload where scheduler overhead — not raw compute —
+is the binding constraint. LCS wavefront and attention end-to-end are
+both compute-heavy (matmul-dominated): per-block work is large
+(milliseconds to seconds) and the scheduler is a small fraction of
+walltime, so the parallel-scheduler advantage tops out at 1.5-2.5x.
+
+Mergesort with a fine leaf cutoff inverts this regime: per-block work
+is microseconds (insertion sort on CUTOFF elements; merge of two
+sub-arrays of total size <= 2*CUTOFF). With N_LEAVES + N_MERGES
+~ 2*N/CUTOFF tasks (e.g., 31250 tasks at N=10^6, CUTOFF=64), the
+per-task scheduling cost becomes a first-order term:
+
+  Ribault firing rule:  ~100 ns / fire  (O(1) per super, lock-free queue)
+  GHC parList rseq:     ~1 us / spark   (spark queue, fizzle dynamics)
+  Sucuri pyDF:          ~10 us / task   (Python queue.Queue + thread switch)
+  Timely epoch step:    ~1-10 us / step (per-worker step + exchange overhead)
+
+This benchmark is structured precisely so the SCHEDULER difference shows
+through in absolute walltime rather than being washed out by compute.
+
+
+2. HARDWARE
+----------------------------------------------------------------
+Host:      scherbius.vitorpy.com
+CPU:       Intel Xeon Gold 5412U  — 24 physical cores, 48 logical
+Caches:    L1d 48 KiB/core, L2 2 MiB/core, L3 45 MiB shared
+RAM:       251 GiB
+Kernel:    Linux 6.x
+
+
+3. SOFTWARE
+----------------------------------------------------------------
+GHC:        9.6.6 (-dynamic), vector-0.13, parallel-3.3, bytestring, containers
+Rust:      cargo 1.95, rustc 1.95. Crate timely 0.13.
+Python:     CPython 3.14.4 (free-threaded 3.14t for Sucuri only).
+GCC:        15.x for Ribault-C super body + seq_c baseline.
+
+
+4. WORKLOAD
+----------------------------------------------------------------
+Sort N int32 values produced by a deterministic 64-bit LCG (seed=42,
+same MMIX-knuth constants as LCS and attention). The algorithm is
+top-down binary mergesort with leaf cutoff CUTOFF:
+
+  msSort lo hi
+    | hi - lo <= CUTOFF: insertion_sort(arr[lo..hi))
+    | otherwise:
+        mid = lo + (hi - lo) / 2
+        msSort lo  mid          -- left subtree
+        msSort mid hi           -- right subtree
+        merge  arr[lo..mid) + arr[mid..hi) into tmp, copy back
+
+The recursion produces a binary tree of N_LEAVES = ceil(N / CUTOFF)
+leaf-sort tasks and N_MERGES = N_LEAVES - 1 internal merge tasks.
+Tree depth = ceil(log2(N_LEAVES)) (~15 for N=10^6, CUTOFF=64).
+
+CHECKSUM = sum(arr[i] for i in 0..N) mod 2^32 — order-invariant under
+sorting (just a permutation), so every correct variant produces the
+same checksum as gen_input.py's expected_checksum.txt regardless of
+internal task ordering.
+
+Validation: post-sort, every variant verifies arr[i] >= arr[i-1] for
+all i (FATAL if not), in addition to checksum match. Sum-only matching
+without monotonicity would let a buggy "no-op sort" pass.
+
+CONFIG (defaults):
+  NS (input size):     1000000  2000000  5000000  10000000
+  CUTOFF (leaf size):  64        (single super sorts 64 ints via
+                                  insertion sort, ~1 us at N=10^6)
+  SEED:                42
+  PS (worker count):   2 3 4 7 8 13 16 19 23 24 32 48
+
+
+5. DATAFLOW GRAPH
+----------------------------------------------------------------
+For each (N, CUTOFF), the binary tree is deterministic from
+top-down bisection. gen_input.py builds the tree and writes:
+
+  tree.bin:  [n_leaves, n_merges, (lo, hi)*n_leaves, (lo, mid, hi, level)*n_merges]
+
+Each Ribault variant (ribault_c, ribault_rust, ribault_hs) builds
+this tree IN PYTHON (gen_ms_*.py) and emits the .fl with one super per
+node:
+  init  (s13)  -- load input.bin, allocate arr+tmp, load tree.bin
+  leaf  (s12)  -- per leaf_idx: insertion_sort(arr, leaf_lo[idx], leaf_hi[idx])
+  merge (s11)  -- per merge_idx: merge_op(arr, tmp, merge_lo[idx], mid, hi)
+  output (s10) -- read sorted arr, compute & verify CHECKSUM, print
+
+The merge super has TWO sync inputs (its two children) plus the const
+merge_idx. The firing rule fires it the instant both children
+complete — no level-by-level barrier required, since the dependency
+structure naturally enforces happens-before via the token mechanism.
+
+Disjointness guarantee: at any given tree level, the merge ranges
+[lo, hi) are pairwise disjoint, so concurrent merges write to disjoint
+regions of arr[] and tmp[] without race. Across levels, the firing
+rule guarantees parent fires AFTER both children — no temporal race.
+
+
+6. VARIANTS
+----------------------------------------------------------------
+9 variants total: 3 sequential baselines (per-language denominators)
+and 6 parallel variants (5 if Sucuri unavailable).
+
+A. seq_haskell (Haskell sequential, P=1)
+   The Haskell-tier denominator. Monolithic recursive mergesort,
+   Data.Vector.Unboxed.Mutable Int32 storage with peekElemOff /
+   pokeElemOff in the inner kernels (raw Ptr Int32 idiom). GHC 9.6.6
+   -O2, +RTS -A256m. Built without -threaded.
+   source: scripts/mergesort/ms_seq.hs
+
+A2. seq_c (C sequential, P=1)
+   gcc -O3 -march=native, raw int arrays. Same mergesort algorithm
+   with insertion-sort leaf cutoff. C-tier denominator.
+   source: scripts/mergesort/ms_seq.c
+
+A3. seq_rust (Rust sequential, P=1)
+   rustc release (opt-level=3, lto=thin, codegen-units=1), raw
+   *mut i32 pointers + unsafe inner loops. CRITICAL FAIRNESS NOTE:
+   matches the parallel Rust variants (Ribault-Rust, Timely, Sucuri)
+   in using `unsafe` raw-pointer kernels — keeping seq_rust as the
+   honest denominator for Rust-tier speedups.
+   source: scripts/mergesort/ms_seq.rs
+
+B. ribault_c
+   Trebuchet runtime + C super bodies. 4 supers (init/leaf/merge/output).
+   The full binary tree DAG (N_LEAVES + N_MERGES + 1 nodes) is
+   emitted directly into the .fl by gen_ms_c.py. Each merge has 2 sync
+   inputs + 1 const for merge_idx; super body looks up
+   (lo, mid, hi) in the runtime-loaded merge_lo[]/merge_mid[]/merge_hi[]
+   tables.
+
+C. ribault_rust
+   IDENTICAL .fl as ribault_c (same DAG). Super body in Rust crate
+   (staticlib, libc::malloc + raw *mut i32 + unsafe inner kernels),
+   linked with C wrappers via tools/build_supers_rust.sh.
+
+D. ribault_hs
+   IDENTICAL .fl as ribault_c. Super body in Haskell using raw
+   Ptr Int32 (mallocBytes for arr/tmp/tree tables, peekElemOff/
+   pokeElemOff in inner loops) — same idiom as the attention
+   ribault_hs build. Top-level NOINLINE IORefs for global state.
+   gen_ms_hs.py emits attn.hsk + supers_inject.hs + attn.fl;
+   build_supers.sh weaves them into libsupers.so via supersgen.
+
+E. strategies (GHC Strategies)
+   Standalone Haskell, parList rseq spark wave at every tree level
+   with a strict barrier between levels (`foldl' seq () rs`). Same
+   binary tree topology loaded from tree.bin. Same inner kernels
+   (raw Ptr Int32 + peekElemOff/pokeElemOff) as ribault_hs.
+   source: scripts/mergesort/ms_strat.hs
+
+F. parpseq (GHC par/pseq)
+   Standalone Haskell using raw Control.Parallel (par, pseq) instead
+   of the Strategies library. Recursive spark chain: `x par xs pseq
+   x pseq ()` per level, strict barrier between levels. Same compute
+   kernels.
+   source: scripts/mergesort/ms_parpseq.hs
+
+G. timely (Timely Dataflow)
+   Rust crate via `timely` v0.13. Multi-epoch driver: epoch 0 = leaves,
+   epoch L (L >= 1) = level-L merges. Worker 0 emits all task indices
+   for the current epoch; exchange operator distributes across workers
+   by index; probe.less_than(input.time()) barriers between epochs.
+   Inner kernels: raw *mut i32 + unsafe (identical to ribault_rust).
+   source: scripts/mergesort/ms_timely.rs
+
+H. sucuri (pyDF.DFGraph + Rust PyO3) — OPTIONAL
+   Tiago's pyDF dataflow library orchestrated from free-threaded
+   Python 3.14t (PYTHON_GIL=0). Constructs a DFGraph mirroring the
+   binary tree: seed -> NL leaf nodes -> NM merge nodes -> result.
+   Each leaf node calls mod.leaf(idx) into the PyO3 Rust extension;
+   each merge node has 2 inputs (its 2 children) and calls
+   mod.merge(idx). Rust kernel: raw *mut c_int via libc::malloc +
+   unsafe inner loops (matches ribault_rust). Skipped gracefully if
+   SUCURI_ROOT or PYTHON_NOGIL is not available on the host.
+
+
+7. PARAMETER SWEEP
+----------------------------------------------------------------
+N values: 1000000, 2000000, 5000000, 10000000
+P values: 2, 3, 4, 7, 8, 13, 16, 19, 23, 24, 32, 48
+REPS:     7 (median across 7 + 95% bootstrap CI on speedup ratios)
+CUTOFF:   64 (fine — exposes scheduler overhead)
+
+For N=10^6 CUTOFF=64: N_LEAVES = 15625, N_MERGES = 15624. The .fl has
+~31k supers. Tree depth: 15.
+
+For N=10^7: N_LEAVES = 156250, depth 18. The .fl is ~5 MB but the
+TALM assembler handles it (verified up to ~150k supers).
+
+
+8. METHODOLOGICAL EQUIVALENCE
+----------------------------------------------------------------
+a) Same input. input.bin is byte-identical across variants (LCG
+   seed=42). expected_checksum.txt is the order-invariant sum;
+   variants validate against it AND verify monotonicity post-sort.
+
+b) Same binary tree topology. tree.bin (written by gen_input.py) is
+   the SAME for all variants — same n_leaves, same n_merges, same
+   (lo, mid, hi) ranges, same levels. The difference is purely the
+   PARALLEL SCHEDULER deciding when each task fires.
+
+c) Same per-task compute idiom within each language tier:
+     C    (ribault_c, seq_c):               raw int arrays + malloc
+     Rust (ribault_rust, timely, sucuri,    raw *mut i32 + libc::malloc +
+           seq_rust):                       unsafe inner loops
+     Haskell (ribault_hs, strategies,       raw Ptr Int32 + mallocBytes +
+              parpseq, seq_haskell):        peekElemOff / pokeElemOff
+   The cross-language gap is intentional. Within each tier, the
+   per-task compute is byte-identical; only the SCHEDULER differs.
+
+d) Same GHC RTS allocator (`+RTS -A256m -RTS`) across every Haskell
+   binary AND the Trebuchet interp's Haskell shim (SUPERS_RTS_A=256m).
+   This is the same fairness fix applied to LCS and attention — the
+   Euro-Par reviewer's specific complaint about asymmetric -A values.
+
+e) Per-language baselines (cross-language inflation guard):
+     ribault_hs, strategies, parpseq  -> seq_haskell
+     ribault_c                        -> seq_c
+     ribault_rust, timely, sucuri     -> seq_rust
+
+f) Same core pinning. Every measurement uses `taskset -c 0..(P-1)`;
+   seqs use `taskset -c 0`. For P > 24, pinning extends into HT
+   siblings (OVERSUBSCRIPTION region; P=32, P=48 reported with this
+   caveat).
+
+g) REPS=7 + 10000 independent bootstrap CI. Same percentile-bootstrap
+   machinery as LCS and attention; speedup ratios reported as
+   median× [lo×, hi×].
+
+h) Compile flags within each tier:
+     GHC: -O2 -dynamic, -threaded for parallel variants (seq_haskell
+          without -threaded — no RTS spark manager overhead in the
+          denominator).
+     Rust: release profile (opt-level=3, lto=thin, codegen-units=1).
+     C   : -O3 -march=native.
+
+
+9. CSV SCHEMA
+----------------------------------------------------------------
+metrics.csv: one row per (variant, N, cutoff, P, rep)
+  variant   text  one of {seq_haskell, seq_c, seq_rust,
+                          ribault_c, ribault_rust, ribault_hs,
+                          strategies, parpseq, timely, sucuri}
+  N         int   array size
+  cutoff    int   leaf cutoff
+  P         int   worker count (1 for sequentials)
+  rep       int   1..7
+  seconds   float wall-clock sort runtime
+  checksum  int   sum-mod-2^32 of sorted array
+  expected  int   expected (gen_input pre-sort sum); must equal checksum
+
+
+10. FINDINGS  (filled in after the sweep completes)
+----------------------------------------------------------------
+This section will be edited with the cross-variant per-language
+tables once the sweep terminates and master.csv is harvested
+locally.
+
+
+11. WHAT'S DELIBERATELY OMITTED  (vs LCS / attention lineup)
+----------------------------------------------------------------
+- monad-par, Repa: pure-Haskell schedulers; excluded for consistency
+  with LCS / attention final lineups.
+
+- timely_rebalanced: N/A — the Timely exchange is `idx as u64` with
+  task indices in [0, max(N_LEAVES, N_MERGES)). Bijective at the
+  scale of P workers; no gcd-style collapse possible.
+
+
+12. ALGORITHM ATTRIBUTION
+----------------------------------------------------------------
+Top-down recursive mergesort with insertion-sort leaf is a textbook
+algorithm dating to Knuth's TAOCP vol. 3. The leaf-cutoff
+optimisation (use a cache-friendly sort for small sub-arrays) is
+standard practice in production sorts (e.g., std::sort in C++ libc++,
+Timsort, ...). The binary-tree dataflow expression of mergesort is
+the canonical D&C example from the Cilk and dataflow literature
+(Frigo et al., PLDI 1998 — Cilk; Sandia et al. on STAPL; Naiad/Timely
+follow-ups).
