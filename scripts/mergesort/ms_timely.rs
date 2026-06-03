@@ -148,9 +148,10 @@ fn main() {
     let t0 = Instant::now();
 
     timely::execute_from_args(filtered.into_iter(), move |worker| {
-        let leaves = leaves.clone();
-        let merges = merges.clone();
-        let level_groups = level_groups.clone();
+        let leaves_for_map  = leaves.clone();
+        let merges_for_map  = merges.clone();
+        let leaves_for_send = leaves.clone();
+        let level_groups_for_send = level_groups.clone();
 
         let mut input = InputHandle::new();
         let mut probe = ProbeHandle::new();
@@ -165,11 +166,11 @@ fn main() {
                         let tmp = ptrs.tmp as *mut i32;
                         if epoch == 0 {
                             // Leaf sort
-                            let (lo, hi) = leaves[idx];
+                            let (lo, hi) = leaves_for_map[idx];
                             insertion_sort(arr, lo, hi);
                         } else {
                             // Merge at level `epoch`
-                            let (lo, mid, hi, _) = merges[idx];
+                            let (lo, mid, hi, _) = merges_for_map[idx];
                             merge_op(arr, tmp, lo, mid, hi);
                         }
                     }
@@ -180,7 +181,7 @@ fn main() {
 
         // Epoch 0: leaves
         if worker.index() == 0 {
-            for i in 0..leaves.len() as u32 { input.send((0, i)); }
+            for i in 0..leaves_for_send.len() as u32 { input.send((0, i)); }
         }
         input.advance_to(1);
         while probe.less_than(input.time()) { worker.step(); }
@@ -188,7 +189,7 @@ fn main() {
         // Epochs 1..max_lev: per-level merges
         for lev in 1..=max_lev as u64 {
             if worker.index() == 0 {
-                for &midx in level_groups[lev as usize].iter() {
+                for &midx in level_groups_for_send[lev as usize].iter() {
                     input.send((lev as u32, midx));
                 }
             }
