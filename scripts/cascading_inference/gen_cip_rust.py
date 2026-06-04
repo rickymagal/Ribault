@@ -24,7 +24,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "cip_rs_supers"
+name = "supers_rust"
 crate-type = ["staticlib"]
 path = "lib.rs"
 
