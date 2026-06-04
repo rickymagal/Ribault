@@ -83,7 +83,7 @@ run dir = do
   states <- readStates (dir ++ "/states.bin") nStates cutoff
   t0 <- getCurrentTime
   let !counts  = map (\s -> solveSub s cutoff n) states
-      !forced  = foldl' seq () counts
+      !forced  = foldr seq () counts
       !sparked = foldr par forced counts
       !total   = sparked `pseq` sum counts :: Word64
   t1 <- getCurrentTime
