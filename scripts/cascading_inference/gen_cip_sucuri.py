@@ -48,6 +48,7 @@ const K3:       usize = 8;
 const H_DIM:    usize = 128;
 const C_CLS:    usize = 16;
 const ACCEPT_BITMAP_BYTES: usize = 8192;
+const N_CLASSES:           usize = 4;
 
 const ACCEPT_S1:      i32 = 1;
 const REJECT_S2:      i32 = 2;
@@ -62,7 +63,8 @@ static INIT_DONE: AtomicBool = AtomicBool::new(false);
 static mut ITEMS:        *mut u8  = std::ptr::null_mut();
 static mut DECISIONS:    *mut i32 = std::ptr::null_mut();
 static mut EMB_ALL:      *mut f64 = std::ptr::null_mut();
-static mut ACCEPT_BITMAP: *mut u8 = std::ptr::null_mut();
+static mut ACCEPT_BITMAP_CLS: [*mut u8; N_CLASSES] = [std::ptr::null_mut(); N_CLASSES];
+static mut CHUNK_CLASS:        *mut i32           = std::ptr::null_mut();
 static mut REJECT_W:     *mut i16 = std::ptr::null_mut();
 static mut REF_VEC:      *mut f64 = std::ptr::null_mut();
 static mut W1_MAT:       *mut f64 = std::ptr::null_mut();
@@ -70,18 +72,18 @@ static mut B1_VEC:       *mut f64 = std::ptr::null_mut();
 static mut W2_MAT:       *mut f64 = std::ptr::null_mut();
 static mut B2_VEC:       *mut f64 = std::ptr::null_mut();
 static mut COS_TABLE:    *mut f64 = std::ptr::null_mut();
-static mut T2_CFG:       i32      = 0;
-static mut T3_CFG:       f64      = 0.0;
+static mut T2_CLS: [i32; N_CLASSES] = [0; N_CLASSES];
+static mut T3_CLS: [f64; N_CLASSES] = [0.0; N_CLASSES];
 
 unsafe fn xmalloc<T>(n: usize) -> *mut T {
     libc::malloc(n * std::mem::size_of::<T>()) as *mut T
 }
 
-unsafe fn stage1_decide(it: *const u8) -> bool {
+unsafe fn stage1_decide(it: *const u8, bm: *const u8) -> bool {
     let mut sig: u32 = 0;
     for i in 0..DIM_D { sig = sig.wrapping_add(*it.add(i) as u32); }
     sig &= 0xFFFF;
-    (*ACCEPT_BITMAP.add((sig >> 3) as usize) >> (sig & 7)) & 1 != 0
+    (*bm.add((sig >> 3) as usize) >> (sig & 7)) & 1 != 0
 }
 unsafe fn stage2_score(it: *const u8) -> i32 {
     let mut hist = [0i32; B2_SLOTS];
@@ -154,10 +156,12 @@ fn init(py: Python<'_>) -> PyResult<i64> {
             off += $n * $bytes;
             p
         }}; }
-        // Bitmap is raw bytes — load directly, no take! macro indirection.
-        ACCEPT_BITMAP = xmalloc(ACCEPT_BITMAP_BYTES);
-        for i in 0..ACCEPT_BITMAP_BYTES { *ACCEPT_BITMAP.add(i) = buf[off + i]; }
-        off += ACCEPT_BITMAP_BYTES;
+        // Four bitmaps, one per source class.
+        for c in 0..N_CLASSES {
+            ACCEPT_BITMAP_CLS[c] = xmalloc(ACCEPT_BITMAP_BYTES);
+            for i in 0..ACCEPT_BITMAP_BYTES { *ACCEPT_BITMAP_CLS[c].add(i) = buf[off + i]; }
+            off += ACCEPT_BITMAP_BYTES;
+        }
         REJECT_W     = take!(i16, B2_SLOTS, 2);
         REF_VEC      = take!(f64, K3 * E_DIM, 8);
         W1_MAT       = take!(f64, H_DIM * E_DIM, 8);
@@ -173,16 +177,24 @@ fn init(py: Python<'_>) -> PyResult<i64> {
         DECISIONS = xmalloc(N);
         std::ptr::write_bytes(DECISIONS, 0, N);
         EMB_ALL = xmalloc(N * E_DIM);
+        // chunk_class.bin
+        let n_chunks = (N + CHUNK_SIZE - 1) / CHUNK_SIZE;
+        CHUNK_CLASS = xmalloc(n_chunks);
+        let mut ccf = File::open(format!("{}/chunk_class.bin", DATA_DIR)).unwrap();
+        let cc_slice = std::slice::from_raw_parts_mut(CHUNK_CLASS as *mut u8, n_chunks * 4);
+        ccf.read_exact(cc_slice).unwrap();
         // config
         let text = std::fs::read_to_string(format!("{}/config.txt", DATA_DIR)).unwrap();
         for line in text.lines() {
             let mut it = line.split_whitespace();
             let k = it.next().unwrap_or("");
             let v = it.next().unwrap_or("0");
-            match k {
-                "T2" => T2_CFG = v.parse().unwrap_or(0),
-                "T3" => T3_CFG = v.parse().unwrap_or(0.0),
-                _ => {}
+            if k.starts_with("T2_CLASS_") {
+                let c: usize = k[9..].parse().unwrap_or(0);
+                if c < N_CLASSES { T2_CLS[c] = v.parse().unwrap_or(0); }
+            } else if k.starts_with("T3_CLASS_") {
+                let c: usize = k[9..].parse().unwrap_or(0);
+                if c < N_CLASSES { T3_CLS[c] = v.parse().unwrap_or(0.0); }
             }
         }
         INIT_DONE.store(true, Ordering::SeqCst);
@@ -193,11 +205,13 @@ fn init(py: Python<'_>) -> PyResult<i64> {
 #[pyfunction]
 fn stage1(py: Python<'_>, cid: usize) -> PyResult<i64> {
     py.allow_threads(|| unsafe {
+        let cls = *CHUNK_CLASS.add(cid) as usize;
+        let bm = ACCEPT_BITMAP_CLS[cls] as *const u8;
         let lo = cid * CHUNK_SIZE;
         let hi = if lo + CHUNK_SIZE > N { N } else { lo + CHUNK_SIZE };
         for i in lo..hi {
             let it = ITEMS.add(i * DIM_D);
-            if stage1_decide(it) { *DECISIONS.add(i) = ACCEPT_S1; }
+            if stage1_decide(it, bm) { *DECISIONS.add(i) = ACCEPT_S1; }
         }
     });
     Ok(0)
@@ -205,13 +219,15 @@ fn stage1(py: Python<'_>, cid: usize) -> PyResult<i64> {
 #[pyfunction]
 fn stage2(py: Python<'_>, cid: usize) -> PyResult<i64> {
     py.allow_threads(|| unsafe {
+        let cls = *CHUNK_CLASS.add(cid) as usize;
+        let t2 = T2_CLS[cls];
         let lo = cid * CHUNK_SIZE;
         let hi = if lo + CHUNK_SIZE > N { N } else { lo + CHUNK_SIZE };
         for i in lo..hi {
             if *DECISIONS.add(i) != 0 { continue; }
             let it = ITEMS.add(i * DIM_D);
             let s = stage2_score(it);
-            if s > T2_CFG { *DECISIONS.add(i) = REJECT_S2; }
+            if s > t2 { *DECISIONS.add(i) = REJECT_S2; }
         }
     });
     Ok(0)
@@ -219,6 +235,8 @@ fn stage2(py: Python<'_>, cid: usize) -> PyResult<i64> {
 #[pyfunction]
 fn stage3(py: Python<'_>, cid: usize) -> PyResult<i64> {
     py.allow_threads(|| unsafe {
+        let cls = *CHUNK_CLASS.add(cid) as usize;
+        let t3 = T3_CLS[cls];
         let lo = cid * CHUNK_SIZE;
         let hi = if lo + CHUNK_SIZE > N { N } else { lo + CHUNK_SIZE };
         for i in lo..hi {
@@ -227,7 +245,7 @@ fn stage3(py: Python<'_>, cid: usize) -> PyResult<i64> {
             let emb = EMB_ALL.add(i * E_DIM);
             stage3_embed(it, emb);
             let (best, bs) = stage3_best(emb);
-            if bs > T3_CFG { *DECISIONS.add(i) = ACCEPT_S3_BASE | best as i32; }
+            if bs > t3 { *DECISIONS.add(i) = ACCEPT_S3_BASE | best as i32; }
         }
     });
     Ok(0)

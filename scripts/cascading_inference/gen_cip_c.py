@@ -50,6 +50,7 @@ C_TEMPLATE = r"""/* Auto-generated: Ribault Cascading Inference Pipeline C super
 #define H_DIM       128
 #define C_CLS        16
 #define ACCEPT_BITMAP_BYTES 8192
+#define N_CLASSES            4
 
 #define ACCEPT_S1        ((int32_t)1)
 #define REJECT_S2        ((int32_t)2)
@@ -64,7 +65,8 @@ static const char *DATA_DIR = "__DATA_DIR__";
 static uint8_t  *items;          /* [N * DIM_D] */
 static int32_t  *decisions;      /* [N] */
 static double   *emb_all;        /* [N * E_DIM] */
-static uint8_t  *accept_bitmap;  /* [ACCEPT_BITMAP_BYTES] */
+static uint8_t  *accept_bitmap_cls[N_CLASSES];   /* [N_CLASSES][ACCEPT_BITMAP_BYTES] */
+static int32_t  *chunk_class;                    /* [n_chunks] loaded from chunk_class.bin */
 static int16_t  *reject_weights; /* [B2_SLOTS] */
 static double   *ref_vec;        /* [K3 * E_DIM] */
 static double   *W1_mat;         /* [H_DIM * E_DIM] */
@@ -72,8 +74,8 @@ static double   *b1_vec;
 static double   *W2_mat;         /* [C_CLS * H_DIM] */
 static double   *b2_vec;
 static double   *cos_table;      /* [E_DIM * DIM_D] */
-static int32_t   T2;
-static double    T3;
+static int32_t   T2_cls[N_CLASSES];
+static double    T3_cls[N_CLASSES];
 
 static void *xmalloc(size_t n) { void *p = malloc(n); if (!p) { fprintf(stderr,"OOM %zu\n",n); exit(1); } return p; }
 
@@ -82,8 +84,8 @@ static void load_config(void) {
     FILE *f = fopen(path, "r"); if (!f) { perror(path); exit(1); }
     char k[64], v[64];
     while (fscanf(f, "%63s %63s", k, v) == 2) {
-        if      (!strcmp(k, "T2")) T2 = (int32_t)atoll(v);
-        else if (!strcmp(k, "T3")) T3 = strtod(v, NULL);
+        if      (!strncmp(k, "T2_CLASS_", 9)) T2_cls[atoi(k + 9)] = (int32_t)atoll(v);
+        else if (!strncmp(k, "T3_CLASS_", 9)) T3_cls[atoi(k + 9)] = strtod(v, NULL);
     }
     fclose(f);
 }
@@ -91,7 +93,7 @@ static void load_config(void) {
 static void load_weights(void) {
     char path[1024]; snprintf(path, sizeof path, "%s/weights.bin", DATA_DIR);
     FILE *f = fopen(path, "rb"); if (!f) { perror(path); exit(1); }
-    accept_bitmap  = xmalloc(ACCEPT_BITMAP_BYTES);
+    for (int c = 0; c < N_CLASSES; c++) accept_bitmap_cls[c] = xmalloc(ACCEPT_BITMAP_BYTES);
     reject_weights = xmalloc(B2_SLOTS * sizeof(int16_t));
     ref_vec        = xmalloc(K3 * E_DIM * sizeof(double));
     W1_mat         = xmalloc(H_DIM * E_DIM * sizeof(double));
@@ -99,7 +101,9 @@ static void load_weights(void) {
     W2_mat         = xmalloc(C_CLS * H_DIM * sizeof(double));
     b2_vec         = xmalloc(C_CLS * sizeof(double));
     cos_table      = xmalloc(E_DIM * DIM_D * sizeof(double));
-    if (fread(accept_bitmap,  1,                ACCEPT_BITMAP_BYTES, f) != ACCEPT_BITMAP_BYTES) goto bad;
+    for (int c = 0; c < N_CLASSES; c++) {
+        if (fread(accept_bitmap_cls[c], 1, ACCEPT_BITMAP_BYTES, f) != ACCEPT_BITMAP_BYTES) goto bad;
+    }
     if (fread(reject_weights, sizeof(int16_t),  B2_SLOTS,      f) != B2_SLOTS) goto bad;
     if (fread(ref_vec,        sizeof(double),   K3 * E_DIM,    f) != (size_t)(K3*E_DIM)) goto bad;
     if (fread(W1_mat,         sizeof(double),   H_DIM * E_DIM, f) != (size_t)(H_DIM*E_DIM)) goto bad;
@@ -121,8 +125,19 @@ static void load_input(void) {
     fclose(f);
 }
 
+static void load_chunk_class(void) {
+    char path[1024]; snprintf(path, sizeof path, "%s/chunk_class.bin", DATA_DIR);
+    FILE *f = fopen(path, "rb"); if (!f) { perror(path); exit(1); }
+    int n_chunks = (N + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    chunk_class = xmalloc(n_chunks * sizeof(int32_t));
+    if (fread(chunk_class, sizeof(int32_t), n_chunks, f) != (size_t)n_chunks) {
+        fprintf(stderr, "short read chunk_class.bin\n"); exit(1);
+    }
+    fclose(f);
+}
+
 static int64_t s_init(void) {
-    load_config(); load_weights(); load_input();
+    load_config(); load_weights(); load_input(); load_chunk_class();
     decisions = xmalloc(N * sizeof(int32_t));
     memset(decisions, 0, N * sizeof(int32_t));
     emb_all = xmalloc((size_t)N * E_DIM * sizeof(double));
@@ -132,11 +147,11 @@ static int64_t s_init(void) {
 
 /* ---------- Stage kernels ---------- */
 
-static inline int stage1_decide(const uint8_t *it) {
+static inline int stage1_decide(const uint8_t *it, const uint8_t *bm) {
     uint32_t sig = 0;
     for (int i = 0; i < DIM_D; i++) sig += it[i];
     sig &= 0xFFFF;
-    return (accept_bitmap[sig >> 3] >> (sig & 7)) & 1;
+    return (bm[sig >> 3] >> (sig & 7)) & 1;
 }
 static inline int32_t stage2_score(const uint8_t *it) {
     int32_t hist[B2_SLOTS] = {0};
@@ -198,26 +213,32 @@ static inline int stage4_classify(const double *emb) {
 
 static int64_t s_stage1(int64_t chunk_id) {
     int k = (int)chunk_id;
+    int cls = chunk_class[k];
+    const uint8_t *bm = accept_bitmap_cls[cls];
     int lo = k * CHUNK_SIZE;
     int hi = lo + CHUNK_SIZE > N ? N : lo + CHUNK_SIZE;
     for (int i = lo; i < hi; i++) {
-        if (stage1_decide(items + (size_t)i * DIM_D)) decisions[i] = ACCEPT_S1;
+        if (stage1_decide(items + (size_t)i * DIM_D, bm)) decisions[i] = ACCEPT_S1;
     }
     return 0;
 }
 static int64_t s_stage2(int64_t chunk_id) {
     int k = (int)chunk_id;
+    int cls = chunk_class[k];
+    int32_t t2 = T2_cls[cls];
     int lo = k * CHUNK_SIZE;
     int hi = lo + CHUNK_SIZE > N ? N : lo + CHUNK_SIZE;
     for (int i = lo; i < hi; i++) {
         if (decisions[i] != 0) continue;
         int32_t s = stage2_score(items + (size_t)i * DIM_D);
-        if (s > T2) decisions[i] = REJECT_S2;
+        if (s > t2) decisions[i] = REJECT_S2;
     }
     return 0;
 }
 static int64_t s_stage3(int64_t chunk_id) {
     int k = (int)chunk_id;
+    int cls = chunk_class[k];
+    double t3 = T3_cls[cls];
     int lo = k * CHUNK_SIZE;
     int hi = lo + CHUNK_SIZE > N ? N : lo + CHUNK_SIZE;
     for (int i = lo; i < hi; i++) {
@@ -225,7 +246,7 @@ static int64_t s_stage3(int64_t chunk_id) {
         double *emb = emb_all + (size_t)i * E_DIM;
         stage3_embed(items + (size_t)i * DIM_D, emb);
         double bs; int best = stage3_best(emb, &bs);
-        if (bs > T3) decisions[i] = ACCEPT_S3_BASE | best;
+        if (bs > t3) decisions[i] = ACCEPT_S3_BASE | best;
     }
     return 0;
 }

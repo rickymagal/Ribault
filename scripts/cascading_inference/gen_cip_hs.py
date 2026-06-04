@@ -85,7 +85,7 @@ cipN, cipChunkSize :: Int
 cipN         = __N__
 cipChunkSize = __CHUNK_SIZE__
 
-cipD, cipB2, cipE, cipK3, cipH, cipC, cipAcceptBitmapBytes :: Int
+cipD, cipB2, cipE, cipK3, cipH, cipC, cipAcceptBitmapBytes, cipNClasses :: Int
 cipD                  = 256
 cipB2                 = 256
 cipE                  = 64
@@ -93,6 +93,7 @@ cipK3                 = 8
 cipH                  = 128
 cipC                  = 16
 cipAcceptBitmapBytes  = 8192
+cipNClasses           = 4
 
 cipDataDir :: FilePath
 cipDataDir = "__DATA_DIR__"
@@ -113,14 +114,17 @@ g_decis = unsafePerformIO (newIORef nullPtr)
 g_emb :: IORef (Ptr Double)
 g_emb = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_w #-}
-g_w :: IORef (Ptr Word8, Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
-g_w = unsafePerformIO (newIORef (nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr))
+g_w :: IORef ([Ptr Word8], Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
+g_w = unsafePerformIO (newIORef ([], nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr))
 {-# NOINLINE g_t2 #-}
-g_t2 :: IORef Int32
-g_t2 = unsafePerformIO (newIORef 0)
+g_t2 :: IORef [Int32]
+g_t2 = unsafePerformIO (newIORef [])
 {-# NOINLINE g_t3 #-}
-g_t3 :: IORef Double
-g_t3 = unsafePerformIO (newIORef 0.0)
+g_t3 :: IORef [Double]
+g_t3 = unsafePerformIO (newIORef [])
+{-# NOINLINE g_chunk_class #-}
+g_chunk_class :: IORef (Ptr Int32)
+g_chunk_class = unsafePerformIO (newIORef nullPtr)
 
 cipReadMalloc :: FilePath -> Int -> IO (Ptr Word8)
 cipReadMalloc path nbytes = do
@@ -134,16 +138,14 @@ cipReadConfig :: IO ()
 cipReadConfig = do
   s <- readFile (cipDataDir ++ "/config.txt")
   let kv = [(head ws, ws !! 1) | l <- lines s, let ws = words l, length ws >= 2]
-  case lookup "T2" kv of
-    Just v -> writeIORef g_t2 (read v :: Int32)
-    Nothing -> return ()
-  case lookup "T3" kv of
-    Just v -> writeIORef g_t3 (read v :: Double)
-    Nothing -> return ()
+      t2s = [ (read $ maybe "0" id (lookup ("T2_CLASS_" ++ show c) kv)) :: Int32 | c <- [0 .. cipNClasses - 1] ]
+      t3s = [ (read $ maybe "0.0" id (lookup ("T3_CLASS_" ++ show c) kv)) :: Double | c <- [0 .. cipNClasses - 1] ]
+  writeIORef g_t2 t2s
+  writeIORef g_t3 t3s
 
 cipReadWeights :: IO ()
 cipReadWeights = do
-  let sizeAccept = cipAcceptBitmapBytes
+  let sizeAcceptAll = cipNClasses * cipAcceptBitmapBytes
       sizeReject = cipB2 * 2
       sizeRef    = cipK3 * cipE * 8
       sizeW1     = cipH * cipE * 8
@@ -151,10 +153,10 @@ cipReadWeights = do
       sizeW2     = cipC * cipH * 8
       sizeB2     = cipC * 8
       sizeCos    = cipE * cipD * 8
-      total = sizeAccept + sizeReject + sizeRef + sizeW1 + sizeB1 + sizeW2 + sizeB2 + sizeCos
+      total = sizeAcceptAll + sizeReject + sizeRef + sizeW1 + sizeB1 + sizeW2 + sizeB2 + sizeCos
   buf <- cipReadMalloc (cipDataDir ++ "/weights.bin") total
-  let o1 = 0
-      o2 = o1 + sizeAccept
+  let bitmaps = [ castPtr (buf `plusPtr` (c * cipAcceptBitmapBytes)) | c <- [0 .. cipNClasses - 1] ]
+      o2 = sizeAcceptAll
       o3 = o2 + sizeReject
       o4 = o3 + sizeRef
       o5 = o4 + sizeW1
@@ -162,7 +164,7 @@ cipReadWeights = do
       o7 = o6 + sizeW2
       o8 = o7 + sizeB2
   writeIORef g_w
-    ( castPtr (buf `plusPtr` o1)
+    ( bitmaps
     , castPtr (buf `plusPtr` o2)
     , castPtr (buf `plusPtr` o3)
     , castPtr (buf `plusPtr` o4)
@@ -178,6 +180,9 @@ cipInit = do
   cipReadWeights
   items <- cipReadMalloc (cipDataDir ++ "/input.bin") (cipN * cipD)
   writeIORef g_items items
+  let !nChunks = (cipN + cipChunkSize - 1) `div` cipChunkSize
+  ccBuf <- cipReadMalloc (cipDataDir ++ "/chunk_class.bin") (nChunks * 4)
+  writeIORef g_chunk_class (castPtr ccBuf)
   decis <- mallocBytes (cipN * 4) :: IO (Ptr Int32)
   forM_ [0 .. cipN - 1] $ \i -> pokeElemOff decis i (0 :: Int32)
   writeIORef g_decis decis
@@ -275,12 +280,20 @@ cipStage4Classify !emb !w1 !b1 !w2 !b2 !hidden = do
   goC 0 0 (-1e300)
 
 
+cipChunkClass :: Int -> IO Int
+cipChunkClass !cid = do
+  ccPtr <- readIORef g_chunk_class
+  !c <- peekElemOff ccPtr cid
+  return (fromIntegral c :: Int)
+
 cipStage1 :: Int -> IO Int64
 cipStage1 !cid = do
   items <- readIORef g_items
   decis <- readIORef g_decis
-  (accept, _, _, _, _, _, _, _) <- readIORef g_w
-  let !lo = cid * cipChunkSize
+  (bitmaps, _, _, _, _, _, _, _) <- readIORef g_w
+  classId <- cipChunkClass cid
+  let !accept = bitmaps !! classId
+      !lo = cid * cipChunkSize
       !hi = if lo + cipChunkSize > cipN then cipN else lo + cipChunkSize
   forM_ [lo .. hi - 1] $ \i -> do
     let !it = items `plusPtr` (i * cipD)
@@ -293,7 +306,9 @@ cipStage2 !cid = do
   items <- readIORef g_items
   decis <- readIORef g_decis
   (_, rejw, _, _, _, _, _, _) <- readIORef g_w
-  t2 <- readIORef g_t2
+  t2s <- readIORef g_t2
+  classId <- cipChunkClass cid
+  let !t2 = t2s !! classId
   histBuf <- mallocBytes (cipB2 * 4) :: IO (Ptr Int32)
   let !lo = cid * cipChunkSize
       !hi = if lo + cipChunkSize > cipN then cipN else lo + cipChunkSize
@@ -311,8 +326,10 @@ cipStage3 !cid = do
   decis <- readIORef g_decis
   embAll <- readIORef g_emb
   (_, _, refV, _, _, _, _, cosT) <- readIORef g_w
-  t3 <- readIORef g_t3
-  let !lo = cid * cipChunkSize
+  t3s <- readIORef g_t3
+  classId <- cipChunkClass cid
+  let !t3 = t3s !! classId
+      !lo = cid * cipChunkSize
       !hi = if lo + cipChunkSize > cipN then cipN else lo + cipChunkSize
   forM_ [lo .. hi - 1] $ \i -> do
     !d <- peekElemOff decis i
