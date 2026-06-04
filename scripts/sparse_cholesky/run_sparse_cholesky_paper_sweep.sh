@@ -140,13 +140,14 @@ for B in $BS_LIST; do
   for tier in seq_haskell strategies parpseq; do
     case "$tier" in
       seq_haskell) src="sc_seq.hs"     ; pkgs="-package time -package bytestring" ;;
-      strategies)  src="sc_strat.hs"   ; pkgs="-package time -package parallel -package vector -package bytestring -package containers" ;;
-      parpseq)     src="sc_parpseq.hs" ; pkgs="-package time -package parallel -package vector -package bytestring -package containers" ;;
+      strategies)  src="sc_strat.hs"   ; pkgs="-package time -package parallel -package vector -package vector-algorithms -package bytestring -package containers" ;;
+      parpseq)     src="sc_parpseq.hs" ; pkgs="-package time -package parallel -package vector -package vector-algorithms -package bytestring -package containers" ;;
     esac
     GDIR="$NDIR/${tier}"
     mkdir -p "$GDIR/obj"
     if [[ "$tier" == "seq_haskell" ]]; then THR=""; else THR="-threaded"; fi
-    "$GHC_BIN" -O2 $THR -rtsopts -dynamic $pkgs \
+    # -package-env - disables user cabal env so we use system vector-algorithms.
+    "$GHC_BIN" -package-env - -O2 $THR -rtsopts -dynamic $pkgs \
       -outputdir "$GDIR/obj" -o "$GDIR/$tier" \
       "$REPO/scripts/sparse_cholesky/$src" \
       >"$LOGDIR/${tier}_NB${NB}_B${B}.build.log" 2>&1
