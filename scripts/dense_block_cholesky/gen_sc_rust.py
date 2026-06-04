@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Ribault sparse-Cholesky files with Rust-implemented supers.
+"""Generate Ribault dense block Cholesky files with Rust-implemented supers.
 Mirrors gen_sc_c.py — same .fl, different super body language (Rust staticlib)."""
 
 import argparse, os, struct
@@ -46,7 +46,7 @@ panic = "abort"
 """
 
 
-RS_TEMPLATE = r"""//! Auto-generated Ribault sparse-Cholesky Rust supers.
+RS_TEMPLATE = r"""//! Auto-generated Ribault dense block Cholesky Rust supers.
 #![allow(non_snake_case)]
 #![allow(static_mut_refs)]
 

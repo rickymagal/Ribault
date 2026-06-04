@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
--- Sparse Cholesky par/pseq variant — same DAG as STRAT, parallelism via
+-- Dense Block Cholesky par/pseq variant — same DAG as STRAT, parallelism via
 -- manual Control.Parallel (par, pseq) sparks with per-level barrier.
 
 import Control.Monad (forM_, when)

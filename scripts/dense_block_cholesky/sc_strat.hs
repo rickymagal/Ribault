@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
--- Sparse Cholesky STRAT variant — same DAG as Ribault-Hs (loaded from
+-- Dense Block Cholesky STRAT variant — same DAG as Ribault-Hs (loaded from
 -- dag.bin), parallelism via parList rseq with per-level barrier.
 -- Inner kernels: raw Ptr Double, matches sc_seq.hs byte-for-byte.
 

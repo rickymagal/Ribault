@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate tables_with_ci.txt for the sparse-Cholesky benchmark with
+"""Regenerate tables_with_ci.txt for the dense block Cholesky benchmark with
 per-language baselines and 95% bootstrap CIs.
 
 Same layout as mergesort / LCS / attention CI scripts. Workload key here
@@ -10,8 +10,8 @@ CSV schema: variant,NB,B,P,rep,seconds,checksum,expected
 import argparse, csv, os, random, statistics, sys
 from collections import defaultdict
 
-DEFAULT_CSV = "results/sparse_cholesky_paper_final/master.csv"
-DEFAULT_OUT = "results/sparse_cholesky_paper_final/tables_with_ci.txt"
+DEFAULT_CSV = "results/dense_block_cholesky_paper_final/master.csv"
+DEFAULT_OUT = "results/dense_block_cholesky_paper_final/tables_with_ci.txt"
 
 LAYOUT = [
     ("Haskell", "seq_haskell", [
@@ -92,7 +92,7 @@ def main():
     Ps = sorted({p for w in Ws for p in data[pivot][w].keys() if p > 1})
 
     out = []
-    out.append(f"SPARSE CHOLESKY — median speedup with 95% bootstrap CI ({B} independent resamples)")
+    out.append(f"DENSE BLOCK CHOLESKY — median speedup with 95% bootstrap CI ({B} independent resamples)")
     out.append("Format: median× [lo×, hi×]   (workload key = NB × B)")
     out.append("")
     out.append("Per-language baselines:")

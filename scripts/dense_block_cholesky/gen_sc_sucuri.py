@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Sucuri sparse Cholesky variant: PyO3 Rust extension exposing
+"""Generate Sucuri dense block Cholesky variant: PyO3 Rust extension exposing
 init/op/result + a Python driver that constructs the DFGraph from the
 dag.bin produced by gen_input.py.
 
@@ -34,7 +34,7 @@ debug = false
 """
 
 
-RS_TEMPLATE = r"""// Sucuri sparse Cholesky Rust kernel: PyO3 extension exposing init/op/result.
+RS_TEMPLATE = r"""// Sucuri dense block Cholesky Rust kernel: PyO3 extension exposing init/op/result.
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 #![allow(static_mut_refs)]
@@ -200,7 +200,7 @@ fn sucuri_sc(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 
 PY_DRIVER = r"""#!/usr/bin/env python3
-'''Sucuri sparse Cholesky driver.
+'''Sucuri dense block Cholesky driver.
 
 Reads dag.bin → for each op, creates a pyDF.Node with as many input
 ports as it has dependencies; for each dependency edge, wires the

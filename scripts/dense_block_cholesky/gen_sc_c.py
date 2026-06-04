@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Ribault sparse-Cholesky files with C-implemented supers.
+"""Generate Ribault dense block Cholesky files with C-implemented supers.
 
 Dense block Cholesky DAG with chained serial updates per block. Each op
 in dag.bin becomes a super in the .fl, parameterised by op_idx; the
@@ -46,7 +46,7 @@ def read_dag(data_dir):
     return ops
 
 
-C_TEMPLATE = r"""/* Auto-generated: Ribault sparse-Cholesky C supers. */
+C_TEMPLATE = r"""/* Auto-generated: Ribault dense block Cholesky C supers. */
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -354,7 +354,7 @@ def emit_fl(out_dir, ops):
 
 # REGENERATING the .fl emit with const FIRST:
 
-C_TEMPLATE_FINAL = r"""/* Auto-generated: Ribault sparse-Cholesky C supers. */
+C_TEMPLATE_FINAL = r"""/* Auto-generated: Ribault dense block Cholesky C supers. */
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>

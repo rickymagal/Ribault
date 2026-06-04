@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Ribault sparse-Cholesky files with HASKELL-implemented supers.
+"""Generate Ribault dense block Cholesky files with HASKELL-implemented supers.
 
 Mirrors gen_sc_c.py / gen_sc_rust.py exactly in dataflow shape (same
 .fl with one super per DAG op, same super-number assignment). Super

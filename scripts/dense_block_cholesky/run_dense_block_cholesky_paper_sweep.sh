@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Master sweep for the sparse-Cholesky paper benchmark.
+# Master sweep for the dense block Cholesky paper benchmark.
 #
 # Same rigor as mergesort/LCS/attention:
 #   - per-language sequential denominators (taskset core 0, REPS=7)
@@ -35,8 +35,8 @@ export LANG="${LANG:-C.utf8}"
 export LC_ALL="${LC_ALL:-C.utf8}"
 
 REPO="${REPO:-$HOME/Ribault}"
-OUTROOT="${OUTROOT:-$HOME/results/sparse_cholesky_paper_final}"
-LOGDIR="${LOGDIR:-$HOME/runs/sparse_cholesky_paper_final_$(date +%Y%m%d_%H%M%S)}"
+OUTROOT="${OUTROOT:-$HOME/results/dense_block_cholesky_paper_final}"
+LOGDIR="${LOGDIR:-$HOME/runs/dense_block_cholesky_paper_final_$(date +%Y%m%d_%H%M%S)}"
 mkdir -p "$OUTROOT" "$LOGDIR"
 
 # NBs / Bs to sweep. Each (NB, B) is one workload (matches the mergesort
@@ -86,7 +86,7 @@ pin_cores() {
 }
 
 echo "==============================================================="
-echo " SPARSE CHOLESKY PAPER SWEEP (LCS/attn/mergesort rigor parity)"
+echo " DENSE BLOCK CHOLESKY PAPER SWEEP (LCS/attn/mergesort rigor parity)"
 echo "==============================================================="
 echo "  NBs:       $NBS"
 echo "  Bs:        $BS_LIST"
@@ -101,12 +101,12 @@ SEQDIR="$OUTROOT/seq_native"
 mkdir -p "$SEQDIR"
 
 echo "[build] seq_c"
-gcc -O3 -march=native -o "$SEQDIR/sc_seq_c" "$REPO/scripts/sparse_cholesky/sc_seq.c" -lm
+gcc -O3 -march=native -o "$SEQDIR/sc_seq_c" "$REPO/scripts/dense_block_cholesky/sc_seq.c" -lm
 
 echo "[build] seq_rust"
 mkdir -p "$SEQDIR/rust_build"
-cp "$REPO/scripts/sparse_cholesky/Cargo.toml.sc_seq" "$SEQDIR/rust_build/Cargo.toml"
-cp "$REPO/scripts/sparse_cholesky/sc_seq.rs"         "$SEQDIR/rust_build/sc_seq.rs"
+cp "$REPO/scripts/dense_block_cholesky/Cargo.toml.sc_seq" "$SEQDIR/rust_build/Cargo.toml"
+cp "$REPO/scripts/dense_block_cholesky/sc_seq.rs"         "$SEQDIR/rust_build/sc_seq.rs"
 (cd "$SEQDIR/rust_build" && cargo build --release --quiet)
 RUST_SEQ_BIN="$SEQDIR/rust_build/target/release/sc_seq_rust"
 
@@ -122,8 +122,8 @@ for B in $BS_LIST; do
   DATA="$NDIR/data"
 
   if [[ ! -f "$DATA/expected_checksum.txt" ]]; then
-    "$PY3" "$REPO/scripts/sparse_cholesky/gen_input.py" \
-      --out-dir "$DATA" --nb "$NB" --b "$B" --seed "$SEED" 2>&1 | tail -3
+    "$PY3" "$REPO/scripts/dense_block_cholesky/gen_input.py" \
+      --out-dir "$DATA" --NB "$NB" --B "$B" --seed "$SEED" 2>&1 | tail -3
   fi
   EXPECTED="$(cat "$DATA/expected_checksum.txt")"
   # The "expected_checksum.txt" placeholder is computed against numpy; the
@@ -149,7 +149,7 @@ for B in $BS_LIST; do
     # -package-env - disables user cabal env so we use system vector-algorithms.
     "$GHC_BIN" -package-env - -O2 $THR -rtsopts -dynamic $pkgs \
       -outputdir "$GDIR/obj" -o "$GDIR/$tier" \
-      "$REPO/scripts/sparse_cholesky/$src" \
+      "$REPO/scripts/dense_block_cholesky/$src" \
       >"$LOGDIR/${tier}_NB${NB}_B${B}.build.log" 2>&1
     [[ -x "$GDIR/$tier" ]] || { echo "FATAL: $tier build failed NB=$NB B=$B"; cat "$LOGDIR/${tier}_NB${NB}_B${B}.build.log"; exit 1; }
   done
@@ -189,7 +189,7 @@ for B in $BS_LIST; do
     # -------- ribault_c --------
     VDIR="$NDIR/ribault_c_P${P}"
     mkdir -p "$VDIR/supers"
-    "$PY3" "$REPO/scripts/sparse_cholesky/gen_sc_c.py" \
+    "$PY3" "$REPO/scripts/dense_block_cholesky/gen_sc_c.py" \
       --out-dir "$VDIR" --data-dir "$DATA" >/dev/null
     bash "$REPO/tools/build_supers_c.sh" "$VDIR/attn_c_supers.c" "$VDIR/supers" \
       >"$LOGDIR/ribault_c_NB${NB}_B${B}_P${P}.build.log" 2>&1
@@ -212,7 +212,7 @@ for B in $BS_LIST; do
     # -------- ribault_rust --------
     VDIR="$NDIR/ribault_rust_P${P}"
     mkdir -p "$VDIR/supers"
-    "$PY3" "$REPO/scripts/sparse_cholesky/gen_sc_rust.py" \
+    "$PY3" "$REPO/scripts/dense_block_cholesky/gen_sc_rust.py" \
       --out-dir "$VDIR" --data-dir "$DATA" >/dev/null
     CARGO_TARGET_DIR_RUST="$VDIR/cargo_target" \
       bash "$REPO/tools/build_supers_rust.sh" "$VDIR/sc_rs_supers" "$VDIR/supers" \
@@ -236,7 +236,7 @@ for B in $BS_LIST; do
     # -------- ribault_hs --------
     VDIR="$NDIR/ribault_hs_P${P}"
     mkdir -p "$VDIR/supers"
-    "$PY3" "$REPO/scripts/sparse_cholesky/gen_sc_hs.py" \
+    "$PY3" "$REPO/scripts/dense_block_cholesky/gen_sc_hs.py" \
       --out-dir "$VDIR" --data-dir "$DATA" >/dev/null
     SUPERS_INJECT_FILE="$VDIR/supers_inject.hs" \
       SUPERS_GHC_PACKAGES="vector bytestring" \
@@ -287,8 +287,8 @@ for B in $BS_LIST; do
     # -------- timely --------
     VDIR="$NDIR/timely_P${P}"
     mkdir -p "$VDIR"
-    cp "$REPO/scripts/sparse_cholesky/Cargo.toml.sc_timely" "$VDIR/Cargo.toml"
-    cp "$REPO/scripts/sparse_cholesky/sc_timely.rs"         "$VDIR/sc_timely.rs"
+    cp "$REPO/scripts/dense_block_cholesky/Cargo.toml.sc_timely" "$VDIR/Cargo.toml"
+    cp "$REPO/scripts/dense_block_cholesky/sc_timely.rs"         "$VDIR/sc_timely.rs"
     (cd "$VDIR" && CARGO_TARGET_DIR="$VDIR/target" cargo build --release --quiet \
       >"$LOGDIR/timely_NB${NB}_B${B}_P${P}.build.log" 2>&1)
     BIN="$VDIR/target/release/sc_timely"
@@ -305,7 +305,7 @@ for B in $BS_LIST; do
     if (( SUCURI_ENABLED == 1 )); then
       VDIR="$NDIR/sucuri_P${P}"
       mkdir -p "$VDIR"
-      "$PY3" "$REPO/scripts/sparse_cholesky/gen_sc_sucuri.py" \
+      "$PY3" "$REPO/scripts/dense_block_cholesky/gen_sc_sucuri.py" \
         --project-dir "$VDIR/crate" \
         --py-driver "$VDIR/run_sucuri.py" \
         --data-dir "$DATA" >/dev/null
@@ -340,7 +340,7 @@ done
 
 echo ""
 echo "============================================================="
-echo " SPARSE CHOLESKY SWEEP COMPLETE  $(date)"
+echo " DENSE BLOCK CHOLESKY SWEEP COMPLETE  $(date)"
 echo " CSV: $CSV"
 echo "============================================================="
 wc -l "$CSV"

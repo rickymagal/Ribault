@@ -1,4 +1,4 @@
-//! Sparse Cholesky on Timely Dataflow 0.13. One epoch per DAG level — each
+//! Dense Block Cholesky on Timely Dataflow 0.13. One epoch per DAG level — each
 //! worker pulls ops assigned to it for the current level, executes them
 //! against a shared raw-pointer view of the matrix, then advances the
 //! frontier (barrier). Same inner kernels (POTRF / TRSM / SYRK / GEMM) as
