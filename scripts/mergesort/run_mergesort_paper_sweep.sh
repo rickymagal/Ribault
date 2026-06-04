@@ -135,7 +135,10 @@ for N in $NS; do
     GDIR="$NDIR/${tier}"
     mkdir -p "$GDIR/obj"
     if [[ "$tier" == "seq_haskell" ]]; then THR=""; else THR="-threaded"; fi
-    "$GHC_BIN" -O2 $THR -rtsopts -dynamic $pkgs \
+    # NB: -package-env - disables ~/.ghc/.../environments/default so we link
+    #     against the system vector-algorithms (built against system vector)
+    #     instead of the user cabal-store vector (different ABI hash).
+    "$GHC_BIN" -package-env - -O2 $THR -rtsopts -dynamic $pkgs \
       -outputdir "$GDIR/obj" -o "$GDIR/$tier" \
       "$REPO/scripts/mergesort/$src" \
       >"$LOGDIR/${tier}_N${N}.build.log" 2>&1
