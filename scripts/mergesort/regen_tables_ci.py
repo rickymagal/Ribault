@@ -61,6 +61,7 @@ def bootstrap_ci(seq_samples, par_samples, B=BOOTSTRAP_B, alpha=0.05):
 def load_csv(csv_path):
     data = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     cs_mismatches = 0
+    failed_runs = 0
     with open(csv_path) as f:
         r = csv.DictReader(f)
         for row in r:
@@ -69,13 +70,18 @@ def load_csv(csv_path):
             P = int(row["P"])
             try: t = float(row["seconds"])
             except ValueError: continue
-            data[v][N][P].append(t)
             cs = row.get("checksum", "0")
             exp = row.get("expected", "0")
-            if cs != exp and cs != "0" and exp != "0":
-                cs_mismatches += 1
-    if cs_mismatches:
-        sys.stderr.write(f"[WARN] {cs_mismatches} rows have CHECKSUM != expected\n")
+            # Drop failed/segfaulted runs: zero runtime, or checksum mismatch
+            # (the runner writes 0 / "0" for both when interp crashed).
+            if t <= 0.0 or (cs != exp and cs != "0" and exp != "0"):
+                failed_runs += 1
+                if cs != exp and cs != "0" and exp != "0":
+                    cs_mismatches += 1
+                continue
+            data[v][N][P].append(t)
+    if failed_runs:
+        sys.stderr.write(f"[INFO] dropped {failed_runs} failed/segfaulted runs ({cs_mismatches} checksum mismatch)\n")
     return data
 
 
