@@ -15,6 +15,7 @@ import Data.Word (Word8, Word32, Word64)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed.Mutable as UM
 import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Marshal.Alloc (mallocBytes)
 import Foreign.Marshal.Utils (copyBytes)
@@ -43,8 +44,10 @@ readBin path nbytes = do
   withForeignPtr fp $ \src -> copyBytes p src nbytes
   return (castPtr p)
 
--- Each op: (kind, ti, tj, s1i, s1j, s2i, s2j, level)
-readDag :: FilePath -> IO (V.Vector (Int, Int, Int, Int, Int, Int, Int, Int))
+-- Each op: (kind, ti, tj, s1i, s1j, s2i, s2j). The dag.bin's pre-computed
+-- `level` (offset+7) is IGNORED here — par/pseq computes its own levels
+-- from `deps` inside the timed region, symmetric with Ribault.
+readDag :: FilePath -> IO (V.Vector (Int, Int, Int, Int, Int, Int, Int), V.Vector [Int])
 readDag path = do
   bs <- BS.readFile path
   let !(BSI.BS fp _) = bs
@@ -59,15 +62,16 @@ readDag path = do
           !s1j<- fromIntegral <$> peekElemOff src (off + 4)
           !s2i<- fromIntegral <$> peekElemOff src (off + 5)
           !s2j<- fromIntegral <$> peekElemOff src (off + 6)
-          !lv <- fromIntegral <$> peekElemOff src (off + 7)
+          -- offset+7 is the pre-computed level — intentionally NOT read.
           !nd <- (fromIntegral :: Int32 -> Int) <$> peekElemOff src (off + 8)
-          return ((k :: Int, ti :: Int, tj :: Int, s1i :: Int, s1j :: Int, s2i :: Int, s2j :: Int, lv :: Int), off + 9 + nd)
-    let collect !off !acc !left
-          | left == 0 = return (V.fromList (reverse acc))
+          ds <- mapM (\j -> (fromIntegral :: Int32 -> Int) <$> peekElemOff src (off + 9 + j)) [0..nd-1]
+          return ((k :: Int, ti :: Int, tj :: Int, s1i :: Int, s1j :: Int, s2i :: Int, s2j :: Int), ds, off + 9 + nd)
+    let collect !off !acc !accDeps !left
+          | left == 0 = return (V.fromList (reverse acc), V.fromList (reverse accDeps))
           | otherwise = do
-              (op, off') <- readOp off
-              collect off' (op : acc) (left - 1)
-    collect 1 [] n
+              (op, ds, off') <- readOp off
+              collect off' (op : acc) (ds : accDeps) (left - 1)
+    collect 1 [] [] n
 
 {-# INLINE potrfBlock #-}
 potrfBlock :: Ptr Double -> Int -> Int -> IO ()
@@ -138,7 +142,7 @@ g_arr = unsafePerformIO (newIORef nullPtr)
 g_b :: IORef Int
 g_b = unsafePerformIO (newIORef 0)
 {-# NOINLINE g_ops #-}
-g_ops :: IORef (V.Vector (Int, Int, Int, Int, Int, Int, Int, Int))
+g_ops :: IORef (V.Vector (Int, Int, Int, Int, Int, Int, Int))
 g_ops = unsafePerformIO (newIORef V.empty)
 
 {-# NOINLINE runOp #-}
@@ -147,7 +151,7 @@ runOp !idx = unsafePerformIO $ do
   arr <- readIORef g_arr
   b   <- readIORef g_b
   ops <- readIORef g_ops
-  let (k, ti, tj, s1i, s1j, s2i, s2j, _) = ops V.! idx
+  let (k, ti, tj, s1i, s1j, s2i, s2j) = ops V.! idx
       blockOff i j = blockIdx i j * b * b
   case k of
     0 -> potrfBlock arr (blockOff ti tj) b
@@ -156,12 +160,30 @@ runOp !idx = unsafePerformIO $ do
     3 -> gemmBlock  arr (blockOff ti tj) (blockOff s1i s1j) (blockOff s2i s2j) b
     _ -> error "unknown op"
 
-groupByLevel :: V.Vector (Int, Int, Int, Int, Int, Int, Int, Int) -> [[Int]]
-groupByLevel ops =
-  let pairs = [(lv, i) | (i, (_, _, _, _, _, _, _, lv)) <- zip [0..] (V.toList ops)]
-      maxL  = if V.null ops then 0 else maximum [lv | (_, _, _, _, _, _, _, lv) <- V.toList ops]
-      buckets = M.fromListWith (++) [(lv, [i]) | (lv, i) <- pairs]
-  in [maybe [] reverse (M.lookup k buckets) | k <- [1..maxL]]
+-- See sc_strat.hs for rationale: levels computed from deps inside the
+-- timed region so par/pseq has no input-side pre-computation advantage.
+computeLevels :: V.Vector [Int] -> IO (UM.IOVector Int, Int)
+computeLevels deps = do
+  let n = V.length deps
+  arr <- UM.replicate n (0 :: Int)
+  let go !i !mx
+        | i >= n = return mx
+        | otherwise = do
+            let ds = deps V.! i
+            lv <- if null ds
+                    then return 1
+                    else do ls <- mapM (UM.read arr) ds; return (1 + maximum ls)
+            UM.write arr i lv
+            go (i + 1) (max mx lv)
+  mx <- go 0 0
+  return (arr, mx)
+
+groupByLevel :: UM.IOVector Int -> Int -> IO [[Int]]
+groupByLevel levels maxL = do
+  let n = UM.length levels
+  pairs <- mapM (\i -> do !lv <- UM.read levels i; return (lv, i)) [0..n-1]
+  let buckets = M.fromListWith (++) [(lv, [i]) | (lv, i) <- pairs]
+  return [maybe [] reverse (M.lookup k buckets) | k <- [1..maxL]]
 
 main :: IO ()
 main = do
@@ -176,13 +198,15 @@ run dir = do
   let !nBlocks = nb*(nb+1) `div` 2
       !nbytes  = nBlocks * b * b * 8
   arr <- readBin (dir ++ "/A.bin") nbytes
-  ops <- readDag (dir ++ "/dag.bin")
+  (ops, deps) <- readDag (dir ++ "/dag.bin")
   writeIORef g_arr arr
   writeIORef g_b b
   writeIORef g_ops ops
-  let levelGroups = groupByLevel ops
 
   t0 <- getCurrentTime
+  -- Level computation is part of par/pseq's job, inside the timed region.
+  (levels, maxL) <- computeLevels deps
+  levelGroups <- groupByLevel levels maxL
   forM_ levelGroups $ \opIdxs -> do
     let !rs      = map runOp opIdxs
         !forced  = foldl' seq () rs

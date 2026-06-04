@@ -21,7 +21,7 @@ unsafe impl Sync for SendPtr {}
 fn block_idx(i: usize, j: usize) -> usize { i * (i + 1) / 2 + j }
 
 #[derive(Clone, Copy)]
-struct Op { kind: i32, ti: u32, tj: u32, s1i: u32, s1j: u32, s2i: u32, s2j: u32, level: u32 }
+struct Op { kind: i32, ti: u32, tj: u32, s1i: u32, s1j: u32, s2i: u32, s2j: u32 }
 
 unsafe fn potrf_block(d: *mut f64, b: usize) {
     for j in 0..b {
@@ -72,31 +72,64 @@ fn load_config(dir: &str) -> (usize, usize) {
     (nb, b)
 }
 
-fn load_ops(dir: &str) -> Vec<Op> {
+// Reads ops + dependency lists from dag.bin. We deliberately IGNORE the
+// pre-computed `level` field that gen_input.py wrote: Timely will compute
+// its own level assignment from `deps` at runtime, inside the timed
+// region — symmetric with the work Ribault's runtime does via its firing
+// rule. Otherwise Timely would be receiving a topologically-batched
+// input and Ribault would not, which is the asymmetry called out in
+// review.
+fn load_ops(dir: &str) -> (Vec<Op>, Vec<Vec<u32>>) {
     let mut df = File::open(format!("{}/dag.bin", dir)).unwrap();
     let mut hdr4 = [0u8; 4];
     df.read_exact(&mut hdr4).unwrap();
     let n_ops = i32::from_le_bytes(hdr4) as usize;
     let mut ops = Vec::with_capacity(n_ops);
+    let mut deps = Vec::with_capacity(n_ops);
     for _ in 0..n_ops {
         let mut hdr = [0u8; 36];
         df.read_exact(&mut hdr).unwrap();
         let vals: [i32; 9] = std::array::from_fn(|i|
             i32::from_le_bytes([hdr[i*4], hdr[i*4+1], hdr[i*4+2], hdr[i*4+3]]));
         let n_deps = vals[8] as usize;
+        let mut op_deps = Vec::with_capacity(n_deps);
         if n_deps > 0 {
-            let mut skip = vec![0u8; n_deps * 4];
-            df.read_exact(&mut skip).unwrap();
+            let mut buf = vec![0u8; n_deps * 4];
+            df.read_exact(&mut buf).unwrap();
+            for k in 0..n_deps {
+                let d = i32::from_le_bytes([buf[k*4], buf[k*4+1], buf[k*4+2], buf[k*4+3]]);
+                op_deps.push(d as u32);
+            }
         }
         ops.push(Op {
             kind: vals[0],
             ti: vals[1] as u32, tj: vals[2] as u32,
             s1i: vals[3].max(0) as u32, s1j: vals[4].max(0) as u32,
             s2i: vals[5].max(0) as u32, s2j: vals[6].max(0) as u32,
-            level: vals[7] as u32,
+            // vals[7] is the pre-computed level — IGNORED here on purpose.
         });
+        deps.push(op_deps);
     }
-    ops
+    (ops, deps)
+}
+
+// Compute each op's level (= 1 + max level of any dependency) via a single
+// forward pass over deps. Ops are stored in topological order in dag.bin
+// (gen_input.py emits POTRFs first, then chained TRSM/SYRK/GEMM updates),
+// so a left-to-right pass yields correct levels without needing a queue.
+fn compute_levels(ops: &[Op], deps: &[Vec<u32>]) -> (Vec<u32>, u32) {
+    let mut levels = vec![0u32; ops.len()];
+    let mut max_lev = 0u32;
+    for i in 0..ops.len() {
+        let mut lv = 1u32;
+        for &d in &deps[i] {
+            let dl = levels[d as usize];
+            if dl + 1 > lv { lv = dl + 1; }
+        }
+        levels[i] = lv;
+        if lv > max_lev { max_lev = lv; }
+    }
+    (levels, max_lev)
 }
 
 fn main() {
@@ -123,11 +156,14 @@ fn main() {
     let a_ptr_send = SendPtr(leaked.as_mut_ptr());
     // Keep a non-Send copy for the post-run checksum (re-fetched via leaked).
 
-    let ops = load_ops(&dir);
-    let max_level = ops.iter().map(|o| o.level).max().unwrap_or(0);
+    let (ops, deps) = load_ops(&dir);
     let ops_arc = Arc::new(ops);
+    let deps_arc = Arc::new(deps);
 
     let t0 = Instant::now();
+    // Level computation is part of Timely's job, INSIDE the timed region.
+    let (levels, max_level) = compute_levels(&ops_arc, &deps_arc);
+    let levels_arc = Arc::new(levels);
     let cfg = timely::Config::process(workers);
     timely::execute(cfg, move |worker| {
         let widx = worker.index();
@@ -140,6 +176,7 @@ fn main() {
         // make the closure capture a !Sync type.
         let a_ptr_send_inner = a_ptr_send;
         let ops_local = ops_arc.clone();
+        let levels_local = levels_arc.clone();
 
         let mut input = timely::dataflow::InputHandle::new();
         let mut probe = ProbeHandle::new();
@@ -164,10 +201,11 @@ fn main() {
                 .probe_with(&mut probe);
         });
 
-        // One epoch per DAG level — barrier between levels.
+        // One epoch per DAG level — barrier between levels. Levels are
+        // computed at runtime above; we don't read them from dag.bin.
         for lvl in 1..=max_level {
-            for (i, op) in ops_arc.iter().enumerate() {
-                if op.level == lvl && (i % wcount == widx) {
+            for i in 0..levels_local.len() {
+                if levels_local[i] == lvl && (i % wcount == widx) {
                     input.send(i);
                 }
             }
