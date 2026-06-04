@@ -1,0 +1,17 @@
+[package]
+name = "cip_timely"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "cip_timely"
+path = "cip_timely.rs"
+
+[dependencies]
+timely = "0.13"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
