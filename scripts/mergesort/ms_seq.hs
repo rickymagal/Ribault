@@ -14,7 +14,7 @@ import Data.Int (Int32)
 import Data.Word (Word32, Word64)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
-import qualified Data.Vector.Unboxed.Mutable as MV
+import qualified Data.Vector.Storable.Mutable as MV
 import qualified Data.Vector.Algorithms.Intro as VAI
 import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Ptr (Ptr, plusPtr)
