@@ -1,0 +1,14 @@
+[package]
+name = "sc_seq_rust"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "sc_seq_rust"
+path = "sc_seq.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
