@@ -3,8 +3,10 @@ module Main where
 
 -- Mergesort sequential baseline in Haskell — monolithic top-down
 -- recursive merge sort on Data.Vector.Unboxed.Mutable Int32. Below
--- CUTOFF: insertion sort. Above: split, recurse, merge into scratch,
--- copy back. Same algorithm as ms_seq.c and ms_seq.rs.
+-- CUTOFF: Data.Vector.Algorithms.Intro.sort (introsort, O(B log B))
+-- on the slice. Above: split, recurse, merge into scratch, copy
+-- back. Same algorithm as ms_seq.c (qsort) and ms_seq.rs
+-- (std::sort_unstable).
 
 import Control.Monad (forM_, when)
 import Data.Bits ((.&.))
@@ -13,6 +15,7 @@ import Data.Word (Word32, Word64)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.Vector.Unboxed.Mutable as MV
+import qualified Data.Vector.Algorithms.Intro as VAI
 import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Ptr (Ptr, plusPtr)
 import Foreign.Storable (peek)
@@ -41,24 +44,11 @@ readInput path n = do
       MV.write v i w
   return v
 
-{-# INLINE insertionSort #-}
-insertionSort :: MV.IOVector Int32 -> Int -> Int -> IO ()
-insertionSort !a !lo !hi = go (lo + 1)
-  where
-    go !i
-      | i >= hi   = return ()
-      | otherwise = do
-          !x <- MV.read a i
-          let bubble !j
-                | j <= lo   = MV.write a j x
-                | otherwise = do
-                    !y <- MV.read a (j - 1)
-                    if y > x
-                      then do MV.write a j y
-                              bubble (j - 1)
-                      else MV.write a j x
-          bubble i
-          go (i + 1)
+-- Leaf sort: Data.Vector.Algorithms.Intro.sort on the slice. Introsort,
+-- O(B log B). The slice is a view of arr[lo..hi).
+{-# INLINE leafSort #-}
+leafSort :: MV.IOVector Int32 -> Int -> Int -> IO ()
+leafSort !a !lo !hi = VAI.sort (MV.slice lo (hi - lo) a)
 
 {-# INLINE mergeTo #-}
 mergeTo :: MV.IOVector Int32 -> Int -> Int -> Int -> MV.IOVector Int32 -> IO ()
@@ -81,7 +71,7 @@ mergeTo !a !lo !mid !hi !t = do
 
 msSort :: Int -> MV.IOVector Int32 -> Int -> Int -> MV.IOVector Int32 -> IO ()
 msSort !cutoff !a !lo !hi !t
-  | hi - lo <= cutoff = insertionSort a lo hi
+  | hi - lo <= cutoff = leafSort a lo hi
   | otherwise = do
       let !mid = lo + (hi - lo) `div` 2
       msSort cutoff a lo  mid t

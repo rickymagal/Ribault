@@ -22,11 +22,13 @@ import Data.Word (Word8, Word32, Word64)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.Vector.Unboxed as V
-import Foreign.ForeignPtr (withForeignPtr)
+import qualified Data.Vector.Storable.Mutable as SMV
+import qualified Data.Vector.Algorithms.Intro as VAI
+import Foreign.ForeignPtr (withForeignPtr, newForeignPtr_)
 import Foreign.Marshal.Alloc (mallocBytes)
 import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Storable (peekElemOff, pokeElemOff)
-import Foreign.Ptr (Ptr, nullPtr, castPtr)
+import Foreign.Ptr (Ptr, plusPtr, nullPtr, castPtr)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout, hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
@@ -76,24 +78,13 @@ msAllocI32 count = do
   forM_ [0..count-1] $ \i -> pokeElemOff p i (0 :: Int32)
   return p
 
-{-# INLINE insertionSort #-}
-insertionSort :: Ptr Int32 -> Int -> Int -> IO ()
-insertionSort !a !lo !hi = go (lo + 1)
-  where
-    go !i
-      | i >= hi   = return ()
-      | otherwise = do
-          !x <- peekElemOff a i
-          let bubble !j
-                | j <= lo   = pokeElemOff a j x
-                | otherwise = do
-                    !y <- peekElemOff a (j - 1)
-                    if y > x
-                      then do pokeElemOff a j y
-                              bubble (j - 1)
-                      else pokeElemOff a j x
-          bubble i
-          go (i + 1)
+-- Leaf sort: introsort on a Storable.Mutable view of arr[lo..hi).
+{-# INLINE leafSort #-}
+leafSort :: Ptr Int32 -> Int -> Int -> IO ()
+leafSort !a !lo !hi = do
+  fp <- newForeignPtr_ (a `plusPtr` (lo * 4))
+  let mv = SMV.unsafeFromForeignPtr0 fp (hi - lo) :: SMV.IOVector Int32
+  VAI.sort mv
 
 {-# INLINE mergeOp #-}
 mergeOp :: Ptr Int32 -> Ptr Int32 -> Int -> Int -> Int -> IO ()
@@ -133,7 +124,7 @@ evalLeaf !idx = unsafePerformIO $ do
   arr <- readIORef g_arr
   lvs <- readIORef g_leaves
   let !(lo, hi) = lvs V.! idx
-  insertionSort arr lo hi
+  leafSort arr lo hi
 
 {-# NOINLINE evalMerge #-}
 evalMerge :: Int -> ()

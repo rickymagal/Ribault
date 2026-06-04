@@ -95,19 +95,11 @@ unsafe fn load_tree() {
     }
 }
 
+// Leaf sort: pdqsort (std::sort_unstable). O(B log B). Same as ms_seq.rs / ms_timely.rs / ribault_rust.
 #[inline(always)]
-unsafe fn insertion_sort_at(lo: usize, hi: usize) {
-    let mut i = lo + 1;
-    while i < hi {
-        let x = *ARR.add(i);
-        let mut j = i;
-        while j > lo && *ARR.add(j - 1) > x {
-            *ARR.add(j) = *ARR.add(j - 1);
-            j -= 1;
-        }
-        *ARR.add(j) = x;
-        i += 1;
-    }
+unsafe fn leaf_sort_at(lo: usize, hi: usize) {
+    let slice = std::slice::from_raw_parts_mut(ARR.add(lo), hi - lo);
+    slice.sort_unstable();
 }
 
 #[inline(always)]
@@ -155,7 +147,7 @@ fn leaf(py: Python<'_>, idx: usize) -> PyResult<i64> {
     py.allow_threads(|| unsafe {
         let lo = *LEAF_LO.add(idx) as usize;
         let hi = *LEAF_HI.add(idx) as usize;
-        insertion_sort_at(lo, hi);
+        leaf_sort_at(lo, hi);
     });
     Ok(0)
 }

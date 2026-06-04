@@ -34,14 +34,13 @@ static void load_config(const char *dir) {
     fclose(f);
 }
 
-/* Insertion sort on arr[lo..hi). */
-static inline void insertion_sort(int *a, int lo, int hi) {
-    for (int i = lo + 1; i < hi; i++) {
-        int x = a[i];
-        int j = i - 1;
-        while (j >= lo && a[j] > x) { a[j + 1] = a[j]; j--; }
-        a[j + 1] = x;
-    }
+/* Leaf sort: libc qsort (glibc uses introsort). O(B log B). */
+static int cmp_int(const void *a, const void *b) {
+    int x = *(const int *)a, y = *(const int *)b;
+    return (x > y) - (x < y);
+}
+static inline void leaf_sort(int *a, int lo, int hi) {
+    qsort(a + lo, (size_t)(hi - lo), sizeof(int), cmp_int);
 }
 
 /* Merge a[lo..mid) and a[mid..hi) into t[lo..hi). */
@@ -57,7 +56,7 @@ static inline void merge_to(int *a, int lo, int mid, int hi, int *t) {
 }
 
 static void ms_sort(int *a, int lo, int hi) {
-    if (hi - lo <= CUTOFF) { insertion_sort(a, lo, hi); return; }
+    if (hi - lo <= CUTOFF) { leaf_sort(a, lo, hi); return; }
     int mid = lo + (hi - lo) / 2;
     ms_sort(a, lo, mid);
     ms_sort(a, mid, hi);

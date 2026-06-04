@@ -37,7 +37,7 @@ mkdir -p "$OUTROOT" "$LOGDIR"
 NS="${NS:-1000000 2000000 5000000 10000000}"
 PS="${PS:-2 3 4 7 8 13 16 19 23 24 32 48}"
 REPS="${REPS:-7}"
-CUTOFF="${CUTOFF:-512}"
+CUTOFF="${CUTOFF:-2048}"
 SEED="${SEED:-42}"
 TALM_RTS_A="${TALM_RTS_A:-256m}"
 
@@ -128,9 +128,9 @@ for N in $NS; do
   # ===== Build standalone GHC binaries (seq_haskell, strategies, parpseq) =====
   for tier in seq_haskell strategies parpseq; do
     case "$tier" in
-      seq_haskell) src="ms_seq.hs"     ; pkgs="-package time -package vector -package bytestring" ;;
-      strategies)  src="ms_strat.hs"   ; pkgs="-package time -package parallel -package vector -package bytestring -package containers" ;;
-      parpseq)     src="ms_parpseq.hs" ; pkgs="-package time -package parallel -package vector -package bytestring -package containers" ;;
+      seq_haskell) src="ms_seq.hs"     ; pkgs="-package time -package vector -package vector-algorithms -package bytestring" ;;
+      strategies)  src="ms_strat.hs"   ; pkgs="-package time -package parallel -package vector -package vector-algorithms -package bytestring -package containers" ;;
+      parpseq)     src="ms_parpseq.hs" ; pkgs="-package time -package parallel -package vector -package vector-algorithms -package bytestring -package containers" ;;
     esac
     GDIR="$NDIR/${tier}"
     mkdir -p "$GDIR/obj"
@@ -230,7 +230,7 @@ for N in $NS; do
     "$PY3" "$REPO/scripts/mergesort/gen_ms_hs.py" \
       --out-dir "$VDIR" --data-dir "$DATA" >/dev/null
     SUPERS_INJECT_FILE="$VDIR/supers_inject.hs" \
-      SUPERS_GHC_PACKAGES="vector bytestring" \
+      SUPERS_GHC_PACKAGES="vector vector-algorithms bytestring" \
       CFLAGS="$SUPERS_CFLAGS" \
       bash "$REPO/tools/build_supers.sh" "$VDIR/attn.hsk" "$VDIR/supers/Supers.hs" \
       >"$LOGDIR/ribault_hs_N${N}_P${P}.build.log" 2>&1

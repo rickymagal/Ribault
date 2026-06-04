@@ -136,19 +136,11 @@ unsafe fn s_init() -> i64 {
     0
 }
 
+// Leaf sort: pdqsort (std::sort_unstable). O(B log B). Same as ms_seq.rs / ms_timely.rs.
 #[inline(always)]
-unsafe fn insertion_sort(a: *mut c_int, lo: usize, hi: usize) {
-    let mut i = lo + 1;
-    while i < hi {
-        let x = *a.add(i);
-        let mut j = i;
-        while j > lo && *a.add(j - 1) > x {
-            *a.add(j) = *a.add(j - 1);
-            j -= 1;
-        }
-        *a.add(j) = x;
-        i += 1;
-    }
+unsafe fn leaf_sort(a: *mut c_int, lo: usize, hi: usize) {
+    let slice = std::slice::from_raw_parts_mut(a.add(lo), hi - lo);
+    slice.sort_unstable();
 }
 
 #[inline(always)]
@@ -171,7 +163,7 @@ unsafe fn s_leaf(leaf_idx: i64) -> i64 {
     let idx = leaf_idx as usize;
     let lo = *LEAF_LO.add(idx) as usize;
     let hi = *LEAF_HI.add(idx) as usize;
-    insertion_sort(ARR, lo, hi);
+    leaf_sort(ARR, lo, hi);
     0
 }
 

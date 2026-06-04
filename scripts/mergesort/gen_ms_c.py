@@ -137,14 +137,13 @@ static int64_t s_init(void) {
     return 0;
 }
 
-/* Insertion sort on arr[lo, hi). Tight inner loop, branchless-ish. */
-static inline void insertion_sort(int *a, int lo, int hi) {
-    for (int i = lo + 1; i < hi; i++) {
-        int x = a[i];
-        int j = i - 1;
-        while (j >= lo && a[j] > x) { a[j + 1] = a[j]; j--; }
-        a[j + 1] = x;
-    }
+/* Leaf sort: libc qsort (glibc uses introsort). O(B log B). Same as ms_seq.c. */
+static int cmp_int(const void *a, const void *b) {
+    int x = *(const int *)a, y = *(const int *)b;
+    return (x > y) - (x < y);
+}
+static inline void leaf_sort(int *a, int lo, int hi) {
+    qsort(a + lo, (size_t)(hi - lo), sizeof(int), cmp_int);
 }
 
 /* Merge arr[lo, mid) + arr[mid, hi) via tmp, copy back. Range disjoint
@@ -162,7 +161,7 @@ static inline void merge_op(int lo, int mid, int hi) {
 
 static int64_t s_leaf(int64_t leaf_idx) {
     int idx = (int)leaf_idx;
-    insertion_sort(arr, leaf_lo[idx], leaf_hi[idx]);
+    leaf_sort(arr, leaf_lo[idx], leaf_hi[idx]);
     return 0;
 }
 

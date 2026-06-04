@@ -64,18 +64,10 @@ fn read_input_i32(dir: &str, n: usize) -> Vec<i32> {
     (0..n).map(|i| i32::from_le_bytes([buf[i*4], buf[i*4+1], buf[i*4+2], buf[i*4+3]])).collect()
 }
 
-unsafe fn insertion_sort(a: *mut i32, lo: usize, hi: usize) {
-    let mut i = lo + 1;
-    while i < hi {
-        let x = *a.add(i);
-        let mut j = i;
-        while j > lo && *a.add(j - 1) > x {
-            *a.add(j) = *a.add(j - 1);
-            j -= 1;
-        }
-        *a.add(j) = x;
-        i += 1;
-    }
+// Leaf sort: pdqsort (std::sort_unstable). O(B log B). Same as ms_seq.rs.
+unsafe fn leaf_sort(a: *mut i32, lo: usize, hi: usize) {
+    let slice = std::slice::from_raw_parts_mut(a.add(lo), hi - lo);
+    slice.sort_unstable();
 }
 
 unsafe fn merge_op(arr: *mut i32, tmp: *mut i32, lo: usize, mid: usize, hi: usize) {
@@ -167,7 +159,7 @@ fn main() {
                         if epoch == 0 {
                             // Leaf sort
                             let (lo, hi) = leaves_for_map[idx];
-                            insertion_sort(arr, lo, hi);
+                            leaf_sort(arr, lo, hi);
                         } else {
                             // Merge at level `epoch`
                             let (lo, mid, hi, _) = merges_for_map[idx];

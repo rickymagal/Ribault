@@ -87,7 +87,9 @@ main =
 INJECT_TEMPLATE = r"""import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
-import Foreign.ForeignPtr (withForeignPtr)
+import qualified Data.Vector.Storable.Mutable as SMV
+import qualified Data.Vector.Algorithms.Intro as VAI
+import Foreign.ForeignPtr (withForeignPtr, newForeignPtr_)
 import Foreign.Marshal.Alloc (mallocBytes)
 import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Storable (peek, poke, peekElemOff, pokeElemOff)
@@ -184,24 +186,14 @@ msInit = do
   writeIORef g_tmp_ms tmp
   return 0
 
-{-# INLINE msInsertionSort #-}
-msInsertionSort :: Ptr Int32 -> Int -> Int -> IO ()
-msInsertionSort !a !lo !hi = go (lo + 1)
-  where
-    go !i
-      | i >= hi   = return ()
-      | otherwise = do
-          !x <- peekElemOff a i
-          let bubble !j
-                | j <= lo   = pokeElemOff a j x
-                | otherwise = do
-                    !y <- peekElemOff a (j - 1)
-                    if y > x
-                      then do pokeElemOff a j y
-                              bubble (j - 1)
-                      else pokeElemOff a j x
-          bubble i
-          go (i + 1)
+-- Leaf sort: introsort on Storable.Mutable view of arr[lo..hi). Same as
+-- ms_seq.hs / ms_strat.hs / ms_parpseq.hs leaf kernel.
+{-# INLINE msLeafSort #-}
+msLeafSort :: Ptr Int32 -> Int -> Int -> IO ()
+msLeafSort !a !lo !hi = do
+  fp <- newForeignPtr_ (a `plusPtr` (lo * 4))
+  let mv = SMV.unsafeFromForeignPtr0 fp (hi - lo) :: SMV.IOVector Int32
+  VAI.sort mv
 
 {-# INLINE msMergeOp #-}
 msMergeOp :: Ptr Int32 -> Ptr Int32 -> Int -> Int -> Int -> IO ()
@@ -228,7 +220,7 @@ msLeaf !leafIdx = do
   leafHi  <- readIORef g_leaf_hi_ms
   !lo <- peekElemOff leafLo leafIdx
   !hi <- peekElemOff leafHi leafIdx
-  msInsertionSort arr (fromIntegral lo) (fromIntegral hi)
+  msLeafSort arr (fromIntegral lo) (fromIntegral hi)
   return 0
 
 msMerge :: Int -> IO Int64

@@ -1,12 +1,13 @@
 //! Mergesort sequential baseline in Rust — monolithic top-down recursive
-//! merge sort on a flat i32 array. Below CUTOFF: insertion sort. Above:
-//! split, recurse, merge into scratch, copy back. Same algorithm as ms_seq.c.
+//! merge sort on a flat i32 array. Below CUTOFF: std::sort_unstable (pdqsort)
+//! on a slice view. Above: split, recurse, merge into scratch, copy back.
+//! Same algorithm as ms_seq.c (uses qsort) — both are language-standard
+//! O(B log B) sorts for the leaf, identical merge structure above.
 //!
 //! CRITICAL FAIRNESS NOTE: the parallel Rust variants (ribault_rust, timely,
-//! sucuri) do raw `*mut i32` pointer arithmetic + `unsafe` on the inner
-//! kernels (insertion sort, merge). If seq_rust kept Rust's default bounds
-//! checking it would be artificially slow vs the parallel numerator. seq_rust
-//! therefore uses the same `unsafe` raw-pointer pattern on every inner loop.
+//! sucuri) do raw `*mut i32` pointer arithmetic + `unsafe` on the merge
+//! kernel and use the same std::sort_unstable on leaves. seq_rust mirrors
+//! this exactly so the comparison is per-language fair.
 
 use std::env;
 use std::fs::File;
@@ -31,19 +32,11 @@ fn load_config(dir: &str) -> (usize, usize) {
     (n, cutoff)
 }
 
+// Leaf sort: pdqsort (std::sort_unstable). O(B log B).
 #[inline(always)]
-unsafe fn insertion_sort(a: *mut i32, lo: usize, hi: usize) {
-    let mut i = lo + 1;
-    while i < hi {
-        let x = *a.add(i);
-        let mut j = i;
-        while j > lo && *a.add(j - 1) > x {
-            *a.add(j) = *a.add(j - 1);
-            j -= 1;
-        }
-        *a.add(j) = x;
-        i += 1;
-    }
+unsafe fn leaf_sort(a: *mut i32, lo: usize, hi: usize) {
+    let slice = std::slice::from_raw_parts_mut(a.add(lo), hi - lo);
+    slice.sort_unstable();
 }
 
 #[inline(always)]
@@ -66,7 +59,7 @@ unsafe fn merge_to(a: *mut i32, lo: usize, mid: usize, hi: usize, t: *mut i32) {
 }
 
 unsafe fn ms_sort(a: *mut i32, lo: usize, hi: usize, t: *mut i32, cutoff: usize) {
-    if hi - lo <= cutoff { insertion_sort(a, lo, hi); return; }
+    if hi - lo <= cutoff { leaf_sort(a, lo, hi); return; }
     let mid = lo + (hi - lo) / 2;
     ms_sort(a, lo, mid, t, cutoff);
     ms_sort(a, mid, hi, t, cutoff);
