@@ -132,7 +132,13 @@ fn main() {
     timely::execute(cfg, move |worker| {
         let widx = worker.index();
         let wcount = worker.peers();
-        let a_ptr_w = a_ptr_send.0;
+        // Keep a_ptr_send (SendPtr: Send + Sync) — do NOT extract the raw
+        // *mut f64 here. The inner inspect-closure captures `a_ptr_send` by
+        // Copy, then dereferences to the raw pointer inside its body, so the
+        // closure's CAPTURE set stays Send + Sync (Timely operators require
+        // 'static + Sync). Extracting *mut f64 outside the closure would
+        // make the closure capture a !Sync type.
+        let a_ptr_send_inner = a_ptr_send;
         let ops_local = ops_arc.clone();
 
         let mut input = timely::dataflow::InputHandle::new();
@@ -141,6 +147,7 @@ fn main() {
             input.to_stream(scope)
                 .inspect(move |&op_idx: &usize| {
                     let op = ops_local[op_idx];
+                    let a_ptr_w = a_ptr_send_inner.0;
                     let tgt = unsafe { a_ptr_w.add(block_idx(op.ti as usize, op.tj as usize) * block_size) };
                     unsafe {
                         match op.kind {
