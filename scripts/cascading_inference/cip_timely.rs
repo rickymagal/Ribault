@@ -23,7 +23,7 @@ const E_DIM:    usize = 64;
 const K3:       usize = 8;
 const H_DIM:    usize = 128;
 const C_CLS:    usize = 16;
-const K1:       usize = 1024;
+const ACCEPT_BITMAP_BYTES: usize = 8192;
 
 const ACCEPT_S1:      i32 = 1;
 const REJECT_S2:      i32 = 2;
@@ -61,7 +61,7 @@ fn load_config(dir: &str) -> (usize, usize, i32, f64) {
 }
 
 struct Weights {
-    accept_table:   Vec<u32>,
+    accept_bitmap:  Vec<u8>,
     reject_weights: Vec<i16>,
     ref_vec:        Vec<f64>,
     w1_mat:         Vec<f64>,
@@ -75,11 +75,9 @@ fn load_weights(dir: &str) -> Weights {
     let mut buf = Vec::new();
     File::open(format!("{}/weights.bin", dir)).unwrap().read_to_end(&mut buf).unwrap();
     let mut off = 0usize;
-    fn u32_block(buf: &[u8], off: &mut usize, n: usize) -> Vec<u32> {
-        let mut v = Vec::with_capacity(n);
-        for i in 0..n { let p = *off + i*4;
-            v.push(u32::from_le_bytes([buf[p],buf[p+1],buf[p+2],buf[p+3]])); }
-        *off += n*4; v
+    fn u8_block(buf: &[u8], off: &mut usize, n: usize) -> Vec<u8> {
+        let v = buf[*off..*off + n].to_vec();
+        *off += n; v
     }
     fn i16_block(buf: &[u8], off: &mut usize, n: usize) -> Vec<i16> {
         let mut v = Vec::with_capacity(n);
@@ -95,7 +93,7 @@ fn load_weights(dir: &str) -> Weights {
         *off += n*8; v
     }
     Weights {
-        accept_table:   u32_block(&buf, &mut off, K1),
+        accept_bitmap:  u8_block(&buf, &mut off, ACCEPT_BITMAP_BYTES),
         reject_weights: i16_block(&buf, &mut off, B2_SLOTS),
         ref_vec:        f64_block(&buf, &mut off, K3 * E_DIM),
         w1_mat:         f64_block(&buf, &mut off, H_DIM * E_DIM),
@@ -108,12 +106,11 @@ fn load_weights(dir: &str) -> Weights {
 
 
 // Stage kernels — identical to cip_seq.rs.
-unsafe fn stage1_decide(it: *const u8, accept_table: *const u32) -> bool {
+unsafe fn stage1_decide(it: *const u8, accept_bitmap: *const u8) -> bool {
     let mut sig: u32 = 0;
     for i in 0..D { sig = sig.wrapping_add(*it.add(i) as u32); }
     sig &= 0xFFFF;
-    let slot = (sig & 0x3FF) as usize;
-    *accept_table.add(slot) == sig
+    (*accept_bitmap.add((sig >> 3) as usize) >> (sig & 7)) & 1 != 0
 }
 unsafe fn stage2_score(it: *const u8, reject_weights: *const i16) -> i32 {
     let mut hist = [0i32; B2_SLOTS];
@@ -195,7 +192,7 @@ fn main() {
     let emb_ptr = SendPtr(leaked_emb.as_mut_ptr());
 
     // Wrap weights' pointers in ConstPtr (Send + Sync).
-    let w_accept = ConstPtr(w.accept_table.as_ptr());
+    let w_accept = ConstPtr(w.accept_bitmap.as_ptr());
     let w_reject = ConstPtr(w.reject_weights.as_ptr());
     let w_ref    = ConstPtr(w.ref_vec.as_ptr());
     let w_w1     = ConstPtr(w.w1_mat.as_ptr());

@@ -23,14 +23,14 @@ import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout, hPutStrLn, stderr)
 import System.Environment (getArgs)
 
-dimD, b2Slots, eDim, k3, hDim, cCls, k1 :: Int
-dimD    = 256
-b2Slots = 256
-eDim    = 64
-k3      = 8
-hDim    = 128
-cCls    = 16
-k1      = 1024
+dimD, b2Slots, eDim, k3, hDim, cCls, acceptBitmapBytes :: Int
+dimD              = 256
+b2Slots           = 256
+eDim              = 64
+k3                = 8
+hDim              = 128
+cCls              = 16
+acceptBitmapBytes = 8192
 
 acceptS1, rejectS2, acceptS3Base, classBase :: Int32
 acceptS1     = 1
@@ -58,7 +58,7 @@ readConfig path = do
 -- ---------- Weight blob ----------
 
 data Weights = Weights
-  { wAccept :: !(Ptr Word32)
+  { wAccept :: !(Ptr Word8)
   , wReject :: !(Ptr Int16)
   , wRefVec :: !(Ptr Double)
   , wW1     :: !(Ptr Double)
@@ -76,7 +76,7 @@ readWeights path = do
   -- below stay valid past the function scope.
   withForeignPtr fp $ \src -> do
     let off0 = 0
-        sizeAccept = k1 * 4
+        sizeAccept = acceptBitmapBytes
         sizeReject = b2Slots * 2
         sizeRef    = k3 * eDim * 8
         sizeW1     = hDim * eDim * 8
@@ -110,7 +110,7 @@ readWeights path = do
 -- ---------- Stage kernels ----------
 
 {-# INLINE stage1Decide #-}
-stage1Decide :: Ptr Word8 -> Ptr Word32 -> IO Bool
+stage1Decide :: Ptr Word8 -> Ptr Word8 -> IO Bool
 stage1Decide !it !accept = do
   let goSig !i !acc
         | i >= dimD = return acc
@@ -118,10 +118,11 @@ stage1Decide !it !accept = do
             !b <- peekElemOff it i
             goSig (i + 1) (acc + fromIntegral b :: Word32)
   !sig0 <- goSig 0 0
-  let !sig  = sig0 .&. 0xFFFF
-      !slot = fromIntegral (sig .&. 0x3FF) :: Int
-  !ts <- peekElemOff accept slot
-  return (ts == sig)
+  let !sig    = sig0 .&. 0xFFFF
+      !byteI  = fromIntegral (sig `shiftR` 3) :: Int
+      !bitOff = fromIntegral (sig .&. 7)      :: Int
+  !byte <- peekElemOff accept byteI
+  return (((fromIntegral byte :: Word32) `shiftR` bitOff) .&. 1 /= 0)
 
 {-# INLINE stage2Score #-}
 stage2Score :: Ptr Word8 -> Ptr Int16 -> Ptr Int32 -> IO Int32

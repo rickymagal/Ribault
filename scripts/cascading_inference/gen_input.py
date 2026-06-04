@@ -55,12 +55,14 @@ E         = 64
 K3        = 8
 H         = 128
 C         = 16
-K1        = 1024
+SIG_BITS  = 16                    # sig = (sum of bytes) mod 2^16
+SIG_RANGE = 1 << SIG_BITS         # 65536 possible sigs
+ACCEPT_BITMAP_BYTES = SIG_RANGE // 8   # 8192 bytes (1 bit per possible sig)
 
-EXPECTED_S1_RATE = 0.60
-EXPECTED_S2_RATE = 0.25  # fraction of arrivals at S2 that exit at S2 (= 0.10 of N)
-EXPECTED_S3_RATE = 0.10  # fraction of arrivals at S3 that exit at S3
-EXPECTED_S4_REACH = 0.05  # fraction of all items reaching S4
+EXPECTED_S1_RATE = 0.60  # fraction of N
+EXPECTED_S2_RATE = 0.10  # fraction of N exiting at S2 (= 25% of S2 arrivals)
+EXPECTED_S3_RATE = 0.25  # fraction of N exiting at S3 (= 83.3% of S3 arrivals)
+EXPECTED_S4_REACH = 0.05  # fraction of N reaching S4
 
 
 ACCEPT_S1   = 1
@@ -71,11 +73,10 @@ CLASS_BASE     = 0x80
 
 # ---------- Stage kernels in Python (calibration only — slow, reference) ----------
 
-def stage1_decide(item_bytes, accept_table):
-    """Return True if item exits at S1 (decision = ACCEPT_S1)."""
+def stage1_decide(item_bytes, accept_bitmap):
+    """Return True if item exits at S1 (bit set in cumulative-frequency bitmap)."""
     sig = sum(item_bytes) & 0xFFFF
-    slot = sig & 0x3FF
-    return accept_table[slot] == sig
+    return ((accept_bitmap[sig >> 3] >> (sig & 7)) & 1) != 0
 
 
 def stage2_score(item_bytes, reject_weights):
@@ -198,35 +199,43 @@ def make_cos_table():
 # ---------- Calibration pass ----------
 
 def calibrate(items_subsample, seed):
-    """Run a calibration pre-scan to determine accept_table / T2 / T3.
+    """Run a calibration pre-scan to determine accept_bitmap / T2 / T3.
 
     items_subsample: list of items, each a list of D bytes.
-    Returns (accept_table, reject_weights, T2, ref_vec, T3, W1, b1, W2, b2,
+    Returns (accept_bitmap, reject_weights, T2, ref_vec, T3, W1, b1, W2, b2,
              cos_table, actual_rates).
     """
     n_sub = len(items_subsample)
     sys.stderr.write(f"[gen_input] calibrating on subsample of {n_sub} items\n")
 
-    # Stage 1 calibration: pick the first K1 UNIQUE signatures from the
-    # subsample so each item with one of those sigs gets ACCEPT_S1.
-    # The sig->slot collision (slot = sig & 1023) is resolved by keeping
-    # the FIRST sig assigned to each slot; later sigs that hash to the
-    # same slot fall through to S2. This gives a deterministic,
-    # data-driven accept set.
-    accept_table = [0xFFFFFFFF] * K1  # sentinel = no entry
-    seen_sigs_per_slot = [False] * K1
-    for it in items_subsample:
+    # Stage 1 calibration: cumulative-frequency bitmap.
+    # Each of 65536 possible sigs has a bit (one byte per 8 sigs, 8192
+    # bytes total).  We count sig frequencies in the subsample, sort by
+    # frequency descending, and set bits until the cumulative count
+    # reaches 60% of n_sub.  Result: ~60% of items will have their sig
+    # bit set and thus exit at S1.
+    sig_count = [0] * SIG_RANGE
+    item_sigs = [None] * n_sub
+    for idx, it in enumerate(items_subsample):
         sig = sum(it) & 0xFFFF
-        slot = sig & 0x3FF
-        if not seen_sigs_per_slot[slot]:
-            accept_table[slot] = sig
-            seen_sigs_per_slot[slot] = True
+        item_sigs[idx] = sig
+        sig_count[sig] += 1
+    # Sort sigs by frequency descending.
+    order = sorted(range(SIG_RANGE), key=lambda s: -sig_count[s])
+    accept_bitmap = bytearray(ACCEPT_BITMAP_BYTES)
+    cum = 0
+    target = int(EXPECTED_S1_RATE * n_sub)
+    for sig in order:
+        if sig_count[sig] == 0: break
+        accept_bitmap[sig >> 3] |= (1 << (sig & 7))
+        cum += sig_count[sig]
+        if cum >= target: break
 
     # Measure S1 actual exit rate.
     n_s1_exit = 0
-    s2_arrivals = []  # items that fall through S1
+    s2_arrivals = []
     for it in items_subsample:
-        if stage1_decide(it, accept_table):
+        if stage1_decide(it, accept_bitmap):
             n_s1_exit += 1
         else:
             s2_arrivals.append(it)
@@ -254,9 +263,10 @@ def calibrate(items_subsample, seed):
         s3_sims.append(best_sim)
         s3_embs.append(emb)
     s3_sims_sorted = sorted(s3_sims, reverse=True)
-    # Target: of items reaching S3, fraction (EXPECTED_S3_RATE / (1-EXPECTED_S1_RATE-EXPECTED_S2_RATE_OF_N))
-    # = 0.10 / 0.30 = 1/3.  We use that to pick T3.
-    target_s3_exit_of_arrivals = 1.0 / 3.0
+    # Target: of items reaching S3 (~30% of N), exit fraction s.t. only
+    # ~5% of N reach S4.  S3 exit = 30% - 5% = 25% of N = 25/30 = 83.3%
+    # of S3 arrivals.  This is the spec's 60/25/10/5 split with S4 = 5%.
+    target_s3_exit_of_arrivals = 5.0 / 6.0
     k_top3 = max(1, int(target_s3_exit_of_arrivals * len(s3_sims_sorted)))
     T3 = s3_sims_sorted[k_top3 - 1] if s3_sims_sorted else 0.0
     n_s3_exit = sum(1 for s in s3_sims if s > T3)
@@ -277,7 +287,7 @@ def calibrate(items_subsample, seed):
     )
 
     # Warn if any rate deviates more than 5 pp from target.
-    targets = {"s1": EXPECTED_S1_RATE, "s2": 0.10, "s3": EXPECTED_S3_RATE, "s4": EXPECTED_S4_REACH}
+    targets = {"s1": EXPECTED_S1_RATE, "s2": EXPECTED_S2_RATE, "s3": EXPECTED_S3_RATE, "s4": EXPECTED_S4_REACH}
     for k, t in targets.items():
         if abs(actual_rates[k] - t) > 0.05:
             sys.stderr.write(
@@ -285,18 +295,18 @@ def calibrate(items_subsample, seed):
                 f"deviates >5pp from target {t:.3f}\n"
             )
 
-    return (accept_table, reject_weights, T2, ref_vec, T3,
+    return (accept_bitmap, reject_weights, T2, ref_vec, T3,
             W1, b1, W2, b2, cos_table, actual_rates)
 
 
 # ---------- Full decision pass (for expected_checksum) ----------
 
 def decide_all(items, params):
-    (accept_table, reject_weights, T2, ref_vec, T3,
+    (accept_bitmap, reject_weights, T2, ref_vec, T3,
      W1, b1, W2, b2, cos_table, _) = params
     cs = 0
     for it in items:
-        if stage1_decide(it, accept_table):
+        if stage1_decide(it, accept_bitmap):
             d = ACCEPT_S1
         else:
             score = stage2_score(it, reject_weights)
@@ -322,10 +332,10 @@ def write_input_bin(path, items):
             f.write(bytes(it))
 
 
-def write_weights_bin(path, accept_table, reject_weights, ref_vec, W1, b1, W2, b2, cos_table):
+def write_weights_bin(path, accept_bitmap, reject_weights, ref_vec, W1, b1, W2, b2, cos_table):
     with open(path, "wb") as f:
-        # accept_table: 1024 * u32
-        f.write(struct.pack(f"<{K1}I", *accept_table))
+        # accept_bitmap: 8192 bytes (one bit per possible sig in [0, 65536))
+        f.write(bytes(accept_bitmap))
         # reject_weights: 256 * i16
         f.write(struct.pack(f"<{B2_SLOTS}h", *reject_weights))
         # ref_vec: K3*E * f64
@@ -389,12 +399,12 @@ def write_config(path, N, CHUNK_SIZE, T2, T3, SEED, actual_rates):
         f.write(f"K3 {K3}\n")
         f.write(f"H {H}\n")
         f.write(f"C_CLASSES {C}\n")
-        f.write(f"K1 {K1}\n")
+        f.write(f"ACCEPT_BITMAP_BYTES {ACCEPT_BITMAP_BYTES}\n")
         f.write(f"T2 {T2}\n")
         f.write(f"T3 {T3!r}\n")
         f.write(f"SEED {SEED}\n")
         f.write(f"EXPECTED_S1_RATE {EXPECTED_S1_RATE}\n")
-        f.write(f"EXPECTED_S2_RATE 0.10\n")
+        f.write(f"EXPECTED_S2_RATE {EXPECTED_S2_RATE}\n")
         f.write(f"EXPECTED_S3_RATE {EXPECTED_S3_RATE}\n")
         f.write(f"EXPECTED_S4_RATE {EXPECTED_S4_REACH}\n")
         f.write(f"ACTUAL_S1_RATE {actual_rates['s1']:.6f}\n")
@@ -437,7 +447,7 @@ def main():
 
     calib_n = min(args.calib_cap, args.N)
     params = calibrate(items[:calib_n], args.seed)
-    (accept_table, reject_weights, T2, ref_vec, T3,
+    (accept_bitmap, reject_weights, T2, ref_vec, T3,
      W1, b1, W2, b2, cos_table, actual_rates) = params
 
     sys.stderr.write(f"[gen_input] computing expected checksum over all N items\n")
@@ -445,7 +455,7 @@ def main():
 
     write_input_bin(os.path.join(args.out_dir, "input.bin"), items)
     write_weights_bin(os.path.join(args.out_dir, "weights.bin"),
-                      accept_table, reject_weights, ref_vec, W1, b1, W2, b2, cos_table)
+                      accept_bitmap, reject_weights, ref_vec, W1, b1, W2, b2, cos_table)
     write_dag_bin(os.path.join(args.out_dir, "dag.bin"),
                   (args.N + args.chunk_size - 1) // args.chunk_size)
     write_config(os.path.join(args.out_dir, "config.txt"),

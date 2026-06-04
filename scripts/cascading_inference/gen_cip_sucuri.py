@@ -47,7 +47,7 @@ const E_DIM:    usize = 64;
 const K3:       usize = 8;
 const H_DIM:    usize = 128;
 const C_CLS:    usize = 16;
-const K1:       usize = 1024;
+const ACCEPT_BITMAP_BYTES: usize = 8192;
 
 const ACCEPT_S1:      i32 = 1;
 const REJECT_S2:      i32 = 2;
@@ -62,7 +62,7 @@ static INIT_DONE: AtomicBool = AtomicBool::new(false);
 static mut ITEMS:        *mut u8  = std::ptr::null_mut();
 static mut DECISIONS:    *mut i32 = std::ptr::null_mut();
 static mut EMB_ALL:      *mut f64 = std::ptr::null_mut();
-static mut ACCEPT_TABLE: *mut u32 = std::ptr::null_mut();
+static mut ACCEPT_BITMAP: *mut u8 = std::ptr::null_mut();
 static mut REJECT_W:     *mut i16 = std::ptr::null_mut();
 static mut REF_VEC:      *mut f64 = std::ptr::null_mut();
 static mut W1_MAT:       *mut f64 = std::ptr::null_mut();
@@ -81,7 +81,7 @@ unsafe fn stage1_decide(it: *const u8) -> bool {
     let mut sig: u32 = 0;
     for i in 0..DIM_D { sig = sig.wrapping_add(*it.add(i) as u32); }
     sig &= 0xFFFF;
-    *ACCEPT_TABLE.add((sig & 0x3FF) as usize) == sig
+    (*ACCEPT_BITMAP.add((sig >> 3) as usize) >> (sig & 7)) & 1 != 0
 }
 unsafe fn stage2_score(it: *const u8) -> i32 {
     let mut hist = [0i32; B2_SLOTS];
@@ -154,7 +154,10 @@ fn init(py: Python<'_>) -> PyResult<i64> {
             off += $n * $bytes;
             p
         }}; }
-        ACCEPT_TABLE = take!(u32, K1, 4);
+        // Bitmap is raw bytes — load directly, no take! macro indirection.
+        ACCEPT_BITMAP = xmalloc(ACCEPT_BITMAP_BYTES);
+        for i in 0..ACCEPT_BITMAP_BYTES { *ACCEPT_BITMAP.add(i) = buf[off + i]; }
+        off += ACCEPT_BITMAP_BYTES;
         REJECT_W     = take!(i16, B2_SLOTS, 2);
         REF_VEC      = take!(f64, K3 * E_DIM, 8);
         W1_MAT       = take!(f64, H_DIM * E_DIM, 8);

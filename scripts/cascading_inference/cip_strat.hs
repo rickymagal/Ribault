@@ -19,7 +19,7 @@ module Main where
 
 import Control.Monad (forM_, when)
 import Control.Parallel.Strategies (using, parList, rseq)
-import Data.Bits ((.&.), (.|.))
+import Data.Bits ((.&.), (.|.), shiftR)
 import Data.Int (Int16, Int32)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.List (foldl')
@@ -36,14 +36,14 @@ import System.IO (hFlush, stdout, hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getArgs)
 
-dimD, b2Slots, eDim, k3, hDim, cCls, k1 :: Int
+dimD, b2Slots, eDim, k3, hDim, cCls, acceptBitmapBytes :: Int
 dimD    = 256
 b2Slots = 256
 eDim    = 64
 k3      = 8
 hDim    = 128
 cCls    = 16
-k1      = 1024
+acceptBitmapBytes = 8192
 
 acceptS1, rejectS2, acceptS3Base, classBase :: Int32
 acceptS1     = 1
@@ -71,7 +71,7 @@ gN = unsafePerformIO (newIORef 0)
 gCfg :: IORef (Int32, Double)
 gCfg = unsafePerformIO (newIORef (0, 0))
 {-# NOINLINE gW #-}
-gW :: IORef (Ptr Word32, Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
+gW :: IORef (Ptr Word8, Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
 gW = unsafePerformIO (newIORef (nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr))
 
 readConfig :: FilePath -> IO (Int, Int32, Double, Int)
@@ -91,9 +91,9 @@ readMalloc path nbytes = do
   withForeignPtr fp $ \src -> copyBytes p src nbytes
   return p
 
-readWeights :: FilePath -> IO (Ptr Word32, Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
+readWeights :: FilePath -> IO (Ptr Word8, Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
 readWeights path = do
-  let sizeAccept = k1 * 4
+  let sizeAccept = acceptBitmapBytes
       sizeReject = b2Slots * 2
       sizeRef    = k3 * eDim * 8
       sizeW1     = hDim * eDim * 8
@@ -125,16 +125,17 @@ readWeights path = do
 -- ---------- Stage kernels (same algo as cip_seq.hs) ----------
 
 {-# INLINE stage1Decide #-}
-stage1Decide :: Ptr Word8 -> Ptr Word32 -> IO Bool
+stage1Decide :: Ptr Word8 -> Ptr Word8 -> IO Bool
 stage1Decide !it !accept = do
   let goSig !i !acc
         | i >= dimD = return acc
         | otherwise = do !b <- peekElemOff it i; goSig (i + 1) (acc + fromIntegral b :: Word32)
   !sig0 <- goSig 0 0
-  let !sig  = sig0 .&. 0xFFFF
-      !slot = fromIntegral (sig .&. 0x3FF) :: Int
-  !ts <- peekElemOff accept slot
-  return (ts == sig)
+  let !sig    = sig0 .&. 0xFFFF
+      !byteI  = fromIntegral (sig `shiftR` 3) :: Int
+      !bitOff = fromIntegral (sig .&. 7)      :: Int
+  !byte <- peekElemOff accept byteI
+  return (((fromIntegral byte :: Word32) `shiftR` bitOff) .&. 1 /= 0)
 
 {-# INLINE stage2Score #-}
 stage2Score :: Ptr Word8 -> Ptr Int16 -> Ptr Int32 -> IO Int32

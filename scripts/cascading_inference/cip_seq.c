@@ -23,7 +23,7 @@
 #define K3           8
 #define H_DIM      128
 #define C_CLS       16
-#define K1        1024
+#define ACCEPT_BITMAP_BYTES 8192
 
 #define ACCEPT_S1        ((int32_t)1)
 #define REJECT_S2        ((int32_t)2)
@@ -35,7 +35,7 @@ static int     CHUNK_SIZE;
 static int32_t T2;       /* int score threshold for stage 2 */
 static double  T3;       /* float similarity threshold for stage 3 */
 
-static uint32_t *accept_table;   /* [K1] */
+static uint8_t  *accept_bitmap;  /* [ACCEPT_BITMAP_BYTES] */
 static int16_t  *reject_weights; /* [B2_SLOTS] */
 static double   *ref_vec;        /* [K3 * E_DIM] */
 static double   *W1_mat;         /* [H_DIM * E_DIM] */
@@ -67,7 +67,7 @@ static void load_config(const char *dir) {
 static void load_weights(const char *dir) {
     char path[1024]; snprintf(path, sizeof path, "%s/weights.bin", dir);
     FILE *f = fopen(path, "rb"); if (!f) { perror(path); exit(1); }
-    accept_table   = xmalloc(K1 * sizeof(uint32_t));
+    accept_bitmap  = xmalloc(ACCEPT_BITMAP_BYTES);
     reject_weights = xmalloc(B2_SLOTS * sizeof(int16_t));
     ref_vec        = xmalloc(K3 * E_DIM * sizeof(double));
     W1_mat         = xmalloc(H_DIM * E_DIM * sizeof(double));
@@ -76,7 +76,7 @@ static void load_weights(const char *dir) {
     b2_vec         = xmalloc(C_CLS * sizeof(double));
     cos_table      = xmalloc(E_DIM * D * sizeof(double));
 
-    if (fread(accept_table,   sizeof(uint32_t), K1,            f) != (size_t)K1) goto bad;
+    if (fread(accept_bitmap,  1,                ACCEPT_BITMAP_BYTES, f) != (size_t)ACCEPT_BITMAP_BYTES) goto bad;
     if (fread(reject_weights, sizeof(int16_t),  B2_SLOTS,      f) != (size_t)B2_SLOTS) goto bad;
     if (fread(ref_vec,        sizeof(double),   K3 * E_DIM,    f) != (size_t)(K3 * E_DIM)) goto bad;
     if (fread(W1_mat,         sizeof(double),   H_DIM * E_DIM, f) != (size_t)(H_DIM * E_DIM)) goto bad;
@@ -108,8 +108,7 @@ static inline int stage1_decide(const uint8_t *it) {
     uint32_t sig = 0;
     for (int i = 0; i < D; i++) sig += it[i];
     sig &= 0xFFFF;
-    uint32_t slot = sig & 0x3FF;
-    return accept_table[slot] == sig;
+    return (accept_bitmap[sig >> 3] >> (sig & 7)) & 1;
 }
 
 static inline int32_t stage2_score(const uint8_t *it) {

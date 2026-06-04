@@ -78,21 +78,21 @@ import Foreign.Storable (peek, peekElemOff, pokeElemOff)
 import Foreign.Ptr (Ptr, plusPtr, nullPtr, castPtr)
 import Data.Int (Int16, Int32, Int64)
 import Data.Word (Word8, Word32, Word64)
-import Data.Bits ((.&.), (.|.))
+import Data.Bits ((.&.), (.|.), shiftR)
 import Control.Monad (forM_, when)
 
 cipN, cipChunkSize :: Int
 cipN         = __N__
 cipChunkSize = __CHUNK_SIZE__
 
-cipD, cipB2, cipE, cipK3, cipH, cipC, cipK1 :: Int
-cipD  = 256
-cipB2 = 256
-cipE  = 64
-cipK3 = 8
-cipH  = 128
-cipC  = 16
-cipK1 = 1024
+cipD, cipB2, cipE, cipK3, cipH, cipC, cipAcceptBitmapBytes :: Int
+cipD                  = 256
+cipB2                 = 256
+cipE                  = 64
+cipK3                 = 8
+cipH                  = 128
+cipC                  = 16
+cipAcceptBitmapBytes  = 8192
 
 cipDataDir :: FilePath
 cipDataDir = "__DATA_DIR__"
@@ -113,7 +113,7 @@ g_decis = unsafePerformIO (newIORef nullPtr)
 g_emb :: IORef (Ptr Double)
 g_emb = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE g_w #-}
-g_w :: IORef (Ptr Word32, Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
+g_w :: IORef (Ptr Word8, Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
 g_w = unsafePerformIO (newIORef (nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr))
 {-# NOINLINE g_t2 #-}
 g_t2 :: IORef Int32
@@ -143,7 +143,7 @@ cipReadConfig = do
 
 cipReadWeights :: IO ()
 cipReadWeights = do
-  let sizeAccept = cipK1 * 4
+  let sizeAccept = cipAcceptBitmapBytes
       sizeReject = cipB2 * 2
       sizeRef    = cipK3 * cipE * 8
       sizeW1     = cipH * cipE * 8
@@ -187,16 +187,17 @@ cipInit = do
 
 
 {-# INLINE cipStage1Decide #-}
-cipStage1Decide :: Ptr Word8 -> Ptr Word32 -> IO Bool
+cipStage1Decide :: Ptr Word8 -> Ptr Word8 -> IO Bool
 cipStage1Decide !it !accept = do
   let goSig !i !acc
         | i >= cipD = return acc
         | otherwise = do !b <- peekElemOff it i; goSig (i+1) (acc + fromIntegral b :: Word32)
   !sig0 <- goSig 0 0
-  let !sig = sig0 .&. 0xFFFF
-      !slot = fromIntegral (sig .&. 0x3FF) :: Int
-  !ts <- peekElemOff accept slot
-  return (ts == sig)
+  let !sig    = sig0 .&. 0xFFFF
+      !byteI  = fromIntegral (sig `shiftR` 3) :: Int
+      !bitOff = fromIntegral (sig .&. 7)      :: Int
+  !byte <- peekElemOff accept byteI
+  return (((fromIntegral byte :: Word32) `shiftR` bitOff) .&. 1 /= 0)
 
 {-# INLINE cipStage2Score #-}
 cipStage2Score :: Ptr Word8 -> Ptr Int16 -> Ptr Int32 -> IO Int32

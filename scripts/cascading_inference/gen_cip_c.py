@@ -49,7 +49,7 @@ C_TEMPLATE = r"""/* Auto-generated: Ribault Cascading Inference Pipeline C super
 #define K3            8
 #define H_DIM       128
 #define C_CLS        16
-#define K1         1024
+#define ACCEPT_BITMAP_BYTES 8192
 
 #define ACCEPT_S1        ((int32_t)1)
 #define REJECT_S2        ((int32_t)2)
@@ -64,7 +64,7 @@ static const char *DATA_DIR = "__DATA_DIR__";
 static uint8_t  *items;          /* [N * DIM_D] */
 static int32_t  *decisions;      /* [N] */
 static double   *emb_all;        /* [N * E_DIM] */
-static uint32_t *accept_table;   /* [K1] */
+static uint8_t  *accept_bitmap;  /* [ACCEPT_BITMAP_BYTES] */
 static int16_t  *reject_weights; /* [B2_SLOTS] */
 static double   *ref_vec;        /* [K3 * E_DIM] */
 static double   *W1_mat;         /* [H_DIM * E_DIM] */
@@ -91,7 +91,7 @@ static void load_config(void) {
 static void load_weights(void) {
     char path[1024]; snprintf(path, sizeof path, "%s/weights.bin", DATA_DIR);
     FILE *f = fopen(path, "rb"); if (!f) { perror(path); exit(1); }
-    accept_table   = xmalloc(K1 * sizeof(uint32_t));
+    accept_bitmap  = xmalloc(ACCEPT_BITMAP_BYTES);
     reject_weights = xmalloc(B2_SLOTS * sizeof(int16_t));
     ref_vec        = xmalloc(K3 * E_DIM * sizeof(double));
     W1_mat         = xmalloc(H_DIM * E_DIM * sizeof(double));
@@ -99,7 +99,7 @@ static void load_weights(void) {
     W2_mat         = xmalloc(C_CLS * H_DIM * sizeof(double));
     b2_vec         = xmalloc(C_CLS * sizeof(double));
     cos_table      = xmalloc(E_DIM * DIM_D * sizeof(double));
-    if (fread(accept_table,   sizeof(uint32_t), K1,            f) != K1) goto bad;
+    if (fread(accept_bitmap,  1,                ACCEPT_BITMAP_BYTES, f) != ACCEPT_BITMAP_BYTES) goto bad;
     if (fread(reject_weights, sizeof(int16_t),  B2_SLOTS,      f) != B2_SLOTS) goto bad;
     if (fread(ref_vec,        sizeof(double),   K3 * E_DIM,    f) != (size_t)(K3*E_DIM)) goto bad;
     if (fread(W1_mat,         sizeof(double),   H_DIM * E_DIM, f) != (size_t)(H_DIM*E_DIM)) goto bad;
@@ -136,7 +136,7 @@ static inline int stage1_decide(const uint8_t *it) {
     uint32_t sig = 0;
     for (int i = 0; i < DIM_D; i++) sig += it[i];
     sig &= 0xFFFF;
-    return accept_table[sig & 0x3FF] == sig;
+    return (accept_bitmap[sig >> 3] >> (sig & 7)) & 1;
 }
 static inline int32_t stage2_score(const uint8_t *it) {
     int32_t hist[B2_SLOTS] = {0};

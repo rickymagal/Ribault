@@ -54,7 +54,7 @@ const E_DIM:    usize = 64;
 const K3:       usize = 8;
 const H_DIM:    usize = 128;
 const C_CLS:    usize = 16;
-const K1:       usize = 1024;
+const ACCEPT_BITMAP_BYTES: usize = 8192;
 
 const ACCEPT_S1:      i32 = 1;
 const REJECT_S2:      i32 = 2;
@@ -68,7 +68,7 @@ const DATA_DIR:   &str  = "__DATA_DIR__";
 static mut ITEMS:        *mut u8     = std::ptr::null_mut();
 static mut DECISIONS:    *mut i32    = std::ptr::null_mut();
 static mut EMB_ALL:      *mut f64    = std::ptr::null_mut();
-static mut ACCEPT_TABLE: *mut u32    = std::ptr::null_mut();
+static mut ACCEPT_BITMAP: *mut u8    = std::ptr::null_mut();
 static mut REJECT_W:     *mut i16    = std::ptr::null_mut();
 static mut REF_VEC:      *mut f64    = std::ptr::null_mut();
 static mut W1_MAT:       *mut f64    = std::ptr::null_mut();
@@ -99,13 +99,10 @@ unsafe fn load_config() {
     }
 }
 
-unsafe fn read_u32_n(buf: &[u8], off: &mut usize, n: usize) -> *mut u32 {
-    let p: *mut u32 = xmalloc(n);
-    for i in 0..n {
-        let q = *off + i*4;
-        *p.add(i) = u32::from_le_bytes([buf[q],buf[q+1],buf[q+2],buf[q+3]]);
-    }
-    *off += n*4; p
+unsafe fn read_u8_n(buf: &[u8], off: &mut usize, n: usize) -> *mut u8 {
+    let p: *mut u8 = xmalloc(n);
+    for i in 0..n { *p.add(i) = buf[*off + i]; }
+    *off += n; p
 }
 unsafe fn read_i16_n(buf: &[u8], off: &mut usize, n: usize) -> *mut i16 {
     let p: *mut i16 = xmalloc(n);
@@ -129,8 +126,8 @@ unsafe fn load_weights() {
     let mut buf = Vec::new();
     File::open(format!("{}/weights.bin", DATA_DIR)).unwrap().read_to_end(&mut buf).unwrap();
     let mut off = 0usize;
-    ACCEPT_TABLE = read_u32_n(&buf, &mut off, K1);
-    REJECT_W     = read_i16_n(&buf, &mut off, B2_SLOTS);
+    ACCEPT_BITMAP = read_u8_n(&buf, &mut off, ACCEPT_BITMAP_BYTES);
+    REJECT_W      = read_i16_n(&buf, &mut off, B2_SLOTS);
     REF_VEC      = read_f64_n(&buf, &mut off, K3 * E_DIM);
     W1_MAT       = read_f64_n(&buf, &mut off, H_DIM * E_DIM);
     B1_VEC       = read_f64_n(&buf, &mut off, H_DIM);
@@ -151,8 +148,7 @@ unsafe fn stage1_decide(it: *const u8) -> bool {
     let mut sig: u32 = 0;
     for i in 0..DIM_D { sig = sig.wrapping_add(*it.add(i) as u32); }
     sig &= 0xFFFF;
-    let slot = (sig & 0x3FF) as usize;
-    *ACCEPT_TABLE.add(slot) == sig
+    (*ACCEPT_BITMAP.add((sig >> 3) as usize) >> (sig & 7)) & 1 != 0
 }
 #[inline(always)]
 unsafe fn stage2_score(it: *const u8) -> i32 {
