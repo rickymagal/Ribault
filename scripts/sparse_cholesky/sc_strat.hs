@@ -15,7 +15,7 @@ import qualified Data.Map.Strict as M
 import Data.Word (Word8, Word32, Word64)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
-import qualified Data.Vector.Unboxed as V
+import qualified Data.Vector as V
 import Foreign.ForeignPtr (withForeignPtr)
 import Foreign.Marshal.Alloc (mallocBytes)
 import Foreign.Marshal.Utils (copyBytes)
