@@ -1,0 +1,209 @@
+Cascading Inference Pipeline — methodology
+==========================================
+
+1. Motivation
+-------------
+The benchmark simulates the dominant production-inference pattern of
+2026: a cascade of four filters of increasing per-item cost, where the
+bulk of items is rejected at the cheap upstream stages and only a small
+fraction reaches the most expensive downstream stage. Content
+moderation, spam detection, medical triage, and mixture-of-experts
+routing all follow this exact shape. Per-item work is therefore
+extremely heterogeneous: most items end with a constant-time
+fingerprint check, a small minority drive a 128×64 matmul plus
+a 16×128 matmul. The name "Cascading Inference Pipeline" is immediately
+recognisable in the inference-systems literature.
+
+The architectural argument the benchmark exists to support is:
+(a) item-level dataflow has a structural advantage on cascades because
+the firing rule flows items through the four stages independently
+without any stage barrier, whereas Strategies, par/pseq, and Timely
+all express the natural shape of the DAG as four levels with a
+barrier between levels (and Strategies/par/pseq have no native way to
+express dependency-based pipelining); (b) per-item heterogeneity
+amplifies the cost of any barrier-based scheme, because the slowest
+item in a stage becomes the critical path for the entire next stage.
+
+2. The four stages — algorithmic specification
+----------------------------------------------
+Each item is a vector of D = 256 unsigned bytes. The fixed pipeline
+constants, recorded in config.txt and read by every variant, are
+D = 256, B2_SLOTS = 256, E = 64, K3 = 8, H = 128, C = 16, K1 = 1024.
+Stage decisions are 32-bit integers encoded so each stage's exit is
+distinguishable: ACCEPT_S1 = 1, REJECT_S2 = 2, ACCEPT_S3 = 0x40 | k
+(where k is the best-matching reference vector in [0, K3)), and
+CLASS = 0x80 | argmax_c (where c is in [0, C)).
+
+Stage 1 — fingerprint filter. Cost O(D) per item.
+  sig = (sum of bytes) mod 65536
+  slot = sig mod 1024
+  if accept_table[slot] == sig: decision = ACCEPT_S1; exit.
+  accept_table is calibrated by gen_input.py — for the first 1024
+  unique signatures seen in a subsample, store the signature at its
+  hash slot. Items whose sig hits a stored sig get accepted.
+
+Stage 2 — bigram-histogram rejection. Cost O(D) per item.
+  For each i in [0, D−1): bigram_id = (item[i] * 7 + item[i+1]) mod 256
+  Build hist[bigram_id]++, zero-initialised per item.
+  score = sum_k hist[k] * reject_weights[k]    (int32 throughout)
+  if score > T2: decision = REJECT_S2; exit.
+  T2 is calibrated by gen_input.py as the 75th-percentile score over
+  items that arrived at S2 in the subsample (target: 25% exit at S2,
+  ≈10% of N).
+
+Stage 3 — cosine-projection embedding + best-of-K reference. Cost
+O(D · E + K3 · E) per item.
+  For j in [0, E):  emb[j] = sum_i cos_table[j*D + i] * (item[i]/255.0)
+  Normalise emb to unit L2 norm.
+  best, best_sim = argmax_k, max_k of dot(emb, ref_vec[k])
+  if best_sim > T3: decision = ACCEPT_S3 | best; exit.
+  cos_table is pre-computed in weights.bin so every variant uses the
+  same cosine values; T3 is calibrated to give ~1/3 of S3 arrivals an
+  exit (≈10% of N).
+  Items that do not exit propagate to S4 carrying the embedding;
+  S4 reuses emb, it is NOT recomputed.
+
+Stage 4 — two-layer MLP classifier. Cost O(E · H + H · C) per item.
+  hidden = ReLU(W1 @ emb + b1),  shape H = 128.
+  out    = W2 @ hidden + b2,     shape C = 16.
+  decision = CLASS | argmax_c(out).
+
+Approximate exit rates: 60% at S1, 25% of S1 survivors (= 10% of N)
+at S2, 1/3 of S2 survivors (≈ 10% of N) at S3, the remaining ~5% of
+N reaches S4. The exact distribution depends on the input items;
+gen_input.py emits the achieved rates into ACTUAL_S{1,2,3,4}_RATE in
+config.txt and warns if they deviate by more than 5 pp from target.
+The benchmark's correctness does NOT depend on hitting these rates
+exactly — what matters is that heterogeneity exists. Off-target rates
+mean the workload distribution shifts (e.g., more items reach S4),
+which only makes the per-item heterogeneity stronger, not weaker.
+
+3. Input generation
+-------------------
+gen_input.py uses the same LCG (A=1103515245, C=12345, M=2^31) used
+across all benchmarks in the paper, seeded with SEED=42 by default.
+N items, each D bytes, are emitted with a contiguous byte stream so
+per-item fingerprints have a roughly-uniform distribution over the
+16-bit signature space. The accept table, T2 threshold, T3 threshold,
+W1/b1/W2/b2 weights, ref_vec, reject_weights, and cos_table are all
+derived from the same LCG so two runs with the same seed and N
+produce bit-identical input + weights + DAG + checksum.
+
+4. The DAG and the asymmetry it preserves
+-----------------------------------------
+The DAG written to dag.bin contains one op per (chunk, stage). For
+each chunk k, four ops are emitted in order — stage1_k → stage2_k →
+stage3_k → stage4_k — with linear within-chunk dependencies and no
+cross-chunk dependencies. A final aggregate op depends on all
+stage4_k.
+
+Every op carries a `level` field with level == stage_number. This
+field is intentionally pre-computed for Strategies, par/pseq, and
+Timely — those frameworks express the cascade as four levels with
+a strict barrier between levels, and the only effort each saves by
+having `level` pre-computed is the topological-sort pass that would
+otherwise run at startup. Ribault ignores the `level` field entirely
+and reads only the dependency list per op; its firing rule
+discovers the per-chunk pipelining at runtime, without any input-
+side annotation. This input-side asymmetry is preserved with intent
+and is reported in the paper: Strategies, par/pseq, and Timely
+receive a freely pre-batched partition, and Ribault still wins.
+
+5. Per-language effort preservation
+-----------------------------------
+cip_seq.c is the canonical mathematical reference. cip_seq.rs uses
+raw `*const u8` / `*const f64` pointers and `unsafe` on every inner
+loop so the Rust baseline pays no bounds-check overhead the parallel
+Rust variants (ribault_rust, cip_timely, the Sucuri PyO3 kernel) do
+not pay. cip_seq.hs uses `Foreign.Ptr Word8` + peekElemOff /
+pokeElemOff on every inner kernel, identical to the parallel Haskell
+variants (cip_strat, cip_parpseq, the ribault_hs supers emitted by
+gen_cip_hs.py). The Haskell sequential baseline runs with the SAME
++RTS -A256m -RTS nursery the parallel variants use; without this,
+the denominator would have a tiny default nursery and inflate
+speedups artificially.
+
+A second consequence of effort preservation: STRICT IEEE on cip_seq.c
+(no -ffast-math). Rust and Haskell honour strict IEEE by default,
+and -ffast-math in C produced a 0.7%-of-items discrepancy in the
+stage-3 threshold crossing at N=10000 (588796 vs 588728); we
+discovered this during smoke-testing and chose strict IEEE
+everywhere to guarantee bit-identical decisions across languages.
+The runner uses `cip_seq_c`'s checksum (strict IEEE) as the
+canonical expected value, overriding gen_input.py's Python-computed
+checksum when they disagree (Python's float ordering can shift the
+S3 boundary by O(few hundred) items at large N).
+
+6. Parallel-variant idioms
+--------------------------
+Ribault (three super languages — C, Rust, Haskell). One TALM
+instruction per (chunk, stage); the per-chunk dependency chain is
+expressed by token edges. A sync tree above the stage4 ops fans-in
+n_chunks results to one token before the output super; the tree is
+needed because Trebuchet's 5-bit src-count limit caps super inputs
+at 31. Super bodies share state via static-mut raw pointers
+(decisions[N], emb_all[N*E]) — items, accept_table, weights, and
+cos_table are loaded once by the init super.
+
+Timely (cip_timely.rs). Four epochs, one per stage. `.exchange()` by
+chunk_id distributes chunks across workers, `.inspect()` runs the
+per-stage kernel, `probe.less_than(input.time())` is the barrier
+between epochs. SendPtr wrapper around `*mut u8` / `*mut f64` so the
+operator closure satisfies `Fn + Send + Sync + 'static`.
+
+GHC Strategies (cip_strat.hs). Four `withStrategy (parList rseq)`
+passes over chunks, one per stage. Each `parList rseq` is a strict
+barrier — all sparks for stage N complete before stage N+1 begins.
+Strategies' API does not provide a way to express dependency-driven
+pipelining without explicit coordination via IVars/MVars (which
+would not be Strategies in any natural sense), so this is the
+honest idiomatic shape.
+
+GHC par/pseq (cip_parpseq.hs). Same structure as Strategies but
+using raw `par` / `pseq` from Control.Parallel — `foldr par forced
+sparks` per stage, with `pseq` forcing the spark chain. Same
+per-stage barrier.
+
+Sucuri (gen_cip_sucuri.py). pyDF.DFGraph with one Node per (chunk,
+stage), edged according to the per-chunk chain. A sync tree above
+stage4 (same fan-in cap as the Ribault sync tree). PyO3 Rust
+extension owns the shared mutable state; orchestration runs on
+Python 3.14t free-threaded with PYTHON_GIL=0.
+
+7. Cross-validation
+-------------------
+At sweep start, the runner extracts cip_seq_c's checksum into
+expected_seq_c.txt and uses that as the canonical expected value.
+Every parallel-variant rep records (variant, N, chunk_size, P, rep,
+seconds, checksum, expected) into metrics.csv. regen_tables_ci.py
+drops any rep with seconds <= 0 or checksum != expected (treating
+those as failed runs) before computing bootstrap CIs.
+
+8. Experimental protocol
+------------------------
+Hardware: Intel Xeon Gold 5412U, 24 physical cores / 48 SMT threads,
+251 GiB RAM, single NUMA. Default sweep: NS = 100K, 250K, 500K, 1M,
+2M; PS = 2, 3, 4, 7, 8, 13, 16, 19, 23, 24, 32, 48 (primes included
+deliberately so static-partition schemes get exposed to load
+imbalance); REPS = 7 per cell; CHUNK_SIZE = 512.
+Statistics: median across reps; 95% bootstrap CI with 10000
+independent resamples of numerator and denominator (same protocol as
+all prior benchmarks). All variants pinned via `taskset -c 0..P-1`.
+GHC binaries built with `-package-env -` so they link against the
+system vector-algorithms (the user cabal store has its own
+incompatible vector ABI).
+
+9. Threats to validity
+----------------------
+Single machine, single Sapphire Rapids generation. N capped at 2M
+(at larger N the calibration subsample of 100K items might drift
+the actual rates further from target). Sucuri requires
+Python 3.14t free-threaded — variant is skipped when unavailable.
+At very small N (under 50K), per-stage compute is dominated by
+startup costs and Timely's batched epoch model gets an outsized
+advantage; the lower end of NS is included for reference but the
+paper's narrative focuses on N >= 250K where compute dominates.
+
+10. Findings
+-----------
+[Filled after the sweep completes.]
