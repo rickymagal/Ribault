@@ -99,43 +99,44 @@ unsafe fn load_config() {
     }
 }
 
+unsafe fn read_u32_n(buf: &[u8], off: &mut usize, n: usize) -> *mut u32 {
+    let p: *mut u32 = xmalloc(n);
+    for i in 0..n {
+        let q = *off + i*4;
+        *p.add(i) = u32::from_le_bytes([buf[q],buf[q+1],buf[q+2],buf[q+3]]);
+    }
+    *off += n*4; p
+}
+unsafe fn read_i16_n(buf: &[u8], off: &mut usize, n: usize) -> *mut i16 {
+    let p: *mut i16 = xmalloc(n);
+    for i in 0..n {
+        let q = *off + i*2;
+        *p.add(i) = i16::from_le_bytes([buf[q],buf[q+1]]);
+    }
+    *off += n*2; p
+}
+unsafe fn read_f64_n(buf: &[u8], off: &mut usize, n: usize) -> *mut f64 {
+    let p: *mut f64 = xmalloc(n);
+    for i in 0..n {
+        let q = *off + i*8;
+        *p.add(i) = f64::from_le_bytes([buf[q],buf[q+1],buf[q+2],buf[q+3],
+                                        buf[q+4],buf[q+5],buf[q+6],buf[q+7]]);
+    }
+    *off += n*8; p
+}
+
 unsafe fn load_weights() {
     let mut buf = Vec::new();
     File::open(format!("{}/weights.bin", DATA_DIR)).unwrap().read_to_end(&mut buf).unwrap();
     let mut off = 0usize;
-    let mut read_u32 = |n: usize| -> *mut u32 {
-        let p: *mut u32 = xmalloc(n);
-        for i in 0..n {
-            let q = off + i*4;
-            *p.add(i) = u32::from_le_bytes([buf[q],buf[q+1],buf[q+2],buf[q+3]]);
-        }
-        off += n*4; p
-    };
-    let mut read_i16 = |n: usize| -> *mut i16 {
-        let p: *mut i16 = xmalloc(n);
-        for i in 0..n {
-            let q = off + i*2;
-            *p.add(i) = i16::from_le_bytes([buf[q],buf[q+1]]);
-        }
-        off += n*2; p
-    };
-    let mut read_f64 = |n: usize| -> *mut f64 {
-        let p: *mut f64 = xmalloc(n);
-        for i in 0..n {
-            let q = off + i*8;
-            *p.add(i) = f64::from_le_bytes([buf[q],buf[q+1],buf[q+2],buf[q+3],
-                                            buf[q+4],buf[q+5],buf[q+6],buf[q+7]]);
-        }
-        off += n*8; p
-    };
-    ACCEPT_TABLE = read_u32(K1);
-    REJECT_W     = read_i16(B2_SLOTS);
-    REF_VEC      = read_f64(K3 * E_DIM);
-    W1_MAT       = read_f64(H_DIM * E_DIM);
-    B1_VEC       = read_f64(H_DIM);
-    W2_MAT       = read_f64(C_CLS * H_DIM);
-    B2_VEC       = read_f64(C_CLS);
-    COS_TABLE    = read_f64(E_DIM * DIM_D);
+    ACCEPT_TABLE = read_u32_n(&buf, &mut off, K1);
+    REJECT_W     = read_i16_n(&buf, &mut off, B2_SLOTS);
+    REF_VEC      = read_f64_n(&buf, &mut off, K3 * E_DIM);
+    W1_MAT       = read_f64_n(&buf, &mut off, H_DIM * E_DIM);
+    B1_VEC       = read_f64_n(&buf, &mut off, H_DIM);
+    W2_MAT       = read_f64_n(&buf, &mut off, C_CLS * H_DIM);
+    B2_VEC       = read_f64_n(&buf, &mut off, C_CLS);
+    COS_TABLE    = read_f64_n(&buf, &mut off, E_DIM * DIM_D);
 }
 
 unsafe fn load_input() {
