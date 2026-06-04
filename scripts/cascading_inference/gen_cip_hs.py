@@ -16,7 +16,7 @@ SUPER_STAGE3 = 13
 SUPER_STAGE4 = 14
 SUPER_SYNC   = 15
 SUPER_OUTPUT = 16
-MAX_FANIN    = 31
+MAX_FANIN    = 30
 
 
 HSK_TEMPLATE = """-- Auto-generated attn.hsk — declaration order REVERSE of super-number

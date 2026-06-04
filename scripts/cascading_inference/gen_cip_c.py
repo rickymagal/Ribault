@@ -33,7 +33,7 @@ SUPER_STAGE4 = 14
 SUPER_SYNC   = 15
 SUPER_OUTPUT = 16
 
-MAX_FANIN = 31   # 5-bit src-count limit in TALM
+MAX_FANIN    = 30   # 5-bit src-count limit in TALM
 
 
 C_TEMPLATE = r"""/* Auto-generated: Ribault Cascading Inference Pipeline C supers. */

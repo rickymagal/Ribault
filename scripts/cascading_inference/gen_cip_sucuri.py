@@ -282,7 +282,7 @@ if SUCURI_ROOT is None:
 sys.path.insert(0, SUCURI_ROOT)
 from pyDF import DFGraph, Node, Scheduler
 
-MAX_FANIN = 31
+MAX_FANIN    = 30
 
 
 def main():
