@@ -24,6 +24,7 @@ const K3:       usize = 8;
 const H_DIM:    usize = 128;
 const C_CLS:    usize = 16;
 const ACCEPT_BITMAP_BYTES: usize = 8192;
+const N_CLASSES:           usize = 4;
 
 const ACCEPT_S1:      i32 = 1;
 const REJECT_S2:      i32 = 2;
@@ -42,18 +43,25 @@ unsafe impl<T> Send for ConstPtr<T> {}
 unsafe impl<T> Sync for ConstPtr<T> {}
 
 
-fn load_config(dir: &str) -> (usize, usize, i32, f64) {
+fn load_config(dir: &str) -> (usize, usize, [i32; N_CLASSES], [f64; N_CLASSES]) {
     let text = std::fs::read_to_string(format!("{}/config.txt", dir)).unwrap();
-    let mut n = 0usize; let mut cs = 0usize; let mut t2 = 0i32; let mut t3 = 0.0f64;
+    let mut n = 0usize; let mut cs = 32usize;
+    let mut t2 = [0i32; N_CLASSES]; let mut t3 = [0.0f64; N_CLASSES];
     for line in text.lines() {
         let mut it = line.split_whitespace();
         let key = it.next().unwrap_or("");
         let val = it.next().unwrap_or("0");
         match key {
             "N"          => n  = val.parse().unwrap_or(0),
-            "CHUNK_SIZE" => cs = val.parse().unwrap_or(512),
-            "T2"         => t2 = val.parse().unwrap_or(0),
-            "T3"         => t3 = val.parse().unwrap_or(0.0),
+            "CHUNK_SIZE" => cs = val.parse().unwrap_or(32),
+            _ if key.starts_with("T2_CLASS_") => {
+                let c: usize = key[9..].parse().unwrap_or(0);
+                if c < N_CLASSES { t2[c] = val.parse().unwrap_or(0); }
+            }
+            _ if key.starts_with("T3_CLASS_") => {
+                let c: usize = key[9..].parse().unwrap_or(0);
+                if c < N_CLASSES { t3[c] = val.parse().unwrap_or(0.0); }
+            }
             _ => {}
         }
     }
@@ -61,7 +69,7 @@ fn load_config(dir: &str) -> (usize, usize, i32, f64) {
 }
 
 struct Weights {
-    accept_bitmap:  Vec<u8>,
+    accept_bitmaps: [Vec<u8>; N_CLASSES],
     reject_weights: Vec<i16>,
     ref_vec:        Vec<f64>,
     w1_mat:         Vec<f64>,
@@ -93,7 +101,7 @@ fn load_weights(dir: &str) -> Weights {
         *off += n*8; v
     }
     Weights {
-        accept_bitmap:  u8_block(&buf, &mut off, ACCEPT_BITMAP_BYTES),
+        accept_bitmaps: std::array::from_fn(|_| u8_block(&buf, &mut off, ACCEPT_BITMAP_BYTES)),
         reject_weights: i16_block(&buf, &mut off, B2_SLOTS),
         ref_vec:        f64_block(&buf, &mut off, K3 * E_DIM),
         w1_mat:         f64_block(&buf, &mut off, H_DIM * E_DIM),
@@ -173,7 +181,7 @@ fn main() {
     let workers: usize = raw_args[1].parse().unwrap();
     let dir = raw_args[2].clone();
 
-    let (n, chunk_size, t2, t3) = load_config(&dir);
+    let (n, chunk_size, t2_cls, t3_cls) = load_config(&dir);
     let w = load_weights(&dir);
     let n_chunks = (n + chunk_size - 1) / chunk_size;
 
@@ -183,6 +191,13 @@ fn main() {
     let leaked_items: &'static mut [u8] = Box::leak(items_buf.into_boxed_slice());
     let items_ptr = ConstPtr(leaked_items.as_ptr());
 
+    // chunk_class.bin
+    let mut cc_buf = vec![0u8; n_chunks * 4];
+    File::open(format!("{}/chunk_class.bin", dir)).unwrap().read_exact(&mut cc_buf).unwrap();
+    let chunk_class_vec: Vec<i32> = (0..n_chunks).map(|i|
+        i32::from_le_bytes([cc_buf[i*4], cc_buf[i*4+1], cc_buf[i*4+2], cc_buf[i*4+3]])).collect();
+    let leaked_cc: &'static [i32] = Box::leak(chunk_class_vec.into_boxed_slice());
+
     // Per-item state arrays, all leaked-and-shared.
     let leaked_decis: &'static mut [i32] =
         Box::leak(vec![0i32; n].into_boxed_slice());
@@ -191,8 +206,9 @@ fn main() {
         Box::leak(vec![0.0f64; n * E_DIM].into_boxed_slice());
     let emb_ptr = SendPtr(leaked_emb.as_mut_ptr());
 
-    // Wrap weights' pointers in ConstPtr (Send + Sync).
-    let w_accept = ConstPtr(w.accept_bitmap.as_ptr());
+    // 4 ConstPtr<u8> wrappers, one per class — all Send + Sync.
+    let w_accept_cls: [ConstPtr<u8>; N_CLASSES] =
+        std::array::from_fn(|c| ConstPtr(w.accept_bitmaps[c].as_ptr()));
     let w_reject = ConstPtr(w.reject_weights.as_ptr());
     let w_ref    = ConstPtr(w.ref_vec.as_ptr());
     let w_w1     = ConstPtr(w.w1_mat.as_ptr());
@@ -214,7 +230,10 @@ fn main() {
         let items_p = items_ptr;
         let decis_p = decis_ptr;
         let emb_p   = emb_ptr;
-        let w_accept_p = w_accept;
+        let w_accept_cls_p = w_accept_cls;
+        let cc_p = leaked_cc;
+        let t2_cls_p = t2_cls;
+        let t3_cls_p = t3_cls;
         let w_reject_p = w_reject;
         let w_ref_p    = w_ref;
         let w_w1_p     = w_w1;
@@ -232,12 +251,16 @@ fn main() {
                     let chunk_id = chunk_id as usize;
                     let lo = chunk_id * chunk_size;
                     let hi = std::cmp::min(lo + chunk_size, n);
+                    let class_id = cc_p[chunk_id] as usize;
+                    let w_accept = w_accept_cls_p[class_id].0;
+                    let t2 = t2_cls_p[class_id];
+                    let t3 = t3_cls_p[class_id];
                     unsafe {
                         match stage {
                             1 => {
                                 for i in lo..hi {
                                     let it = items_p.0.add(i * D);
-                                    if stage1_decide(it, w_accept_p.0) {
+                                    if stage1_decide(it, w_accept) {
                                         *decis_p.0.add(i) = ACCEPT_S1;
                                     }
                                 }

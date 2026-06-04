@@ -23,7 +23,7 @@ import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout, hPutStrLn, stderr)
 import System.Environment (getArgs)
 
-dimD, b2Slots, eDim, k3, hDim, cCls, acceptBitmapBytes :: Int
+dimD, b2Slots, eDim, k3, hDim, cCls, acceptBitmapBytes, nClasses :: Int
 dimD              = 256
 b2Slots           = 256
 eDim              = 64
@@ -31,6 +31,7 @@ k3                = 8
 hDim              = 128
 cCls              = 16
 acceptBitmapBytes = 8192
+nClasses          = 4
 
 acceptS1, rejectS2, acceptS3Base, classBase :: Int32
 acceptS1     = 1
@@ -41,24 +42,24 @@ classBase    = 0x80
 
 -- ---------- Config ----------
 
-data Config = Config { cfgN :: !Int, cfgT2 :: !Int32, cfgT3 :: !Double }
+data Config = Config { cfgN :: !Int, cfgChunk :: !Int, cfgT2 :: ![Int32], cfgT3 :: ![Double] }
 
 readConfig :: FilePath -> IO Config
 readConfig path = do
   s <- readFile path
   let kv = [(head ws, ws !! 1) | l <- lines s, let ws = words l, length ws >= 2]
   let getInt k def = maybe def read (lookup k kv)
-      getDouble k def = maybe def read (lookup k kv) :: Double
   let n  = getInt "N" 0
-      t2 = (read $ maybe "0" id (lookup "T2" kv)) :: Int32
-      t3 = getDouble "T3" 0.0
-  return (Config n t2 t3)
+      cs = getInt "CHUNK_SIZE" 32
+      t2s = [ (read $ maybe "0" id (lookup ("T2_CLASS_" ++ show c) kv)) :: Int32 | c <- [0 .. nClasses - 1] ]
+      t3s = [ (read $ maybe "0.0" id (lookup ("T3_CLASS_" ++ show c) kv)) :: Double | c <- [0 .. nClasses - 1] ]
+  return (Config n cs t2s t3s)
 
 
 -- ---------- Weight blob ----------
 
 data Weights = Weights
-  { wAccept :: !(Ptr Word8)
+  { wAcceptCls :: ![Ptr Word8]  -- length nClasses
   , wReject :: !(Ptr Int16)
   , wRefVec :: !(Ptr Double)
   , wW1     :: !(Ptr Double)
@@ -72,11 +73,8 @@ readWeights :: FilePath -> IO Weights
 readWeights path = do
   bs <- BS.readFile path
   let !(BSI.BS fp _) = bs
-  -- We copy from the BS into a long-lived malloc'd buffer so the Ptrs
-  -- below stay valid past the function scope.
   withForeignPtr fp $ \src -> do
-    let off0 = 0
-        sizeAccept = acceptBitmapBytes
+    let sizeAcceptAll = nClasses * acceptBitmapBytes
         sizeReject = b2Slots * 2
         sizeRef    = k3 * eDim * 8
         sizeW1     = hDim * eDim * 8
@@ -84,11 +82,11 @@ readWeights path = do
         sizeW2     = cCls * hDim * 8
         sizeB2     = cCls * 8
         sizeCos    = eDim * dimD * 8
-        total = sizeAccept + sizeReject + sizeRef + sizeW1 + sizeB1 + sizeW2 + sizeB2 + sizeCos
+        total = sizeAcceptAll + sizeReject + sizeRef + sizeW1 + sizeB1 + sizeW2 + sizeB2 + sizeCos
     buf <- mallocBytes total :: IO (Ptr Word8)
     copyBytes buf src total
-    let o1 = off0
-        o2 = o1 + sizeAccept
+    let bitmaps = [ castPtr (buf `plusPtr` (c * acceptBitmapBytes)) | c <- [0 .. nClasses - 1] ]
+        o2 = sizeAcceptAll
         o3 = o2 + sizeReject
         o4 = o3 + sizeRef
         o5 = o4 + sizeW1
@@ -96,7 +94,7 @@ readWeights path = do
         o7 = o6 + sizeW2
         o8 = o7 + sizeB2
     return $ Weights
-      { wAccept = castPtr (buf `plusPtr` o1)
+      { wAcceptCls = bitmaps
       , wReject = castPtr (buf `plusPtr` o2)
       , wRefVec = castPtr (buf `plusPtr` o3)
       , wW1     = castPtr (buf `plusPtr` o4)
@@ -213,10 +211,10 @@ stage4Classify !emb !w1 !b1 !w2 !b2 !hidden = do
 
 -- decide_item: returns the i32 decision for one item.
 {-# INLINE decideItem #-}
-decideItem :: Weights -> Int32 -> Double
+decideItem :: Weights -> Int -> Int32 -> Double
            -> Ptr Word8 -> Ptr Int32 -> Ptr Double -> Ptr Double -> IO Int32
-decideItem !w !t2 !t3 !it !histBuf !embBuf !hidBuf = do
-  !ok1 <- stage1Decide it (wAccept w)
+decideItem !w !classId !t2 !t3 !it !histBuf !embBuf !hidBuf = do
+  !ok1 <- stage1Decide it (wAcceptCls w !! classId)
   if ok1
     then return acceptS1
     else do
@@ -255,19 +253,36 @@ run dir = do
   cfg <- readConfig (dir ++ "/config.txt")
   w   <- readWeights (dir ++ "/weights.bin")
   items <- readInput (dir ++ "/input.bin") (cfgN cfg * dimD)
+  let !nC = (cfgN cfg + cfgChunk cfg - 1) `div` cfgChunk cfg
+  ccBuf <- readInput (dir ++ "/chunk_class.bin") (nC * 4)
+  let ccPtr = castPtr ccBuf :: Ptr Int32
   histBuf <- mallocBytes (b2Slots * 4) :: IO (Ptr Int32)
   embBuf  <- mallocBytes (eDim * 8)    :: IO (Ptr Double)
   hidBuf  <- mallocBytes (hDim * 8)    :: IO (Ptr Double)
 
+  let t2s = cfgT2 cfg
+      t3s = cfgT3 cfg
+
   t0 <- getCurrentTime
-  let goItems !i !acc
-        | i >= cfgN cfg = return ((acc :: Word32) .&. 0xFFFFFFFF)
+  let goChunks !chunkId !acc
+        | chunkId >= nC = return ((acc :: Word32) .&. 0xFFFFFFFF)
         | otherwise = do
-            let !it = items `plusPtr` (i * dimD)
-            !d <- decideItem w (cfgT2 cfg) (cfgT3 cfg) it histBuf embBuf hidBuf
-            let !w32 = fromIntegral (fromIntegral d :: Word32) :: Word32
-            goItems (i + 1) ((acc + w32) .&. 0xFFFFFFFF)
-  !cs <- goItems 0 0
+            !c32 <- peekElemOff ccPtr chunkId
+            let !classId = fromIntegral c32 :: Int
+                !t2 = t2s !! classId
+                !t3 = t3s !! classId
+                !lo = chunkId * cfgChunk cfg
+                !hi = if lo + cfgChunk cfg > cfgN cfg then cfgN cfg else lo + cfgChunk cfg
+                goItems !i !a
+                  | i >= hi = return a
+                  | otherwise = do
+                      let !it = items `plusPtr` (i * dimD)
+                      !d <- decideItem w classId t2 t3 it histBuf embBuf hidBuf
+                      let !w32 = fromIntegral (fromIntegral d :: Word32) :: Word32
+                      goItems (i + 1) ((a + w32) .&. 0xFFFFFFFF)
+            !acc' <- goItems lo acc
+            goChunks (chunkId + 1) acc'
+  !cs <- goChunks 0 0
   t1 <- getCurrentTime
   let !secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn ("CHECKSUM=" ++ show cs)

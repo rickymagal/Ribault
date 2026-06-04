@@ -17,6 +17,7 @@ const K3:       usize = 8;
 const H_DIM:    usize = 128;
 const C_CLS:    usize = 16;
 const ACCEPT_BITMAP_BYTES: usize = 8192;
+const N_CLASSES:           usize = 4;
 
 const ACCEPT_S1:      i32 = 1;
 const REJECT_S2:      i32 = 2;
@@ -24,30 +25,37 @@ const ACCEPT_S3_BASE: i32 = 0x40;
 const CLASS_BASE:     i32 = 0x80;
 
 
-struct Config { n: usize, _chunk_size: usize, t2: i32, t3: f64 }
+struct Config { n: usize, chunk_size: usize, t2: [i32; N_CLASSES], t3: [f64; N_CLASSES] }
 
 fn load_config(dir: &str) -> Config {
     let text = std::fs::read_to_string(format!("{}/config.txt", dir)).unwrap();
-    let mut n = 0usize; let mut cs = 0usize; let mut t2 = 0i32; let mut t3 = 0.0f64;
+    let mut n = 0usize; let mut cs = 32usize;
+    let mut t2 = [0i32; N_CLASSES]; let mut t3 = [0.0f64; N_CLASSES];
     for line in text.lines() {
         let mut it = line.split_whitespace();
         let key = it.next().unwrap_or("");
         let val = it.next().unwrap_or("0");
         match key {
             "N"          => n  = val.parse().unwrap_or(0),
-            "CHUNK_SIZE" => cs = val.parse().unwrap_or(512),
-            "T2"         => t2 = val.parse().unwrap_or(0),
-            "T3"         => t3 = val.parse().unwrap_or(0.0),
+            "CHUNK_SIZE" => cs = val.parse().unwrap_or(32),
+            _ if key.starts_with("T2_CLASS_") => {
+                let c: usize = key[9..].parse().unwrap_or(0);
+                if c < N_CLASSES { t2[c] = val.parse().unwrap_or(0); }
+            }
+            _ if key.starts_with("T3_CLASS_") => {
+                let c: usize = key[9..].parse().unwrap_or(0);
+                if c < N_CLASSES { t3[c] = val.parse().unwrap_or(0.0); }
+            }
             _ => {}
         }
     }
-    Config { n, _chunk_size: cs, t2, t3 }
+    Config { n, chunk_size: cs, t2, t3 }
 }
 
 
 // Owning struct for the weights; raw pointers handed out via .as_ptr().
 struct Weights {
-    accept_bitmap:  Vec<u8>,
+    accept_bitmaps: [Vec<u8>; N_CLASSES],
     reject_weights: Vec<i16>,
     ref_vec:        Vec<f64>,
     w1_mat:         Vec<f64>,
@@ -84,7 +92,7 @@ fn load_weights(dir: &str) -> Weights {
         }
         *off += n * 8; v
     }
-    let accept_bitmap  = take_u8(&buf, &mut off, ACCEPT_BITMAP_BYTES);
+    let accept_bitmaps: [Vec<u8>; N_CLASSES] = std::array::from_fn(|_| take_u8(&buf, &mut off, ACCEPT_BITMAP_BYTES));
     let reject_weights = take_i16(&buf, &mut off, B2_SLOTS);
     let ref_vec        = take_f64(&buf, &mut off, K3 * E_DIM);
     let w1_mat         = take_f64(&buf, &mut off, H_DIM * E_DIM);
@@ -92,7 +100,7 @@ fn load_weights(dir: &str) -> Weights {
     let w2_mat         = take_f64(&buf, &mut off, C_CLS * H_DIM);
     let b2_vec         = take_f64(&buf, &mut off, C_CLS);
     let cos_table      = take_f64(&buf, &mut off, E_DIM * D);
-    Weights { accept_bitmap, reject_weights, ref_vec, w1_mat, b1_vec, w2_mat, b2_vec, cos_table }
+    Weights { accept_bitmaps, reject_weights, ref_vec, w1_mat, b1_vec, w2_mat, b2_vec, cos_table }
 }
 
 
@@ -161,8 +169,8 @@ unsafe fn stage4_classify(emb: *const f64,
 }
 
 
-unsafe fn decide_item(it: *const u8, w: &Weights, t2: i32, t3: f64) -> i32 {
-    if stage1_decide(it, w.accept_bitmap.as_ptr()) { return ACCEPT_S1; }
+unsafe fn decide_item(it: *const u8, w: &Weights, class_id: usize, t2: i32, t3: f64) -> i32 {
+    if stage1_decide(it, w.accept_bitmaps[class_id].as_ptr()) { return ACCEPT_S1; }
     let score = stage2_score(it, w.reject_weights.as_ptr());
     if score > t2 { return REJECT_S2; }
     let mut emb = [0.0f64; E_DIM];
@@ -186,14 +194,28 @@ fn main() {
     let mut items_buf = vec![0u8; cfg.n * D];
     File::open(format!("{}/input.bin", dir)).unwrap().read_exact(&mut items_buf).unwrap();
 
+    let n_chunks = (cfg.n + cfg.chunk_size - 1) / cfg.chunk_size;
+    let mut chunk_class_buf = vec![0u8; n_chunks * 4];
+    File::open(format!("{}/chunk_class.bin", dir)).unwrap().read_exact(&mut chunk_class_buf).unwrap();
+    let chunk_class: Vec<i32> = (0..n_chunks).map(|i|
+        i32::from_le_bytes([chunk_class_buf[i*4], chunk_class_buf[i*4+1],
+                            chunk_class_buf[i*4+2], chunk_class_buf[i*4+3]])).collect();
+
     let t0 = Instant::now();
     let mut cs: u32 = 0;
     unsafe {
         let base = items_buf.as_ptr();
-        for idx in 0..cfg.n {
-            let it = base.add(idx * D);
-            let d = decide_item(it, &w, cfg.t2, cfg.t3);
-            cs = cs.wrapping_add(d as u32);
+        for chunk_id in 0..n_chunks {
+            let class_id = chunk_class[chunk_id] as usize;
+            let t2 = cfg.t2[class_id];
+            let t3 = cfg.t3[class_id];
+            let lo = chunk_id * cfg.chunk_size;
+            let hi = std::cmp::min(lo + cfg.chunk_size, cfg.n);
+            for idx in lo..hi {
+                let it = base.add(idx * D);
+                let d = decide_item(it, &w, class_id, t2, t3);
+                cs = cs.wrapping_add(d as u32);
+            }
         }
     }
     let secs = t0.elapsed().as_secs_f64();

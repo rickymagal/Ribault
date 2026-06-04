@@ -24,6 +24,7 @@
 #define H_DIM      128
 #define C_CLS       16
 #define ACCEPT_BITMAP_BYTES 8192
+#define N_CLASSES            4
 
 #define ACCEPT_S1        ((int32_t)1)
 #define REJECT_S2        ((int32_t)2)
@@ -32,10 +33,12 @@
 
 static int     N;
 static int     CHUNK_SIZE;
-static int32_t T2;       /* int score threshold for stage 2 */
-static double  T3;       /* float similarity threshold for stage 3 */
+static int32_t T2_cls[N_CLASSES];
+static double  T3_cls[N_CLASSES];
 
-static uint8_t  *accept_bitmap;  /* [ACCEPT_BITMAP_BYTES] */
+static uint8_t  *accept_bitmap_cls[N_CLASSES];  /* [N_CLASSES][ACCEPT_BITMAP_BYTES] */
+static int32_t  *chunk_class;                   /* [n_chunks] */
+static int       n_chunks;
 static int16_t  *reject_weights; /* [B2_SLOTS] */
 static double   *ref_vec;        /* [K3 * E_DIM] */
 static double   *W1_mat;         /* [H_DIM * E_DIM] */
@@ -58,16 +61,17 @@ static void load_config(const char *dir) {
     while (fscanf(f, "%63s %63s", k, v) == 2) {
         if      (!strcmp(k, "N"))           N          = atoi(v);
         else if (!strcmp(k, "CHUNK_SIZE"))  CHUNK_SIZE = atoi(v);
-        else if (!strcmp(k, "T2"))          T2         = (int32_t)atoll(v);
-        else if (!strcmp(k, "T3"))          T3         = strtod(v, NULL);
+        else if (!strncmp(k, "T2_CLASS_", 9)) T2_cls[atoi(k + 9)] = (int32_t)atoll(v);
+        else if (!strncmp(k, "T3_CLASS_", 9)) T3_cls[atoi(k + 9)] = strtod(v, NULL);
     }
     fclose(f);
+    n_chunks = (N + CHUNK_SIZE - 1) / CHUNK_SIZE;
 }
 
 static void load_weights(const char *dir) {
     char path[1024]; snprintf(path, sizeof path, "%s/weights.bin", dir);
     FILE *f = fopen(path, "rb"); if (!f) { perror(path); exit(1); }
-    accept_bitmap  = xmalloc(ACCEPT_BITMAP_BYTES);
+    for (int c = 0; c < N_CLASSES; c++) accept_bitmap_cls[c] = xmalloc(ACCEPT_BITMAP_BYTES);
     reject_weights = xmalloc(B2_SLOTS * sizeof(int16_t));
     ref_vec        = xmalloc(K3 * E_DIM * sizeof(double));
     W1_mat         = xmalloc(H_DIM * E_DIM * sizeof(double));
@@ -76,7 +80,9 @@ static void load_weights(const char *dir) {
     b2_vec         = xmalloc(C_CLS * sizeof(double));
     cos_table      = xmalloc(E_DIM * D * sizeof(double));
 
-    if (fread(accept_bitmap,  1,                ACCEPT_BITMAP_BYTES, f) != (size_t)ACCEPT_BITMAP_BYTES) goto bad;
+    for (int c = 0; c < N_CLASSES; c++) {
+        if (fread(accept_bitmap_cls[c], 1, ACCEPT_BITMAP_BYTES, f) != (size_t)ACCEPT_BITMAP_BYTES) goto bad;
+    }
     if (fread(reject_weights, sizeof(int16_t),  B2_SLOTS,      f) != (size_t)B2_SLOTS) goto bad;
     if (fread(ref_vec,        sizeof(double),   K3 * E_DIM,    f) != (size_t)(K3 * E_DIM)) goto bad;
     if (fread(W1_mat,         sizeof(double),   H_DIM * E_DIM, f) != (size_t)(H_DIM * E_DIM)) goto bad;
@@ -104,11 +110,11 @@ static void load_input(const char *dir) {
 
 /* ---------- Stage kernels ---------- */
 
-static inline int stage1_decide(const uint8_t *it) {
+static inline int stage1_decide(const uint8_t *it, const uint8_t *bm) {
     uint32_t sig = 0;
     for (int i = 0; i < D; i++) sig += it[i];
     sig &= 0xFFFF;
-    return (accept_bitmap[sig >> 3] >> (sig & 7)) & 1;
+    return (bm[sig >> 3] >> (sig & 7)) & 1;
 }
 
 static inline int32_t stage2_score(const uint8_t *it) {
@@ -174,17 +180,31 @@ static inline int stage4_classify(const double *emb) {
 
 /* ---------- Per-item decision (matches gen_input.py exactly) ---------- */
 
-static inline int32_t decide_item(const uint8_t *it) {
-    if (stage1_decide(it)) return ACCEPT_S1;
+static inline int32_t decide_item(const uint8_t *it, int class_id) {
+    const uint8_t *bm = accept_bitmap_cls[class_id];
+    int32_t t2 = T2_cls[class_id];
+    double  t3 = T3_cls[class_id];
+    if (stage1_decide(it, bm)) return ACCEPT_S1;
     int32_t score = stage2_score(it);
-    if (score > T2) return REJECT_S2;
+    if (score > t2) return REJECT_S2;
     double emb[E_DIM];
     stage3_embed(it, emb);
     double best_sim;
     int best = stage3_best(emb, &best_sim);
-    if (best_sim > T3) return ACCEPT_S3_BASE | best;
+    if (best_sim > t3) return ACCEPT_S3_BASE | best;
     int cls = stage4_classify(emb);
     return CLASS_BASE | cls;
+}
+
+
+static void load_chunk_class(const char *dir) {
+    char path[1024]; snprintf(path, sizeof path, "%s/chunk_class.bin", dir);
+    FILE *f = fopen(path, "rb"); if (!f) { perror(path); exit(1); }
+    chunk_class = xmalloc(n_chunks * sizeof(int32_t));
+    if (fread(chunk_class, sizeof(int32_t), n_chunks, f) != (size_t)n_chunks) {
+        fprintf(stderr, "short read chunk_class.bin\n"); exit(1);
+    }
+    fclose(f);
 }
 
 
@@ -194,14 +214,20 @@ int main(int argc, char **argv) {
     load_config(dir);
     load_weights(dir);
     load_input(dir);
+    load_chunk_class(dir);
 
     struct timespec t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
 
     uint32_t cs = 0;
-    for (int idx = 0; idx < N; idx++) {
-        int32_t d = decide_item(items + (size_t)idx * D);
-        cs = (cs + (uint32_t)d) & 0xFFFFFFFFu;
+    for (int chunk_id = 0; chunk_id < n_chunks; chunk_id++) {
+        int class_id = chunk_class[chunk_id];
+        int lo = chunk_id * CHUNK_SIZE;
+        int hi = lo + CHUNK_SIZE > N ? N : lo + CHUNK_SIZE;
+        for (int idx = lo; idx < hi; idx++) {
+            int32_t d = decide_item(items + (size_t)idx * D, class_id);
+            cs = (cs + (uint32_t)d) & 0xFFFFFFFFu;
+        }
     }
 
     clock_gettime(CLOCK_MONOTONIC, &t1);

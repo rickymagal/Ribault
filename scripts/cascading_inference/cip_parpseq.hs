@@ -26,7 +26,7 @@ import System.IO (hFlush, stdout, hPutStrLn, stderr)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getArgs)
 
-dimD, b2Slots, eDim, k3, hDim, cCls, acceptBitmapBytes :: Int
+dimD, b2Slots, eDim, k3, hDim, cCls, acceptBitmapBytes, nClasses :: Int
 dimD    = 256
 b2Slots = 256
 eDim    = 64
@@ -34,6 +34,7 @@ k3      = 8
 hDim    = 128
 cCls    = 16
 acceptBitmapBytes = 8192
+nClasses = 4
 
 acceptS1, rejectS2, acceptS3Base, classBase :: Int32
 acceptS1     = 1
@@ -57,21 +58,28 @@ gEmb = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE gN #-}
 gN :: IORef Int
 gN = unsafePerformIO (newIORef 0)
-{-# NOINLINE gCfg #-}
-gCfg :: IORef (Int32, Double)
-gCfg = unsafePerformIO (newIORef (0, 0))
+{-# NOINLINE gT2 #-}
+gT2 :: IORef [Int32]
+gT2 = unsafePerformIO (newIORef [])
+{-# NOINLINE gT3 #-}
+gT3 :: IORef [Double]
+gT3 = unsafePerformIO (newIORef [])
+{-# NOINLINE gChunkClass #-}
+gChunkClass :: IORef (Ptr Int32)
+gChunkClass = unsafePerformIO (newIORef nullPtr)
 {-# NOINLINE gW #-}
-gW :: IORef (Ptr Word8, Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
-gW = unsafePerformIO (newIORef (nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr))
+gW :: IORef ([Ptr Word8], Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
+gW = unsafePerformIO (newIORef ([], nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr, nullPtr))
 
-readConfig :: FilePath -> IO (Int, Int32, Double, Int)
+readConfig :: FilePath -> IO (Int, [Int32], [Double], Int)
 readConfig path = do
   s <- readFile path
   let kv = [(head ws, ws !! 1) | l <- lines s, let ws = words l, length ws >= 2]
   let lkup k = lookup k kv
-      readD k def = maybe def read (lkup k) :: Double
       readI k def = maybe def read (lkup k) :: Int
-  return (readI "N" 0, fromIntegral (readI "T2" 0) :: Int32, readD "T3" 0.0, readI "CHUNK_SIZE" 512)
+      t2s = [ fromIntegral (readI ("T2_CLASS_" ++ show c) 0) :: Int32 | c <- [0 .. nClasses - 1] ]
+      t3s = [ (read $ maybe "0.0" id (lkup ("T3_CLASS_" ++ show c))) :: Double | c <- [0 .. nClasses - 1] ]
+  return (readI "N" 0, t2s, t3s, readI "CHUNK_SIZE" 32)
 
 readMalloc :: FilePath -> Int -> IO (Ptr Word8)
 readMalloc path nbytes = do
@@ -81,9 +89,9 @@ readMalloc path nbytes = do
   withForeignPtr fp $ \src -> copyBytes p src nbytes
   return p
 
-readWeights :: FilePath -> IO (Ptr Word8, Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
+readWeights :: FilePath -> IO ([Ptr Word8], Ptr Int16, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double, Ptr Double)
 readWeights path = do
-  let sizeAccept = acceptBitmapBytes
+  let sizeAcceptAll = nClasses * acceptBitmapBytes
       sizeReject = b2Slots * 2
       sizeRef    = k3 * eDim * 8
       sizeW1     = hDim * eDim * 8
@@ -91,17 +99,17 @@ readWeights path = do
       sizeW2     = cCls * hDim * 8
       sizeB2     = cCls * 8
       sizeCos    = eDim * dimD * 8
-      total = sizeAccept + sizeReject + sizeRef + sizeW1 + sizeB1 + sizeW2 + sizeB2 + sizeCos
+      total = sizeAcceptAll + sizeReject + sizeRef + sizeW1 + sizeB1 + sizeW2 + sizeB2 + sizeCos
   buf <- readMalloc path total
-  let o1 = 0
-      o2 = o1 + sizeAccept
+  let bitmaps = [ castPtr (buf `plusPtr` (c * acceptBitmapBytes)) | c <- [0 .. nClasses - 1] ]
+      o2 = sizeAcceptAll
       o3 = o2 + sizeReject
       o4 = o3 + sizeRef
       o5 = o4 + sizeW1
       o6 = o5 + sizeB1
       o7 = o6 + sizeW2
       o8 = o7 + sizeB2
-  return ( castPtr (buf `plusPtr` o1)
+  return ( bitmaps
          , castPtr (buf `plusPtr` o2)
          , castPtr (buf `plusPtr` o3)
          , castPtr (buf `plusPtr` o4)
@@ -213,23 +221,25 @@ stage4Classify !emb !w1 !b1 !w2 !b2 !hidden = do
 -- match the stage-1 fingerprint; leave others' decision = 0 (sentinel
 -- "not decided").
 {-# NOINLINE runStage1 #-}
-runStage1 :: Int -> Int -> ()
-runStage1 !lo !hi = unsafePerformIO $ do
+runStage1 :: Int -> Int -> Int -> ()
+runStage1 !lo !hi !classId = unsafePerformIO $ do
   items <- readIORef gItems
   decis <- readIORef gDecisions
-  (accept, _, _, _, _, _, _, _) <- readIORef gW
+  (bitmaps, _, _, _, _, _, _, _) <- readIORef gW
+  let !accept = bitmaps !! classId
   forM_ [lo .. hi - 1] $ \i -> do
     let !it = items `plusPtr` (i * dimD)
     ok <- stage1Decide it accept
     when ok $ pokeElemOff decis i acceptS1
 
 {-# NOINLINE runStage2 #-}
-runStage2 :: Int -> Int -> ()
-runStage2 !lo !hi = unsafePerformIO $ do
+runStage2 :: Int -> Int -> Int -> ()
+runStage2 !lo !hi !classId = unsafePerformIO $ do
   items <- readIORef gItems
   decis <- readIORef gDecisions
   (_, rejw, _, _, _, _, _, _) <- readIORef gW
-  (t2, _) <- readIORef gCfg
+  t2s <- readIORef gT2
+  let !t2 = t2s !! classId
   histBuf <- mallocBytes (b2Slots * 4) :: IO (Ptr Int32)
   forM_ [lo .. hi - 1] $ \i -> do
     !d <- peekElemOff decis i
@@ -239,13 +249,14 @@ runStage2 !lo !hi = unsafePerformIO $ do
       when (s > t2) $ pokeElemOff decis i rejectS2
 
 {-# NOINLINE runStage3 #-}
-runStage3 :: Int -> Int -> ()
-runStage3 !lo !hi = unsafePerformIO $ do
+runStage3 :: Int -> Int -> Int -> ()
+runStage3 !lo !hi !classId = unsafePerformIO $ do
   items <- readIORef gItems
   decis <- readIORef gDecisions
   embAll <- readIORef gEmb
   (_, _, refV, _, _, _, _, cosT) <- readIORef gW
-  (_, t3) <- readIORef gCfg
+  t3s <- readIORef gT3
+  let !t3 = t3s !! classId
   forM_ [lo .. hi - 1] $ \i -> do
     !d <- peekElemOff decis i
     when (d == 0) $ do
@@ -257,8 +268,8 @@ runStage3 !lo !hi = unsafePerformIO $ do
         pokeElemOff decis i (acceptS3Base .|. fromIntegral best)
 
 {-# NOINLINE runStage4 #-}
-runStage4 :: Int -> Int -> ()
-runStage4 !lo !hi = unsafePerformIO $ do
+runStage4 :: Int -> Int -> Int -> ()
+runStage4 !lo !hi !_classId = unsafePerformIO $ do
   items <- readIORef gItems
   decis <- readIORef gDecisions
   embAll <- readIORef gEmb
@@ -281,9 +292,12 @@ main = do
 
 run :: FilePath -> IO ()
 run dir = do
-  (n, t2, t3, chunkSize) <- readConfig (dir ++ "/config.txt")
+  (n, t2s, t3s, chunkSize) <- readConfig (dir ++ "/config.txt")
   items <- readMalloc (dir ++ "/input.bin") (n * dimD)
   wblob <- readWeights (dir ++ "/weights.bin")
+  let nChunks = (n + chunkSize - 1) `div` chunkSize
+  ccBuf <- readMalloc (dir ++ "/chunk_class.bin") (nChunks * 4)
+  let ccPtr = castPtr ccBuf :: Ptr Int32
   decis <- mallocBytes (n * 4) :: IO (Ptr Int32)
   forM_ [0 .. n - 1] $ \i -> pokeElemOff decis i (0 :: Int32)
   embAll <- mallocBytes (n * eDim * 8) :: IO (Ptr Double)
@@ -291,25 +305,22 @@ run dir = do
   writeIORef gDecisions decis
   writeIORef gEmb embAll
   writeIORef gN n
-  writeIORef gCfg (t2, t3)
+  writeIORef gT2 t2s
+  writeIORef gT3 t3s
+  writeIORef gChunkClass ccPtr
   writeIORef gW wblob
 
-  let nChunks = (n + chunkSize - 1) `div` chunkSize
-      chunkRanges = [ (k * chunkSize, min ((k + 1) * chunkSize) n) | k <- [0 .. nChunks - 1] ]
+  ccList <- mapM (\k -> do c <- peekElemOff ccPtr k; return (fromIntegral c :: Int)) [0 .. nChunks - 1]
+  let chunkInfo = zipWith (\k cid -> (k * chunkSize, min ((k + 1) * chunkSize) n, cid)) [0 ..] ccList
 
   t0 <- getCurrentTime
-  -- Stage 1 barrier
   let sparkAll rs = let !forced  = foldl' seq () rs
                         !sparked = foldr par forced rs
                     in sparked `pseq` return ()
-  -- Stage 1 barrier
-  sparkAll [ runStage1 lo hi | (lo, hi) <- chunkRanges ]
-  -- Stage 2 barrier
-  sparkAll [ runStage2 lo hi | (lo, hi) <- chunkRanges ]
-  -- Stage 3 barrier
-  sparkAll [ runStage3 lo hi | (lo, hi) <- chunkRanges ]
-  -- Stage 4 barrier
-  sparkAll [ runStage4 lo hi | (lo, hi) <- chunkRanges ]
+  sparkAll [ runStage1 lo hi cid | (lo, hi, cid) <- chunkInfo ]
+  sparkAll [ runStage2 lo hi cid | (lo, hi, cid) <- chunkInfo ]
+  sparkAll [ runStage3 lo hi cid | (lo, hi, cid) <- chunkInfo ]
+  sparkAll [ runStage4 lo hi cid | (lo, hi, cid) <- chunkInfo ]
   t1 <- getCurrentTime
   let !secs = realToFrac (diffUTCTime t1 t0) :: Double
 
