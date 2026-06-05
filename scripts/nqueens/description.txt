@@ -67,36 +67,65 @@ How each variant expresses the recursion:
                        Marlow et al. for backtracking workloads.
 
   Ribault (.hss path)  Recursive TALM dataflow.  gen_nq_hss.py
-                       emits a Haskell-like .hss source where the
-                       two recursive calls at each row above
-                       CUTOFF (`nq (c:queens) (row+1)` and
-                       `nqAtRow queens row (c+1)`) are independent
-                       sub-expressions.  The Ribault codegen
-                       compiler translates each into a TALM
-                       callsnd with multiplicative tagging
-                       (stride=N, depth representable in 64-bit
-                       tag up to N=15).  Below CUTOFF the recursion
-                       drops into a Haskell-coded `nq_seq` super
-                       running the sequential subtree on a single
-                       capability.
+                       emits a per-N .hss with one TALM-recursive
+                       `solve` function plus two supers (safeRec
+                       and solveRest).  The column iteration at
+                       each row is UNROLLED at .hss-emit time into
+                       N let-bindings (one conditional callsnd per
+                       column), so the only TALM-tag axis is the
+                       row depth.  Stride is the next power-of-2
+                       of N (= 16 for N=11..15); max tag-depth
+                       CUTOFF=2 yields 16^2 = 256 distinct tags,
+                       well inside the 64-bit limit.  At row =
+                       CUTOFF the recursion dispatches to
+                       solveRest, a sequential Haskell super that
+                       enumerates the remaining N-CUTOFF rows on
+                       a single capability.  The TALM tree thus
+                       has N^CUTOFF leaves (15^2 = 225 for N=15)
+                       distributed across P workers.
 
-4. CUTOFF=5 as the default
---------------------------
-Marlow et al. "Parallel and Concurrent Programming in Haskell"
-ch. 4 documents CUTOFF=5 as the recommended idiomatic default
-for N=13-15 on 16-32-core hardware.  Shallower cutoffs limit task
-count below P; deeper cutoffs saturate the spark pool (Haskell)
-or explode the per-level epoch input (Timely).  The same value is
-used across all variants and all N to keep the comparison honest;
-no per-N tuning.
+                       Two earlier .hss formulations were tried
+                       and rejected: (a) cons-list arg with
+                       case-of-cons recursion ALWAYS returns 0
+                       (codegen lowering bug for recursive
+                       callsnds with list-handle args), (b) two
+                       mutually-aware top-level recursive
+                       functions (safe + solve both recursive)
+                       silently undercounts (N=5 returns 8 vs
+                       OEIS Q(5)=10).  The "one TALM-recursive
+                       function + supers" recipe is the one that
+                       passes OEIS cross-validation for N=4..15.
+
+4. CUTOFF
+---------
+CUTOFF=5 is used for the parallel-Haskell tier (Strategies,
+par/pseq).  Marlow et al. "Parallel and Concurrent Programming in
+Haskell" ch. 4 documents CUTOFF=5 as the recommended idiomatic
+default for N=13-15 on 16-32-core hardware: shallower limits task
+count below P, deeper saturates the spark pool.
+
+Ribault uses CUTOFF=2 (set by gen_nq_hss.py).  The lower cutoff is
+forced by two interpreter constraints: (a) at CUTOFF=3 with N>=13
+the in-flight-token deque overflows ("Deque is full. Aborting."),
+(b) at CUTOFF=3 with N<=12 each leaf super does too little work
+to amortize TALM dispatch overhead (P>1 is no faster than P=1).
+At CUTOFF=2 the parallel sweet spot is N>=13, where each of the
+N^2 leaves does substantial sequential work and the 225-leaf
+parallel decomposition cleanly fills 24 cores.  This is a
+genuine architectural limit of the current TALM implementation,
+not a tuning choice -- we document it as a known constraint and
+report ratios against each variant's own P=1 baseline so the
+CUTOFF asymmetry between variants doesn't bias the comparison.
 
 5. Tag representability limit
 -----------------------------
-TALM's multiplicative tagging uses 64-bit tags with stride=N at
-each recursive call.  Maximum representable depth is
-floor(63 / log2(N)) = floor(63 / 3.81) = 16 for N=14, sufficient
-for the recursion depths needed up to N=15.  N=16 sits at the
-limit; sweeps cap at N=15.
+TALM's multiplicative tagging uses 64-bit tags.  With column
+iteration UNROLLED into compile-time let-bindings, the only
+runtime tag axis is `solve`'s recursion depth (= row), with stride
+= next power-of-2 of N.  For N<=15 stride = 16 and CUTOFF=2 gives
+max tag = 16^2 = 256, trivially representable.  Without unrolling,
+the naive (row, c) recursion would need stride^(N^2) tag bits =
+4^225 for N=15 -- catastrophic overflow.
 
 6. Cross-validation
 -------------------
