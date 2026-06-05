@@ -126,19 +126,28 @@ for N in $NS; do
     echo "seq_rust,$N,$CUTOFF,1,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
   done
 
-  # Ribault-Hs via .hss → codegen → .fl → assembler → interp.
+  # Ribault-Hs via .hss → codegen (stdout) → .fl, plus the .hss is
+  # also handed to build_supers.sh which compiles the in-.hss super
+  # bodies into libsupers.so.
   RH_DIR="$NDIR/ribault_hs"
   mkdir -p "$RH_DIR/supers"
   "$PY3" "$REPO/scripts/nqueens/gen_nq_hss.py" --out "$RH_DIR/nq.hss" --N "$N" --cutoff "$CUTOFF"
+  RH_FL=""
   if [[ -x "$CODEGEN" ]]; then
-    "$CODEGEN" "$RH_DIR/nq.hss" "$RH_DIR/nq.fl" >"$LOGDIR/codegen_N${N}.log" 2>&1 || {
-        echo "    [WARN] codegen failed for N=$N — skipping ribault_hs"
-        RH_FL=""
-    }
-    RH_FL="$RH_DIR/nq.fl"
+    if "$CODEGEN" "$RH_DIR/nq.hss" > "$RH_DIR/nq.fl" 2>"$LOGDIR/codegen_N${N}.log"; then
+      RH_FL="$RH_DIR/nq.fl"
+      # Build the .hss-embedded super bodies into libsupers.so.
+      CFLAGS="$SUPERS_CFLAGS" bash "$REPO/tools/build_supers.sh" \
+        "$RH_DIR/nq.hss" "$RH_DIR/supers/Supers.hs" \
+        >"$LOGDIR/ribault_hs_supers_N${N}.build.log" 2>&1 || {
+          echo "    [WARN] ribault_hs supers build failed N=$N"
+          RH_FL=""
+        }
+    else
+      echo "    [WARN] codegen failed for N=$N — skipping ribault_hs"
+    fi
   else
     echo "    [WARN] codegen not found at $CODEGEN — skipping ribault_hs"
-    RH_FL=""
   fi
 
   for P in $PS; do
