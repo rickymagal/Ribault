@@ -3,7 +3,7 @@
 
 The .hss is compiled by Ribault's codegen tool into a .fl that
 expresses the recursion as TALM callsnd / retsnd with multiplicative
-tagging — the canonical idiom for which TALM was designed (Arvind
+tagging -- the canonical idiom for which TALM was designed (Arvind
 & Nikhil 1987).  This is fundamentally different from the flat
 "one super per prefix state" decomposition emitted by gen_nq_c.py
 and friends; here the search tree is expanded dynamically at runtime
@@ -58,7 +58,7 @@ safe queens col offset =
       else safe t col (offset + 1)
 
 -- Branch over columns at a given row: the two recursive calls
--- (`nq deeper` and `nqAtRow next column`) are independent — TALM
+-- (`nq deeper` and `nqAtRow next column`) are independent -- TALM
 -- fires them as two child supers with unique tags via callsnd.
 nqAtRow queens row c =
   if c >= __N__
