@@ -24,10 +24,13 @@ HSS_TEMPLATE = """-- N-Queens recursive solver (auto-generated).
 -- (queens); the row index is the length of the queens list.  Drops
 -- out of dataflow at the cutoff depth; below this point every
 -- recursive call stays inside Haskell on a single capability.
+-- NOTE: supersgen renames the super's input variable to `_x` in the
+-- generated Haskell.  The body therefore must refer to `_x` (not the
+-- name declared after `input (...)`) when reading the input value.
 nq_seq queens =
   super single input (queens) output (out)
 #BEGINSUPER
-    out = solveSeq queens
+    out = solveSeq _x
       where
         n_const = __N__
         lenList lst = case lst of
