@@ -58,6 +58,7 @@ import Foreign.Ptr (Ptr, plusPtr, nullPtr, castPtr)
 import Data.Int (Int32, Int64)
 import Data.Word (Word8, Word64)
 import Control.Monad (forM_, when)
+import System.IO (hFlush, stdout)
 
 nqN, nqCutoff, nqNStates :: Int
 nqN        = __N__
@@ -140,6 +141,9 @@ nqOutput = do
             goSum (i + 1) (acc + v)
   !t <- goSum 0 0
   putStrLn ("CHECKSUM=" ++ show t)
+  hFlush stdout    -- critical: stdout is block-buffered when redirected
+                   -- to a file; without flush, the super returns before
+                   -- the buffer drains and the runner sees an empty file.
   return (fromIntegral t :: Int64)
 """
 

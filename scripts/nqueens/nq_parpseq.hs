@@ -13,6 +13,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.Vector.Unboxed as V
 import Foreign.ForeignPtr (withForeignPtr)
+import Foreign.Marshal.Alloc (mallocBytes)
+import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Ptr (Ptr, castPtr, plusPtr)
 import Foreign.Storable (peekElemOff)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
@@ -28,19 +30,18 @@ readConfig path = do
          , maybe 0 id (lookup "CUTOFF"   kv)
          , maybe 0 id (lookup "N_STATES" kv) )
 
+-- See nq_seq.hs for why we copy into a malloc'd buffer.
 readStates :: FilePath -> Int -> Int -> IO [V.Vector Int]
 readStates path nStates cutoff = do
   bs <- BS.readFile path
   let !(BSI.BS fp _) = bs
-  withForeignPtr fp $ \src8 -> do
-    let src = castPtr (src8 `plusPtr` 8) :: Ptr Int32
-        stateAt si = V.generate cutoff $ \r ->
-          fromIntegral $ BSI.accursedUnutterablePerformIO $
-            peekElemOff src (si * cutoff + r)
-        go !si !acc
-          | si >= nStates = return (reverse acc)
-          | otherwise     = go (si + 1) (stateAt si : acc)
-    go 0 []
+      nbytes = nStates * cutoff * 4
+  buf <- mallocBytes nbytes :: IO (Ptr Int32)
+  withForeignPtr fp $ \src -> copyBytes (castPtr buf) (src `plusPtr` 8) nbytes
+  let stateAt !si = V.generate cutoff $ \r ->
+        fromIntegral $ BSI.accursedUnutterablePerformIO $
+          peekElemOff buf (si * cutoff + r)
+  return [stateAt si | si <- [0 .. nStates - 1]]
 
 
 {-# INLINE safeQ #-}

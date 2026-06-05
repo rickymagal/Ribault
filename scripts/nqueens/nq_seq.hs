@@ -18,6 +18,8 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.Vector.Unboxed as V
 import Foreign.ForeignPtr (withForeignPtr)
+import Foreign.Marshal.Alloc (mallocBytes)
+import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Ptr (Ptr, castPtr, plusPtr)
 import Foreign.Storable (peekElemOff)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
@@ -35,19 +37,25 @@ readConfig path = do
 
 
 -- states.bin layout: [n_states i32, cutoff i32] then n_states*cutoff i32s.
+-- IMPORTANT: copy into a malloc'd buffer, NOT a ByteString-backed
+-- ForeignPtr — otherwise V.generate creates thunks that
+-- accursedUnutterablePerformIO defer to the dangling pointer once GC
+-- reclaims the ByteString, producing wrong counts + exponential
+-- slowdown for large N.  Forcing each Vector inside withForeignPtr is
+-- not enough either because V.generate itself is lazy in the closure;
+-- the only safe path is to materialize the data into an
+-- independently-owned buffer first.
 readStates :: FilePath -> Int -> Int -> IO [V.Vector Int]
 readStates path nStates cutoff = do
   bs <- BS.readFile path
   let !(BSI.BS fp _) = bs
-  withForeignPtr fp $ \src8 -> do
-    let src = castPtr (src8 `plusPtr` 8) :: Ptr Int32   -- skip 8-byte header
-        stateAt si = V.generate cutoff $ \r ->
-          fromIntegral $ BSI.accursedUnutterablePerformIO $
-            peekElemOff src (si * cutoff + r)
-    let go !si !acc
-          | si >= nStates = return (reverse acc)
-          | otherwise     = go (si + 1) (stateAt si : acc)
-    go 0 []
+      nbytes = nStates * cutoff * 4
+  buf <- mallocBytes nbytes :: IO (Ptr Int32)
+  withForeignPtr fp $ \src -> copyBytes (castPtr buf) (src `plusPtr` 8) nbytes
+  let stateAt !si = V.generate cutoff $ \r ->
+        fromIntegral $ BSI.accursedUnutterablePerformIO $
+          peekElemOff buf (si * cutoff + r)
+  return [stateAt si | si <- [0 .. nStates - 1]]
 
 
 {-# INLINE safeQ #-}
