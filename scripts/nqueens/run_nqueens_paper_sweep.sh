@@ -126,28 +126,32 @@ for N in $NS; do
     echo "seq_rust,$N,$CUTOFF,1,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
   done
 
-  # Ribault-Hs via .hss → codegen (stdout) → .fl, plus the .hss is
-  # also handed to build_supers.sh which compiles the in-.hss super
-  # bodies into libsupers.so.
-  RH_DIR="$NDIR/ribault_hs"
-  mkdir -p "$RH_DIR/supers"
-  "$PY3" "$REPO/scripts/nqueens/gen_nq_hss.py" --out "$RH_DIR/nq.hss" --N "$N" --cutoff "$CUTOFF"
+  # NOTE: ribault_hs via the recursive .hss path is disabled in this
+  # sweep.  The codegen pipeline successfully translates the .hss to
+  # a .fl that assembles and runs, but the result evaluates to 0
+  # instead of the expected OEIS count Q(N) for every N tested
+  # (N=4..8 verified).  The recursive `nq queens row` / `nqAtRow`
+  # mutual recursion with cons-list arg appears to lose the
+  # accumulated count somewhere in the TALM lowering of `+` between
+  # recursive callsnds with list-handle args.  Diagnosing requires
+  # poking at the codegen's list-handle protocol, which is out of
+  # scope for this refactor.  The framework is in place
+  # (gen_nq_hss.py, codegen invocation, build_supers); turning
+  # ribault_hs back on is just dropping the `false &&` guard once
+  # the underlying lowering issue is fixed.
   RH_FL=""
-  if [[ -x "$CODEGEN" ]]; then
-    if "$CODEGEN" "$RH_DIR/nq.hss" > "$RH_DIR/nq.fl" 2>"$LOGDIR/codegen_N${N}.log"; then
-      RH_FL="$RH_DIR/nq.fl"
-      # Build the .hss-embedded super bodies into libsupers.so.
-      CFLAGS="$SUPERS_CFLAGS" bash "$REPO/tools/build_supers.sh" \
-        "$RH_DIR/nq.hss" "$RH_DIR/supers/Supers.hs" \
-        >"$LOGDIR/ribault_hs_supers_N${N}.build.log" 2>&1 || {
-          echo "    [WARN] ribault_hs supers build failed N=$N"
-          RH_FL=""
-        }
-    else
-      echo "    [WARN] codegen failed for N=$N — skipping ribault_hs"
+  if false; then  # disabled — see note above
+    RH_DIR="$NDIR/ribault_hs"
+    mkdir -p "$RH_DIR/supers"
+    "$PY3" "$REPO/scripts/nqueens/gen_nq_hss.py" --out "$RH_DIR/nq.hss" --N "$N" --cutoff "$CUTOFF"
+    if [[ -x "$CODEGEN" ]]; then
+      if "$CODEGEN" "$RH_DIR/nq.hss" > "$RH_DIR/nq.fl" 2>"$LOGDIR/codegen_N${N}.log"; then
+        RH_FL="$RH_DIR/nq.fl"
+        CFLAGS="$SUPERS_CFLAGS" bash "$REPO/tools/build_supers.sh" \
+          "$RH_DIR/nq.hss" "$RH_DIR/supers/Supers.hs" \
+          >"$LOGDIR/ribault_hs_supers_N${N}.build.log" 2>&1 || RH_FL=""
+      fi
     fi
-  else
-    echo "    [WARN] codegen not found at $CODEGEN — skipping ribault_hs"
   fi
 
   for P in $PS; do
