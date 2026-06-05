@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # Master sweep for the N-Queens paper benchmark.
 #
-# Algorithm: classic recursive backtracking. gen_input.py expands
-# the search tree to a fixed depth `cutoff` (default 5) and emits
-# one leaf-state per surviving prefix in states.bin. All variants
-# read these prefixes and run a sequential `solve_sub` over each;
-# parallel variants distribute prefixes across workers.
-#
-# Cross-validation: total count of solutions matches OEIS A000170.
+# Each variant implements the FULL recursive backtracking inside its
+# own binary (NO pre-expanded prefix states shared across variants).
+# Cross-validation: total count matches OEIS A000170.
 #   N=11: 2680   N=12: 14200   N=13: 73712   N=14: 365596   N=15: 2279184
+#
+# Variants:
+#   seq_haskell  : nq_seq.hs   (Data.Vector.Unboxed, V.snoc per call)
+#   seq_c        : nq_seq.c    (int queens[16] stack, gcc -O3)
+#   seq_rust     : nq_seq.rs   (i32 stack array, opt-level=3 lto=thin)
+#   strategies   : nq_strat.hs (recursive parList rseq up to CUTOFF)
+#   parpseq      : nq_parpseq.hs (recursive par/pseq up to CUTOFF)
+#   timely       : nq_timely.rs (expand-then-distribute via .exchange)
+#   ribault_hs   : .hss via codegen, recursive TALM with callsnd/retsnd
 
 set -uo pipefail
 export LANG="${LANG:-C.utf8}"
@@ -28,12 +33,7 @@ TALM_RTS_A="${TALM_RTS_A:-256m}"
 GHC_BIN="${GHC:-ghc}"
 PY3="${PY3:-python3}"
 N_LOG_CORES="${N_LOG_CORES:-48}"
-
-SUCURI_ROOT="${SUCURI_ROOT:-$HOME/Sucuri}"
-PYTHON_NOGIL="${PYTHON_NOGIL:-$HOME/python3.14t/bin/python3.14t}"
-PYTHON_LIBDIR="${PYTHON_LIBDIR:-$HOME/python3.14t/lib}"
-SUCURI_ENABLED=0
-[[ -d "$SUCURI_ROOT" && -x "$PYTHON_NOGIL" ]] && SUCURI_ENABLED=1
+CODEGEN="${CODEGEN:-$REPO/codegen}"
 
 CSV="$OUTROOT/metrics.csv"
 [[ -f "$CSV" ]] || echo "variant,N,cutoff,P,rep,seconds,checksum,expected" > "$CSV"
@@ -58,7 +58,7 @@ pin_cores() {
 }
 
 echo "==============================================================="
-echo " N-QUEENS PAPER SWEEP"
+echo " N-QUEENS PAPER SWEEP (recursive in-binary)"
 echo "==============================================================="
 echo "  NS=$NS  PS=$PS  REPS=$REPS  CUTOFF=$CUTOFF"
 echo "  Out:  $OUTROOT"
@@ -86,12 +86,11 @@ for N in $NS; do
   EXPECTED="$(cat "$DATA/expected_checksum.txt")"
   echo "  expected Q(N)=$EXPECTED"
 
-  # Build standalone GHC binaries.
   for tier in seq_haskell strategies parpseq; do
     case "$tier" in
-      seq_haskell) src="nq_seq.hs"     ; pkgs="-package time -package vector -package bytestring" ;;
-      strategies)  src="nq_strat.hs"   ; pkgs="-package time -package parallel -package vector -package bytestring" ;;
-      parpseq)     src="nq_parpseq.hs" ; pkgs="-package time -package parallel -package vector -package bytestring" ;;
+      seq_haskell) src="nq_seq.hs"     ; pkgs="-package time -package vector" ;;
+      strategies)  src="nq_strat.hs"   ; pkgs="-package time -package parallel -package vector" ;;
+      parpseq)     src="nq_parpseq.hs" ; pkgs="-package time -package parallel -package vector" ;;
     esac
     GDIR="$NDIR/${tier}"; mkdir -p "$GDIR/obj"
     if [[ "$tier" == "seq_haskell" ]]; then THR=""; else THR="-threaded"; fi
@@ -127,76 +126,24 @@ for N in $NS; do
     echo "seq_rust,$N,$CUTOFF,1,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
   done
 
+  # Ribault-Hs via .hss → codegen → .fl → assembler → interp.
+  RH_DIR="$NDIR/ribault_hs"
+  mkdir -p "$RH_DIR/supers"
+  "$PY3" "$REPO/scripts/nqueens/gen_nq_hss.py" --out "$RH_DIR/nq.hss" --N "$N" --cutoff "$CUTOFF"
+  if [[ -x "$CODEGEN" ]]; then
+    "$CODEGEN" "$RH_DIR/nq.hss" "$RH_DIR/nq.fl" >"$LOGDIR/codegen_N${N}.log" 2>&1 || {
+        echo "    [WARN] codegen failed for N=$N — skipping ribault_hs"
+        RH_FL=""
+    }
+    RH_FL="$RH_DIR/nq.fl"
+  else
+    echo "    [WARN] codegen not found at $CODEGEN — skipping ribault_hs"
+    RH_FL=""
+  fi
+
   for P in $PS; do
     CORES_P="$(pin_cores "$P")"
     echo "  ==== N=$N P=$P cores=$CORES_P ===="
-
-    # ribault_c
-    VDIR="$NDIR/ribault_c_P${P}"; mkdir -p "$VDIR/supers"
-    "$PY3" "$REPO/scripts/nqueens/gen_nq_c.py" --out-dir "$VDIR" --data-dir "$DATA" >/dev/null
-    bash "$REPO/tools/build_supers_c.sh" "$VDIR/attn_c_supers.c" "$VDIR/supers" >"$LOGDIR/ribault_c_N${N}_P${P}.build.log" 2>&1
-    LIBSUP="$VDIR/supers/libsupers.so"
-    pushd "$REPO/TALM/asm" >/dev/null
-      "$PY3" assembler.py -a -n "$P" -o "$VDIR/attn_P${P}" "$VDIR/attn.fl" >/dev/null 2>&1
-    popd >/dev/null
-    FLB="$VDIR/attn_P${P}.flb"; PLA="$VDIR/attn_P${P}_auto.pla"
-    [[ -f "$PLA" ]] || PLA="$VDIR/attn_P${P}.pla"
-    for ((rep=1; rep<=REPS; rep++)); do
-      OUT="$VDIR/out_r${rep}.txt"; ERR="$VDIR/err_r${rep}.txt"
-      SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$(dirname "$LIBSUP")" \
-        taskset -c "$CORES_P" "$REPO/TALM/interp/interp" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
-      cs="$(awk -F= '/^CHECKSUM=/{print $2}' "$OUT" || echo 0)"
-      secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" || echo 0)"
-      echo "    ribault_c    rep=$rep ${secs}s cs=$cs"
-      echo "ribault_c,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
-    done
-
-    # ribault_rust
-    VDIR="$NDIR/ribault_rust_P${P}"; mkdir -p "$VDIR/supers"
-    "$PY3" "$REPO/scripts/nqueens/gen_nq_rust.py" --out-dir "$VDIR" --data-dir "$DATA" >/dev/null
-    CARGO_TARGET_DIR_RUST="$VDIR/cargo_target" \
-      bash "$REPO/tools/build_supers_rust.sh" "$VDIR/nq_rs_supers" "$VDIR/supers" \
-      >"$LOGDIR/ribault_rust_N${N}_P${P}.build.log" 2>&1
-    LIBSUP="$VDIR/supers/libsupers.so"
-    pushd "$REPO/TALM/asm" >/dev/null
-      "$PY3" assembler.py -a -n "$P" -o "$VDIR/attn_P${P}" "$VDIR/attn.fl" >/dev/null 2>&1
-    popd >/dev/null
-    FLB="$VDIR/attn_P${P}.flb"; PLA="$VDIR/attn_P${P}_auto.pla"
-    [[ -f "$PLA" ]] || PLA="$VDIR/attn_P${P}.pla"
-    for ((rep=1; rep<=REPS; rep++)); do
-      OUT="$VDIR/out_r${rep}.txt"; ERR="$VDIR/err_r${rep}.txt"
-      SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" LD_LIBRARY_PATH="$(dirname "$LIBSUP")" \
-        taskset -c "$CORES_P" "$REPO/TALM/interp/interp" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
-      cs="$(awk -F= '/^CHECKSUM=/{print $2}' "$OUT" || echo 0)"
-      secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" || echo 0)"
-      echo "    ribault_rust rep=$rep ${secs}s cs=$cs"
-      echo "ribault_rust,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
-    done
-
-    # ribault_hs
-    VDIR="$NDIR/ribault_hs_P${P}"; mkdir -p "$VDIR/supers"
-    "$PY3" "$REPO/scripts/nqueens/gen_nq_hs.py" --out-dir "$VDIR" --data-dir "$DATA" >/dev/null
-    SUPERS_INJECT_FILE="$VDIR/supers_inject.hs" \
-      SUPERS_GHC_PACKAGES="vector bytestring" \
-      CFLAGS="$SUPERS_CFLAGS" \
-      bash "$REPO/tools/build_supers.sh" "$VDIR/attn.hsk" "$VDIR/supers/Supers.hs" \
-      >"$LOGDIR/ribault_hs_N${N}_P${P}.build.log" 2>&1
-    LIBSUP="$VDIR/supers/libsupers.so"; LIBDIR="$(dirname "$LIBSUP")"; GHCDEPS="$LIBDIR/ghc-deps"
-    pushd "$REPO/TALM/asm" >/dev/null
-      "$PY3" assembler.py -a -n "$P" -o "$VDIR/attn_P${P}" "$VDIR/attn.fl" >/dev/null 2>&1
-    popd >/dev/null
-    FLB="$VDIR/attn_P${P}.flb"; PLA="$VDIR/attn_P${P}_auto.pla"
-    [[ -f "$PLA" ]] || PLA="$VDIR/attn_P${P}.pla"
-    for ((rep=1; rep<=REPS; rep++)); do
-      OUT="$VDIR/out_r${rep}.txt"; ERR="$VDIR/err_r${rep}.txt"
-      SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" \
-        LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        taskset -c "$CORES_P" "$REPO/TALM/interp/interp" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
-      cs="$(awk -F= '/^CHECKSUM=/{print $2}' "$OUT" || echo 0)"
-      secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" || echo 0)"
-      echo "    ribault_hs   rep=$rep ${secs}s cs=$cs"
-      echo "ribault_hs,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
-    done
 
     # strategies
     for ((rep=1; rep<=REPS; rep++)); do
@@ -232,25 +179,32 @@ for N in $NS; do
       echo "timely,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
     done
 
-    if (( SUCURI_ENABLED == 1 )); then
-      VDIR="$NDIR/sucuri_P${P}"; mkdir -p "$VDIR"
-      "$PY3" "$REPO/scripts/nqueens/gen_nq_sucuri.py" \
-        --project-dir "$VDIR/crate" --py-driver "$VDIR/run_sucuri.py" --data-dir "$DATA" >/dev/null
-      (cd "$VDIR/crate" && PYO3_PYTHON="$PYTHON_NOGIL" \
-        CARGO_TARGET_DIR="$VDIR/crate/target" cargo build --release --quiet \
-        >"$LOGDIR/sucuri_N${N}_P${P}.build.log" 2>&1)
-      RUST_SO="$VDIR/crate/target/release/libsucuri_nq.so"
-      if [[ -f "$RUST_SO" ]]; then
+    # ribault_hs via codegen-produced .fl
+    if [[ -n "$RH_FL" && -f "$RH_FL" ]]; then
+      RH_P="$RH_DIR/P${P}"; mkdir -p "$RH_P"
+      pushd "$REPO/TALM/asm" >/dev/null
+        "$PY3" assembler.py -a -n "$P" -o "$RH_P/nq_P${P}" "$RH_FL" >/dev/null 2>&1
+      popd >/dev/null
+      FLB="$RH_P/nq_P${P}.flb"
+      PLA="$RH_P/nq_P${P}_auto.pla"; [[ -f "$PLA" ]] || PLA="$RH_P/nq_P${P}.pla"
+      # ribault_hs supers built from the .hss have a Haskell sub-super
+      # for nq_seq; codegen writes the Haskell file alongside.
+      LIBSUP_DIR="$RH_DIR/supers"
+      LIBSUP="$LIBSUP_DIR/libsupers.so"
+      if [[ -f "$LIBSUP" ]]; then
+        LIBDIR="$LIBSUP_DIR"; GHCDEPS="$LIBDIR/ghc-deps"
         for ((rep=1; rep<=REPS; rep++)); do
-          OUT="$VDIR/out_r${rep}.txt"
-          SUCURI_ROOT="$SUCURI_ROOT" LD_LIBRARY_PATH="$PYTHON_LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-            PYTHON_GIL=0 taskset -c "$CORES_P" \
-            "$PYTHON_NOGIL" "$VDIR/run_sucuri.py" --rust-so "$RUST_SO" --data-dir "$DATA" --workers "$P" >"$OUT" 2>/dev/null
+          OUT="$RH_P/out_r${rep}.txt"; ERR="$RH_P/err_r${rep}.txt"
+          SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" \
+            LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            taskset -c "$CORES_P" "$REPO/TALM/interp/interp" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
           cs="$(awk -F= '/^CHECKSUM=/{print $2}' "$OUT" || echo 0)"
-          secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT" || echo 0)"
-          echo "    sucuri       rep=$rep ${secs}s cs=$cs"
-          echo "sucuri,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
+          secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" || echo 0)"
+          echo "    ribault_hs   rep=$rep ${secs}s cs=$cs"
+          echo "ribault_hs,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
         done
+      else
+        echo "    [WARN] ribault_hs supers not built for N=$N — skipping"
       fi
     fi
   done

@@ -1,0 +1,122 @@
+N-Queens — methodology
+======================
+
+1. Motivation
+-------------
+N-Queens is the canonical workload for which the tagged-token
+dataflow architecture (TALM) was originally proposed by Arvind &
+Nikhil in 1987.  This benchmark revisits that case in 2026 on
+modern hardware (Sapphire Rapids 24-physical/48-SMT, GHC 9.6,
+Timely 0.13, Trebuchet) to verify whether the architectural
+advantage predicted by the original authors — recursive parallel
+expansion with per-call tagged tokens instead of a finite spark
+pool — still materializes against mature spark/work-stealing
+schedulers.
+
+2. The algorithm
+----------------
+Classic recursive backtracking.  `queens[r] = c` means a queen is
+placed at column c in row r.  `safe(queens, row, col)` checks
+three conditions per previously-placed queen.  `solve(queens, row,
+n)` returns 1 if row==n, otherwise sums solve over all safe
+columns.  Final count must match OEIS A000170:
+    N=11:  2,680
+    N=12: 14,200
+    N=13: 73,712
+    N=14: 365,596
+    N=15: 2,279,184
+
+3. Critical design point: WHERE the recursion happens
+-----------------------------------------------------
+Each variant implements the FULL recursion inside its own binary,
+using its native parallelism idiom.  gen_input.py writes ONLY
+config.txt + expected_checksum.txt.  NO pre-expanded states are
+shared across variants — that flat-decomposition pattern (used
+in earlier drafts) is the anti-pattern this benchmark exists to
+contrast against.  Flat decomposition turns recursive backtracking
+into embarrassingly-parallel work over independent leaf subtrees,
+which is exactly the regime where mature spark/work-stealing
+schedulers (Strategies, Timely's exchange) hide the recursive-
+dataflow advantage that Ribault is designed for.
+
+How each variant expresses the recursion:
+
+  nq_seq.{c,rs,hs}     full sequential recursion from row=0.
+
+  nq_strat.hs          recursive `withStrategy (parList rseq)` over
+                       safe children at each row < CUTOFF, dropping
+                       to sequential `solveSeq` below cutoff.  Each
+                       row above cutoff dynamically emits up to N
+                       sparks to the GHC spark pool.
+
+  nq_parpseq.hs        same recursive structure, raw `par/pseq`
+                       sparks instead of the Strategies combinator.
+
+  nq_timely.rs         epoch-per-level expansion.  Worker 0
+                       sequentially expands the search tree to
+                       depth=CUTOFF (BFS, embedding the prefix into
+                       a fixed-size i32 array), then sends each
+                       prefix as a single input tuple.  Workers
+                       exchange by prefix hash and run sequential
+                       subtree solver per prefix.  Note: a true
+                       feedback-loop recursive expansion in Timely
+                       requires the `feedback` operator with
+                       non-trivial timestamp management; this
+                       benchmark uses the idiomatic
+                       expand-then-distribute shape documented in
+                       Marlow et al. for backtracking workloads.
+
+  Ribault (.hss path)  Recursive TALM dataflow.  gen_nq_hss.py
+                       emits a Haskell-like .hss source where the
+                       two recursive calls at each row above
+                       CUTOFF (`nq (c:queens) (row+1)` and
+                       `nqAtRow queens row (c+1)`) are independent
+                       sub-expressions.  The Ribault codegen
+                       compiler translates each into a TALM
+                       callsnd with multiplicative tagging
+                       (stride=N, depth representable in 64-bit
+                       tag up to N=15).  Below CUTOFF the recursion
+                       drops into a Haskell-coded `nq_seq` super
+                       running the sequential subtree on a single
+                       capability.
+
+4. CUTOFF=5 as the default
+--------------------------
+Marlow et al. "Parallel and Concurrent Programming in Haskell"
+ch. 4 documents CUTOFF=5 as the recommended idiomatic default
+for N=13-15 on 16-32-core hardware.  Shallower cutoffs limit task
+count below P; deeper cutoffs saturate the spark pool (Haskell)
+or explode the per-level epoch input (Timely).  The same value is
+used across all variants and all N to keep the comparison honest;
+no per-N tuning.
+
+5. Tag representability limit
+-----------------------------
+TALM's multiplicative tagging uses 64-bit tags with stride=N at
+each recursive call.  Maximum representable depth is
+floor(63 / log2(N)) = floor(63 / 3.81) = 16 for N=14, sufficient
+for the recursion depths needed up to N=15.  N=16 sits at the
+limit; sweeps cap at N=15.
+
+6. Cross-validation
+-------------------
+The runner compares every parallel rep's checksum against the
+OEIS canonical Q(N).  Bootstrap CI computed in
+regen_tables_ci.py over the surviving reps.
+
+7. Threats to validity
+----------------------
+* CUTOFF chosen once, may not be the optimum per (N, P) cell —
+  documented as a fixed methodological choice, not a tuned
+  hyperparameter.
+* Timely's expand-then-distribute is the idiomatic shape for
+  backtracking, not the most-efficient-possible Timely encoding;
+  a feedback-loop variant could trade implementation complexity
+  for higher throughput on deeper trees.
+* Ribault P=48 collapses under SMT contention (documented in
+  prior benchmarks); this is a separate Trebuchet runtime
+  limitation, not a property of the recursive .hss compilation.
+
+8. Findings
+-----------
+[Filled after sweep completes.]

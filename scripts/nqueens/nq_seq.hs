@@ -1,61 +1,28 @@
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
--- N-Queens sequential baseline in Haskell.  Uses IMMUTABLE
--- `Data.Vector.Unboxed Int` for the placed-queens prefix —
--- `V.snoc queens col` allocates a new vector on every recursive
--- call.  This is the idiomatic Haskell representation; the
--- resulting heap allocation pressure is what the parallel
--- variants (nq_strat, nq_parpseq, the ribault_hs supers) also
--- pay.  A mutable representation would break the comparison
--- because parallel variants must pass `queens` snapshots between
--- sparks/supers, which requires immutability.
+-- N-Queens sequential baseline in Haskell.  Full recursion from row=0
+-- inside this binary; uses IMMUTABLE `Data.Vector.Unboxed Int` for
+-- the placed-queens prefix — `V.snoc queens col` allocates a new
+-- vector on every recursive call.  This is deliberate: it is the
+-- idiomatic Haskell representation and the resulting heap-allocation
+-- pressure is what nq_strat.hs / nq_parpseq.hs / the ribault_hs
+-- super body also pay.  A mutable representation would break the
+-- comparison because parallel variants must pass `queens` snapshots
+-- between sparks/supers, which requires immutability.
 
-import Data.Bits ((.&.), shiftR)
-import Data.Int (Int32)
-import Data.Word (Word32, Word64)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Internal as BSI
+import Data.Word (Word64)
 import qualified Data.Vector.Unboxed as V
-import Foreign.ForeignPtr (withForeignPtr)
-import Foreign.Marshal.Alloc (mallocBytes)
-import Foreign.Marshal.Utils (copyBytes)
-import Foreign.Ptr (Ptr, castPtr, plusPtr)
-import Foreign.Storable (peekElemOff)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout, hPutStrLn, stderr)
 import System.Environment (getArgs)
 
 
-readConfig :: FilePath -> IO (Int, Int, Int)
+readConfig :: FilePath -> IO Int
 readConfig path = do
   s <- readFile path
   let kv = [(head ws, read (ws !! 1) :: Int) | l <- lines s, let ws = words l, length ws >= 2]
-  return ( maybe 0 id (lookup "N"        kv)
-         , maybe 0 id (lookup "CUTOFF"   kv)
-         , maybe 0 id (lookup "N_STATES" kv) )
-
-
--- states.bin layout: [n_states i32, cutoff i32] then n_states*cutoff i32s.
--- IMPORTANT: copy into a malloc'd buffer, NOT a ByteString-backed
--- ForeignPtr — otherwise V.generate creates thunks that
--- accursedUnutterablePerformIO defer to the dangling pointer once GC
--- reclaims the ByteString, producing wrong counts + exponential
--- slowdown for large N.  Forcing each Vector inside withForeignPtr is
--- not enough either because V.generate itself is lazy in the closure;
--- the only safe path is to materialize the data into an
--- independently-owned buffer first.
-readStates :: FilePath -> Int -> Int -> IO [V.Vector Int]
-readStates path nStates cutoff = do
-  bs <- BS.readFile path
-  let !(BSI.BS fp _) = bs
-      nbytes = nStates * cutoff * 4
-  buf <- mallocBytes nbytes :: IO (Ptr Int32)
-  withForeignPtr fp $ \src -> copyBytes (castPtr buf) (src `plusPtr` 8) nbytes
-  let stateAt !si = V.generate cutoff $ \r ->
-        fromIntegral $ BSI.accursedUnutterablePerformIO $
-          peekElemOff buf (si * cutoff + r)
-  return [stateAt si | si <- [0 .. nStates - 1]]
+  return $ maybe 0 id (lookup "N" kv)
 
 
 {-# INLINE safeQ #-}
@@ -72,8 +39,8 @@ safeQ queens row col = go 0
              else go (r + 1)
 
 
-solveSub :: V.Vector Int -> Int -> Int -> Word64
-solveSub !queens !row !n
+solve :: Int -> V.Vector Int -> Int -> Word64
+solve !n !queens !row
   | row == n  = 1
   | otherwise = go 0 0
   where
@@ -81,7 +48,7 @@ solveSub !queens !row !n
       | c >= n    = acc
       | safeQ queens row c =
           let !q' = V.snoc queens c
-              !sub = solveSub q' (row + 1) n
+              !sub = solve n q' (row + 1)
           in go (c + 1) (acc + sub)
       | otherwise = go (c + 1) acc
 
@@ -93,13 +60,11 @@ main = do
     (dir:_) -> run dir
     _       -> hPutStrLn stderr "usage: nq_seq_hs DATA_DIR"
 
-
 run :: FilePath -> IO ()
 run dir = do
-  (n, cutoff, nStates) <- readConfig (dir ++ "/config.txt")
-  states <- readStates (dir ++ "/states.bin") nStates cutoff
+  n <- readConfig (dir ++ "/config.txt")
   t0 <- getCurrentTime
-  let !total = sum [solveSub s cutoff n | s <- states] :: Word64
+  let !total = solve n V.empty 0 :: Word64
   t1 <- getCurrentTime
   let !secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn ("CHECKSUM=" ++ show total)

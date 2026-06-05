@@ -1,58 +1,33 @@
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
--- N-Queens Strategies variant.  Reads the same set of prefix states
--- emitted by gen_input.py (depth=cutoff), and runs the sequential
--- `solveSub` over each via `parList rseq` for top-level parallelism.
+-- N-Queens Strategies variant — RECURSIVE parallelism inside the
+-- binary, NOT a flat parallel over a pre-expanded prefix list.
+-- Each level of the search tree (until row reaches CUTOFF) creates
+-- a `parList rseq` over the children, dynamically saturating the
+-- spark pool with N^cutoff sparks at the deepest parallel level.
+-- Below cutoff, each branch drops to a sequential subtree solver
+-- (`solveSeq`) — same as the C/Rust baseline algorithmically.
 --
--- This is the idiomatic Strategies shape for backtracking with a
--- fixed cutoff: the depth-`cutoff` prefix expansion is sequential
--- (in gen_input.py), and the suffix evaluation is sparked
--- chunk-per-prefix.  Cutoff=5 is the recommended default in the
--- literature (Marlow et al., "Parallel and Concurrent Programming
--- in Haskell", ch. 4) for N=13-15 on P=16-32; shallower cutoffs
--- limit task count below P, deeper cutoffs saturate the spark pool.
--- The runner exposes CUTOFF as an env variable for sensitivity
--- analysis but does NOT cherry-pick it per N — same value across all
--- N keeps the comparison honest.
+-- CUTOFF=5 is the recommended default in Marlow et al. "Parallel
+-- and Concurrent Programming in Haskell" ch. 4 for N=13-15 on
+-- P=16-32 cores.  Cherry-picking cutoff per N to favor Strategies
+-- is not done — same value across all N keeps the comparison
+-- honest.
 
-import Control.Monad (forM_)
 import Control.Parallel.Strategies (using, parList, rseq)
-import Data.Int (Int32)
-import Data.Word (Word32, Word64)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Internal as BSI
+import Data.Word (Word64)
 import qualified Data.Vector.Unboxed as V
-import Foreign.ForeignPtr (withForeignPtr)
-import Foreign.Marshal.Alloc (mallocBytes)
-import Foreign.Marshal.Utils (copyBytes)
-import Foreign.Ptr (Ptr, castPtr, plusPtr)
-import Foreign.Storable (peekElemOff)
 import Data.Time.Clock (getCurrentTime, diffUTCTime)
 import System.IO (hFlush, stdout, hPutStrLn, stderr)
 import System.Environment (getArgs)
 
 
-readConfig :: FilePath -> IO (Int, Int, Int)
+readConfig :: FilePath -> IO (Int, Int)
 readConfig path = do
   s <- readFile path
   let kv = [(head ws, read (ws !! 1) :: Int) | l <- lines s, let ws = words l, length ws >= 2]
-  return ( maybe 0 id (lookup "N"        kv)
-         , maybe 0 id (lookup "CUTOFF"   kv)
-         , maybe 0 id (lookup "N_STATES" kv) )
-
--- See nq_seq.hs for why we copy into a malloc'd buffer.
-readStates :: FilePath -> Int -> Int -> IO [V.Vector Int]
-readStates path nStates cutoff = do
-  bs <- BS.readFile path
-  let !(BSI.BS fp _) = bs
-      nbytes = nStates * cutoff * 4
-  buf <- mallocBytes nbytes :: IO (Ptr Int32)
-  withForeignPtr fp $ \src -> copyBytes (castPtr buf) (src `plusPtr` 8) nbytes
-  let stateAt !si = V.generate cutoff $ \r ->
-        fromIntegral $ BSI.accursedUnutterablePerformIO $
-          peekElemOff buf (si * cutoff + r)
-  return [stateAt si | si <- [0 .. nStates - 1]]
+  return (maybe 0 id (lookup "N" kv), maybe 5 id (lookup "CUTOFF" kv))
 
 
 {-# INLINE safeQ #-}
@@ -68,8 +43,10 @@ safeQ queens row col = go 0
              else if c + r == col + row then False
              else go (r + 1)
 
-solveSub :: V.Vector Int -> Int -> Int -> Word64
-solveSub !queens !row !n
+
+-- Sequential subtree below cutoff — same algorithm as nq_seq.hs.
+solveSeq :: Int -> V.Vector Int -> Int -> Word64
+solveSeq !n !queens !row
   | row == n  = 1
   | otherwise = go 0 0
   where
@@ -77,9 +54,22 @@ solveSub !queens !row !n
       | c >= n    = acc
       | safeQ queens row c =
           let !q' = V.snoc queens c
-              !sub = solveSub q' (row + 1) n
+              !sub = solveSeq n q' (row + 1)
           in go (c + 1) (acc + sub)
       | otherwise = go (c + 1) acc
+
+
+-- Parallel above cutoff: each call's safe children are evaluated in
+-- parallel via parList rseq.  Each level emits sparks dynamically.
+solvePar :: Int -> Int -> V.Vector Int -> Int -> Word64
+solvePar !cutoff !n !queens !row
+  | row == n     = 1
+  | row >= cutoff = solveSeq n queens row
+  | otherwise =
+      let children = [ solvePar cutoff n (V.snoc queens c) (row + 1)
+                     | c <- [0 .. n - 1], safeQ queens row c ]
+          !forced = children `using` parList rseq
+      in sum forced
 
 
 main :: IO ()
@@ -91,11 +81,9 @@ main = do
 
 run :: FilePath -> IO ()
 run dir = do
-  (n, cutoff, nStates) <- readConfig (dir ++ "/config.txt")
-  states <- readStates (dir ++ "/states.bin") nStates cutoff
+  (n, cutoff) <- readConfig (dir ++ "/config.txt")
   t0 <- getCurrentTime
-  let !counts = map (\s -> solveSub s cutoff n) states `using` parList rseq
-      !total  = sum counts :: Word64
+  let !total = solvePar cutoff n V.empty 0 :: Word64
   t1 <- getCurrentTime
   let !secs = realToFrac (diffUTCTime t1 t0) :: Double
   putStrLn ("CHECKSUM=" ++ show total)
