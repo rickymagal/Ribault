@@ -1,63 +1,25 @@
 #!/usr/bin/env python3
 """Generate a Ribault .hss source for recursive N-Queens.
 
-The .hss is compiled by Ribault's codegen tool into a .fl that
-expresses the recursion as TALM callsnd / retsnd with multiplicative
-tagging.  The top-level `nq queens row` is plain .hss recursion; each
-'+' between two recursive calls translates to two callsnds running in
-parallel under TALM.  Below CUTOFF the recursion drops into the
-sequential super `nq_seq queens`.
+Pure .hss recursion -- no super.  Each `+` between two recursive
+calls translates to two callsnds running in parallel under TALM,
+with tag multiplication handled automatically by the codegen.
 
-NOTE: Ribault .hss supers take a single input arg (no commas in
-`input (...)`), so `nq_seq` takes only `queens` and the row index is
-recovered inside the super from the list length.  Comments must be
-ASCII-only (the codegen Haskell parser rejects non-ASCII bytes).
+The binarization `nq queens row` (go-deeper) `+` `nqAtRow ...`
+(go-sideways) means stride=2 in the tag space, which keeps the
+multiplicative-tag depth well within 64 bits for N up to 15.
+
+NOTE: comments must be ASCII-only -- the codegen Haskell parser
+rejects non-ASCII bytes (e.g. em-dash, arrow).
 """
 
 import argparse, os
 
 
 HSS_TEMPLATE = """-- N-Queens recursive solver (auto-generated).
--- N=__N__   CUTOFF=__CUTOFF__
+-- N=__N__   CUTOFF=__CUTOFF__ (unused: recursion stays in TALM all the way).
 
--- Sequential subtree solver wrapped as a TALM super.  Single input
--- (queens); the row index is the length of the queens list.  Drops
--- out of dataflow at the cutoff depth; below this point every
--- recursive call stays inside Haskell on a single capability.
--- NOTE: supersgen renames the super's input variable to `_x` in the
--- generated Haskell.  The body therefore must refer to `_x` (not the
--- name declared after `input (...)`) when reading the input value.
-nq_seq queens =
-  super single input (queens) output (out)
-#BEGINSUPER
-    out = solveSeq _x
-      where
-        n_const = __N__
-        lenList lst = case lst of
-                        []     -> 0
-                        (_:t)  -> 1 + lenList t
-        solveSeq qs
-          | lenList qs >= n_const = 1
-          | otherwise             = solveCol qs 0
-        solveCol qs c
-          | c >= n_const  = 0
-          | otherwise     =
-              if safeAt qs c 1
-                then solveSeq (c : qs) + solveCol qs (c + 1)
-                else solveCol qs (c + 1)
-        safeAt qs col offset =
-          case qs of
-            []     -> True
-            (h:t)  -> if h == col
-                        then False
-                        else if (h - offset) == col
-                          then False
-                          else if (h + offset) == col
-                            then False
-                            else safeAt t col (offset + 1)
-#ENDSUPER
-
--- Top-level safety check (also TALM-level, for branches above cutoff).
+-- Top-level safety check.  Recurses over the list of placed queens.
 safe queens col offset =
   case queens of
     []    -> True
@@ -81,15 +43,13 @@ nqAtRow queens row c =
         then nq (c : queens) (row + 1) + nqAtRow queens row (c + 1)
         else nqAtRow queens row (c + 1)
 
--- Top-level recursive solver.  Above CUTOFF the recursion stays in
--- TALM dataflow; at/below CUTOFF it drops into the sequential super.
+-- Top-level recursive solver.  Each safe child becomes a callsnd
+-- with a unique multiplicative tag; sibling branches run in
+-- parallel.
 nq queens row =
   if row >= __N__
     then 1
-    else
-      if row >= __CUTOFF__
-        then nq_seq queens
-        else nqAtRow queens row 0
+    else nqAtRow queens row 0
 
 main = print (nq [] 0)
 """
