@@ -126,31 +126,33 @@ for N in $NS; do
     echo "seq_rust,$N,$CUTOFF,1,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
   done
 
-  # NOTE: ribault_hs via the recursive .hss path is disabled in this
-  # sweep.  The codegen pipeline successfully translates the .hss to
-  # a .fl that assembles and runs, but the result evaluates to 0
-  # instead of the expected OEIS count Q(N) for every N tested
-  # (N=4..8 verified).  The recursive `nq queens row` / `nqAtRow`
-  # mutual recursion with cons-list arg appears to lose the
-  # accumulated count somewhere in the TALM lowering of `+` between
-  # recursive callsnds with list-handle args.  Diagnosing requires
-  # poking at the codegen's list-handle protocol, which is out of
-  # scope for this refactor.  The framework is in place
-  # (gen_nq_hss.py, codegen invocation, build_supers); turning
-  # ribault_hs back on is just dropping the `false &&` guard once
-  # the underlying lowering issue is fixed.
+  # ribault_hs via the recursive .hss path.
+  #
+  # Design notes (post-debug June 2026, see gen_nq_hss.py header):
+  #
+  # The naive list-cons or two-recursive-functions formulation hits
+  # codegen lowering bugs (silently undercounts).  We use a single
+  # TALM-recursive `solve` with column-axis unrolled at .hss-emit
+  # time (one let-binding per column), plus two supers: `safeRec`
+  # (diagonal check) and `solveRest` (sequential Haskell solver for
+  # the bottom of the search tree).  CUTOFF is chosen per N to stay
+  # inside the interpreter's deque limit: gen_nq_hss.py defaults to
+  # CUTOFF=3 for N<=12 and CUTOFF=2 for N>=13.
+  #
+  # Verified against OEIS A000170 for N=4..15.
   RH_FL=""
-  if false; then  # disabled — see note above
-    RH_DIR="$NDIR/ribault_hs"
-    mkdir -p "$RH_DIR/supers"
-    "$PY3" "$REPO/scripts/nqueens/gen_nq_hss.py" --out "$RH_DIR/nq.hss" --N "$N" --cutoff "$CUTOFF"
-    if [[ -x "$CODEGEN" ]]; then
-      if "$CODEGEN" "$RH_DIR/nq.hss" > "$RH_DIR/nq.fl" 2>"$LOGDIR/codegen_N${N}.log"; then
-        RH_FL="$RH_DIR/nq.fl"
-        CFLAGS="$SUPERS_CFLAGS" bash "$REPO/tools/build_supers.sh" \
-          "$RH_DIR/nq.hss" "$RH_DIR/supers/Supers.hs" \
-          >"$LOGDIR/ribault_hs_supers_N${N}.build.log" 2>&1 || RH_FL=""
-      fi
+  RH_DIR="$NDIR/ribault_hs"
+  mkdir -p "$RH_DIR/supers"
+  # gen_nq_hss.py picks CUTOFF automatically from N
+  "$PY3" "$REPO/scripts/nqueens/gen_nq_hss.py" --out "$RH_DIR/nq.hss" --N "$N"
+  if [[ -x "$CODEGEN" ]]; then
+    if "$CODEGEN" "$RH_DIR/nq.hss" > "$RH_DIR/nq.fl" 2>"$LOGDIR/codegen_N${N}.log"; then
+      RH_FL="$RH_DIR/nq.fl"
+      CFLAGS="$SUPERS_CFLAGS" bash "$REPO/tools/build_supers.sh" \
+        "$RH_DIR/nq.hss" "$RH_DIR/supers/Supers.hs" \
+        >"$LOGDIR/ribault_hs_supers_N${N}.build.log" 2>&1 || RH_FL=""
+    else
+      echo "    [WARN] ribault_hs codegen failed for N=$N"
     fi
   fi
 
@@ -211,7 +213,11 @@ for N in $NS; do
           SUPERS_RTS_N="$P" SUPERS_RTS_A="$TALM_RTS_A" \
             LD_LIBRARY_PATH="$LIBDIR:$GHCDEPS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
             taskset -c "$CORES_P" "$REPO/TALM/interp/interp" "$P" "$FLB" "$PLA" "$LIBSUP" >"$OUT" 2>"$ERR"
-          cs="$(awk -F= '/^CHECKSUM=/{print $2}' "$OUT" || echo 0)"
+          # interp emits the raw integer count on stdout (Ribault `print`);
+          # accept either "CHECKSUM=N" or a bare integer on the first line.
+          cs="$(awk -F= '/^CHECKSUM=/{print $2; exit}' "$OUT")"
+          [[ -z "$cs" ]] && cs="$(awk 'NR==1 && $1 ~ /^[0-9]+$/ {print $1; exit}' "$OUT")"
+          [[ -z "$cs" ]] && cs=0
           secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" || echo 0)"
           echo "    ribault_hs   rep=$rep ${secs}s cs=$cs"
           echo "ribault_hs,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
