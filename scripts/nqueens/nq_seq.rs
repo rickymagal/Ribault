@@ -7,7 +7,7 @@
 use std::env;
 use std::time::Instant;
 
-const MAX_N: usize = 16;
+const MAX_N: usize = 20;
 
 
 fn load_config(dir: &str) -> usize {

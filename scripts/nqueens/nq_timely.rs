@@ -20,7 +20,7 @@ use std::time::Instant;
 use timely::dataflow::operators::{Input, Exchange, Inspect, Probe, Map};
 use timely::dataflow::{InputHandle, ProbeHandle};
 
-const MAX_N: usize = 16;
+const MAX_N: usize = 20;
 
 
 fn load_config(dir: &str) -> (usize, usize) {

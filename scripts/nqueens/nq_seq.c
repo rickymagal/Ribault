@@ -14,7 +14,7 @@
 #include <string.h>
 #include <time.h>
 
-#define MAX_N 16
+#define MAX_N 20
 
 static int N;
 
