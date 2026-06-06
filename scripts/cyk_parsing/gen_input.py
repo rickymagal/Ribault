@@ -26,17 +26,17 @@ import argparse, os, struct, sys
 
 N_NT = 64                # non-terminals; each cell is a Word64 bitmask
 N_SIGMA = 32             # alphabet
-N_PROD_BIN = 1024        # binary productions.  Random CFGs have a sharp
-                         # phase transition: below ~700 productions parsing
-                         # fails entirely (pc=0); above ~800 the wavefront
-                         # saturates to pc=64 within a few derivation layers.
-                         # The narrow [4, 32] window the spec asked for is
-                         # not robustly achievable with this LCG family.
-                         # 1024 sits comfortably above the parse-threshold;
-                         # cells saturate to pc=64 but the algorithm still
-                         # exercises full O(N^3) bitmask propagation per
-                         # cell.  Variants all see the same workload.
+N_PROD_BIN = 1024        # binary productions.  Density high enough for the
+                         # random LCG-derived input to parse (below ~700
+                         # productions the random parse is empty).  The
+                         # bitmask form saturates to popcount=64 within a
+                         # few derivation layers, but the k-best variant
+                         # bounds per-cell size at TOP_K regardless and
+                         # measures meaningful score propagation across the
+                         # full parse forest.
 N_PROD_TERM_PER_SIGMA = 2  # K terminal producers per symbol
+TOP_K = 8                # top-K derivations retained per cell in k-best variant
+LOG_PROB_MIN = -10.0     # production log-prob range [LOG_PROB_MIN, 0)
 N_PROD_TERM = N_SIGMA * N_PROD_TERM_PER_SIGMA  # 96 total
 CHUNK_SIZE_DEFAULT = 32
 START_SYMBOL = 0
@@ -69,39 +69,44 @@ def gen_input_bytes(seed, N, alphabet):
 
 
 def gen_grammar(seed):
-    """Generate produce_bin[N_NT*N_NT] and produce_term[N_SIGMA].
+    """Generate the grammar in TWO complementary representations:
 
-    produce_bin[B*N_NT + C] is a Word64 bitmask of A's such that A -> B C exists.
-    produce_term[sigma] is a Word64 bitmask of A's such that A -> sigma exists.
+      bitmask form (legacy variant):
+        produce_bin[B*N_NT + C] -- Word64 bitmask of A's with A -> B C
+        produce_term[sigma]     -- Word64 bitmask of A's with A -> sigma
 
-    Grammar density: N_PROD_BIN productions distributed across N_NT*N_NT (B,C)
-    pairs, with each production assigning one A to one (B,C).  Repeats allowed
-    (a single (B,C) pair can produce multiple A's, hence the bitmask).  Similarly
-    N_PROD_TERM terminal productions across N_SIGMA symbols.
+      list form (k-best variant):
+        prods_bin   -- list of (A, B, C, log_prob) tuples, one per binary
+                       production.  Production id = index in this list.
+        prods_term  -- list of (A, sigma, log_prob) tuples, terminal prods.
+
+    log_prob in [LOG_PROB_MIN, 0).
     """
-    # IMPORTANT: extract from the HIGH bits of the LCG state.  Low bits of
-    # this LCG family have short cycles modulo small powers of two -- using
-    # `r % 64` produces only ~64 unique values across 2048 draws.
-    produce_bin = [0] * (N_NT * N_NT)
-    produce_term = [0] * N_SIGMA
+    produce_bin_mask = [0] * (N_NT * N_NT)
+    produce_term_mask = [0] * N_SIGMA
+    prods_bin = []
+    prods_term = []
     r = seed
     for _ in range(N_PROD_BIN):
         r = lcg_step(r); A = (r >> 33) % N_NT
         r = lcg_step(r); B = (r >> 33) % N_NT
         r = lcg_step(r); C = (r >> 33) % N_NT
-        produce_bin[B * N_NT + C] |= (1 << A)
-    # Guarantee every sigma has K terminal producers (avoids "no A -> sigma"
-    # holes that would make even tiny strings unparseable).
+        r = lcg_step(r); lp = LOG_PROB_MIN * ((r >> 33) / (1 << 30))
+        produce_bin_mask[B * N_NT + C] |= (1 << A)
+        prods_bin.append((A, B, C, lp))
     for sigma in range(N_SIGMA):
         for _ in range(N_PROD_TERM_PER_SIGMA):
             r = lcg_step(r); A = (r >> 33) % N_NT
-            produce_term[sigma] |= (1 << A)
-    return produce_bin, produce_term
+            r = lcg_step(r); lp = LOG_PROB_MIN * ((r >> 33) / (1 << 30))
+            produce_term_mask[sigma] |= (1 << A)
+            prods_term.append((A, sigma, lp))
+    return produce_bin_mask, produce_term_mask, prods_bin, prods_term
 
 
 def cyk_parse(s, produce_bin, produce_term, N):
-    """Reference sequential CYK in Python.  Used by calibration on small N
-    and (slow) for the expected_checksum on the actual benchmark N."""
+    """Reference sequential CYK in Python (BITMASK form).  Used for the
+    probe sanity check at small N to confirm grammar+input combination
+    is non-trivial."""
     d = [0] * (N * N)
     for i in range(N):
         d[i * N + i] = produce_term[s[i]]
@@ -112,7 +117,6 @@ def cyk_parse(s, produce_bin, produce_term, N):
             for k in range(i, j):
                 left = d[i * N + k]
                 right = d[(k + 1) * N + j]
-                # Iterate bits of left, then of right
                 lb = left
                 while lb:
                     B = (lb & -lb).bit_length() - 1
@@ -128,14 +132,13 @@ def cyk_parse(s, produce_bin, produce_term, N):
 
 def probe_grammar(probe_N=30):
     """Quick sanity check: parse a probe-length string and report popcount
-    so we know the grammar+input combination is non-trivial.  Used purely
-    to confirm the LCG-derived grammar at the fixed seed produces a
-    parseable string (popcount > 0)."""
+    of d[0][N-1] (BITMASK form) so we know the grammar+input combo is
+    non-trivial.  The k-best variant uses the same grammar."""
     INPUT_SEED = 42
     GRAMMAR_SEED = 43
     s = gen_input_bytes(INPUT_SEED, probe_N, N_SIGMA)
-    produce_bin, produce_term = gen_grammar(GRAMMAR_SEED)
-    d = cyk_parse(s, produce_bin, produce_term, probe_N)
+    pb, pt, _, _ = gen_grammar(GRAMMAR_SEED)
+    d = cyk_parse(s, pb, pt, probe_N)
     pc = bin(d[0 * probe_N + (probe_N - 1)]).count("1")
     sys.stderr.write(f"[probe] grammar_seed={GRAMMAR_SEED} input_seed={INPUT_SEED} "
                      f"probe_N={probe_N} popcount(d[0][N-1])={pc}\n")
@@ -150,17 +153,29 @@ def emit(out_dir, N, chunk_size):
     grammar_seed, probe_popcount, input_seed = probe_grammar(probe_N=30)
 
     # Final grammar + input at the requested N
-    produce_bin, produce_term = gen_grammar(grammar_seed)
+    produce_bin_mask, produce_term_mask, prods_bin, prods_term = gen_grammar(grammar_seed)
     s = gen_input_bytes(input_seed, N, N_SIGMA)
 
     with open(os.path.join(out_dir, "input.bin"), "wb") as f:
         f.write(s)
 
-    # grammar.bin: header(4 u32s) + produce_bin(N_NT*N_NT u64) + produce_term(N_SIGMA u64)
+    # grammar.bin: legacy bitmask form, for the bitmask variant.
+    # header(4 u32s) + produce_bin(N_NT*N_NT u64) + produce_term(N_SIGMA u64)
     with open(os.path.join(out_dir, "grammar.bin"), "wb") as f:
         f.write(struct.pack("<4I", N_NT, N_SIGMA, N_PROD_BIN, N_PROD_TERM))
-        f.write(struct.pack(f"<{N_NT * N_NT}Q", *produce_bin))
-        f.write(struct.pack(f"<{N_SIGMA}Q", *produce_term))
+        f.write(struct.pack(f"<{N_NT * N_NT}Q", *produce_bin_mask))
+        f.write(struct.pack(f"<{N_SIGMA}Q", *produce_term_mask))
+
+    # grammar_prods.bin: k-best variant grammar.
+    # header [n_prod_bin:u32, n_prod_term:u32] + n_prod_bin records of
+    # (A:u8, B:u8, C:u8, pad:u8, log_prob:f64=8B) totaling 12 bytes each,
+    # + n_prod_term records of (A:u8, sigma:u8, pad:u16, log_prob:f64) = 12B.
+    with open(os.path.join(out_dir, "grammar_prods.bin"), "wb") as f:
+        f.write(struct.pack("<2I", len(prods_bin), len(prods_term)))
+        for (A, B, C, lp) in prods_bin:
+            f.write(struct.pack("<BBBBd", A, B, C, 0, lp))
+        for (A, sigma, lp) in prods_term:
+            f.write(struct.pack("<BBHd", A, sigma, 0, lp))
 
     # dag.bin
     total_cells = N * (N + 1) // 2
