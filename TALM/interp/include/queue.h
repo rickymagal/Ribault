@@ -19,12 +19,22 @@
 
 //#define MAX_ELEMENTS 200
 
+/* INITIAL_QUEUE_SIZE is used for both the (growable) queue_t and the
+ * (fixed-size) deque_t.  The deque has no realloc path -- push_last
+ * aborts the process with "Deque is full." if count == allocsize --
+ * so this value is effectively the per-PE token capacity.  Bumped
+ * from 50000 to 1000000 to support workloads with deeper TALM
+ * decomposition (e.g. N-Queens CUTOFF=3 at N>=13 generated ~30k+
+ * in-flight tokens and was hitting the limit).  Cost: each PE
+ * allocates 8 bytes * 1M = 8 MB; with P=48 that's ~400 MB total --
+ * trivial on the scherbius-class servers used for paper benchmarks.
+ */
 #ifndef INITIAL_QUEUE_SIZE
-#define INITIAL_QUEUE_SIZE 50000
+#define INITIAL_QUEUE_SIZE 1000000
 #endif
 
 #ifndef REALLOC_INCREMENT
-#define REALLOC_INCREMENT 50000
+#define REALLOC_INCREMENT 1000000
 #endif
 #define HAS_ELEMENTS(q) (q->count > 0)
 

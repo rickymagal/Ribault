@@ -21,8 +21,11 @@ DEBUG=
 
 FLAGS+=${DEBUG}
 FLAGS+=-DSET_AFFINITY
-FLAGS+=-DINITIAL_QUEUE_SIZE=50000
-FLAGS+=-DREALLOC_INCREMENT=50000
+# Bumped to 1M so the deque (fixed-size, no realloc, aborts the process
+# on overflow) can hold the in-flight tokens of deeper TALM decompositions
+# (e.g. N-Queens CUTOFF=3 at N>=13).  See include/queue.h for context.
+FLAGS+=-DINITIAL_QUEUE_SIZE=1000000
+FLAGS+=-DREALLOC_INCREMENT=1000000
 ifdef MAX_DEST
 FLAGS+=-DMAX_DEST=$(MAX_DEST)
 endif
