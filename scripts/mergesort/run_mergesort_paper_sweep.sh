@@ -12,13 +12,16 @@
 #     ribault_hs   : Trebuchet + Haskell super body (raw Ptr Int32 + peekElemOff)
 #     strategies   : standalone GHC parList rseq, per-level barrier
 #     parpseq      : standalone GHC manual par/pseq, per-level barrier
-#     timely       : Timely Dataflow multi-epoch (epoch 0 leaves, epochs 1..max merges)
+#     (timely: removed from headline sweep -- ms_timely.rs is retained as
+#              control variant but excluded from the published mergesort
+#              comparison since the Rust tier head-to-head is not the
+#              paper's argument; Haskell tier vs Strategies is.)
 #     sucuri       : pyDF.DFGraph (Python 3.14t no-GIL) + PyO3 Rust kernel
 #
 # Per-language baseline policy:
 #   ribault_hs, strategies, parpseq    -> seq_haskell   (Haskell tier)
 #   ribault_c                          -> seq_c         (C tier)
-#   ribault_rust, timely, sucuri       -> seq_rust      (Rust tier)
+#   ribault_rust, sucuri               -> seq_rust      (Rust tier)
 #
 # Binary tree DAG: N elements, leaf CUTOFF, depth=log2(N/CUTOFF). The
 # .fl emits N_LEAVES leaf supers + N_MERGES merge supers connected by
@@ -86,7 +89,7 @@ echo "  PS:        $PS"
 echo "  REPS:      $REPS"
 echo "  CUTOFF:    $CUTOFF  (leaf size — single super sorts CUTOFF ints)"
 echo "  SEED:      $SEED"
-echo "  Variants: seq_{haskell,c,rust}, ribault_{c,rust,hs}, strategies, parpseq, timely$([[ $SUCURI_ENABLED -eq 1 ]] && echo ', sucuri')"
+echo "  Variants: seq_{haskell,c,rust}, ribault_{c,rust,hs}, strategies, parpseq$([[ $SUCURI_ENABLED -eq 1 ]] && echo ', sucuri')"
 echo "  Out: $OUTROOT"
 echo "  Logs: $LOGDIR"
 echo "==============================================================="
@@ -276,23 +279,6 @@ for N in $NS; do
       secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT" || echo 0)"
       echo "    parpseq      rep=$rep  ${secs}s  CHECKSUM=$cs"
       echo "parpseq,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
-    done
-
-    # -------- timely --------
-    VDIR="$NDIR/timely_P${P}"
-    mkdir -p "$VDIR"
-    cp "$REPO/scripts/mergesort/Cargo.toml.ms_timely" "$VDIR/Cargo.toml"
-    cp "$REPO/scripts/mergesort/ms_timely.rs"          "$VDIR/ms_timely.rs"
-    (cd "$VDIR" && CARGO_TARGET_DIR="$VDIR/target" cargo build --release --quiet \
-      >"$LOGDIR/timely_N${N}_P${P}.build.log" 2>&1)
-    BIN="$VDIR/target/release/ms_timely"
-    for ((rep=1; rep<=REPS; rep++)); do
-      OUT="$VDIR/out_r${rep}.txt"
-      taskset -c "$CORES_P" "$BIN" "$DATA" -w "$P" -n 1 >"$OUT" 2>/dev/null
-      cs="$(awk -F= '/^CHECKSUM=/{print $2}' "$OUT" || echo 0)"
-      secs="$(awk -F= '/^RUNTIME_SEC=/{print $2}' "$OUT" || echo 0)"
-      echo "    timely       rep=$rep  ${secs}s  CHECKSUM=$cs"
-      echo "timely,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
     done
 
     # -------- sucuri (optional) --------

@@ -9,8 +9,7 @@ Per-language tier layout (mirrors lcs_paper_final / attn_paper_final):
                   vs  seq_haskell
   C tier:        Ribault-C (ribault_c)
                   vs  seq_c
-  Rust tier:     Ribault-Rust (ribault_rust), Timely (timely),
-                 Sucuri (sucuri) [if rows present]
+  Rust tier:     Ribault-Rust (ribault_rust), Sucuri (sucuri)
                   vs  seq_rust
 
 Bootstrap: 10000 INDEPENDENT resamples, 95% percentile CI on the ratio
@@ -35,7 +34,6 @@ LAYOUT = [
     ]),
     ("Rust", "seq_rust", [
         ("ribault_rust", "Ribault-Rust"),
-        ("timely",       "Timely"),
         ("sucuri",       "Sucuri"),
     ]),
 ]
@@ -110,7 +108,7 @@ def main():
     out.append("Per-language baselines:")
     out.append("  Haskell tier (Ribault-Hs, GHC Strat, GHC par/pseq)  -> seq_haskell  (GHC 9.6.6 -O2 +RTS -A256m)")
     out.append("  C tier       (Ribault-C)                            -> seq_c        (gcc -O3 -march=native)")
-    out.append("  Rust tier    (Ribault-Rust, Timely, Sucuri)         -> seq_rust     (rustc release, raw-ptr unsafe inner loops)")
+    out.append("  Rust tier    (Ribault-Rust, Sucuri)                 -> seq_rust     (rustc release, raw-ptr unsafe inner loops)")
     out.append("")
 
     # SECTION 1: per-language speedup tables
@@ -141,7 +139,7 @@ def main():
     all_variants = ["seq_haskell", "seq_c", "seq_rust",
                     "ribault_hs", "strategies", "parpseq",
                     "ribault_c",
-                    "ribault_rust", "timely", "sucuri"]
+                    "ribault_rust", "sucuri"]
     out.append("=" * 60)
     out.append("RAW MEDIAN WALLTIME (seconds)")
     out.append("=" * 60); out.append("")
