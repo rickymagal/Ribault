@@ -126,33 +126,46 @@ for N in $NS; do
     echo "seq_rust,$N,$CUTOFF,1,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
   done
 
-  # ribault_hs via the recursive .hss path.
-  #
-  # Design notes (post-debug June 2026, see gen_nq_hss.py header):
-  #
-  # The naive list-cons or two-recursive-functions formulation hits
-  # codegen lowering bugs (silently undercounts).  We use a single
-  # TALM-recursive `solve` with column-axis unrolled at .hss-emit
-  # time (one let-binding per column), plus two supers: `safeRec`
-  # (diagonal check) and `solveRest` (sequential Haskell solver for
-  # the bottom of the search tree).  CUTOFF is chosen per N to stay
-  # inside the interpreter's deque limit: gen_nq_hss.py defaults to
-  # CUTOFF=3 for N<=12 and CUTOFF=2 for N>=13.
-  #
-  # Verified against OEIS A000170 for N=4..15.
+  # ribault_{hs,c,rust} all use the SAME .hss / .fl from codegen
+  # (recursive TALM dataflow).  They differ only in libsupers.so:
+  #   - ribault_hs   : Haskell super body, V.Vector Int (mirrors nq_seq.hs)
+  #   - ribault_c    : C super body         (mirrors nq_seq.c)
+  #   - ribault_rust : Rust super body      (mirrors nq_seq.rs)
+  # Same recursive TALM decomposition; only the leaf compute backend changes.
   RH_FL=""
   RH_DIR="$NDIR/ribault_hs"
   mkdir -p "$RH_DIR/supers"
-  # gen_nq_hss.py picks CUTOFF automatically from N
+  RC_DIR="$NDIR/ribault_c"; mkdir -p "$RC_DIR/supers"
+  RR_DIR="$NDIR/ribault_rust"; mkdir -p "$RR_DIR/supers"
+  RC_LIBSUP=""; RR_LIBSUP=""
   "$PY3" "$REPO/scripts/nqueens/gen_nq_hss.py" --out "$RH_DIR/nq.hss" --N "$N"
   if [[ -x "$CODEGEN" ]]; then
     if "$CODEGEN" "$RH_DIR/nq.hss" > "$RH_DIR/nq.fl" 2>"$LOGDIR/codegen_N${N}.log"; then
       RH_FL="$RH_DIR/nq.fl"
-      CFLAGS="$SUPERS_CFLAGS" bash "$REPO/tools/build_supers.sh" \
+      # --- ribault_hs supers (Haskell + Vector) ---
+      CFLAGS="$SUPERS_CFLAGS" \
+        SUPERS_GHC_PACKAGES="vector" \
+        SUPERS_GHC_FLAGS="-XBangPatterns" \
+        SUPERS_EXTRA_IMPORTS="import qualified Data.Vector.Unboxed as V" \
+        bash "$REPO/tools/build_supers.sh" \
         "$RH_DIR/nq.hss" "$RH_DIR/supers/Supers.hs" \
         >"$LOGDIR/ribault_hs_supers_N${N}.build.log" 2>&1 || RH_FL=""
+      # --- ribault_c supers (C; same .fl) ---
+      "$PY3" "$REPO/scripts/nqueens/gen_nq_c_supers.py" \
+        --out "$RC_DIR/supers/nq_supers.c" --N "$N" >/dev/null
+      bash "$REPO/tools/build_supers_c.sh" \
+        "$RC_DIR/supers/nq_supers.c" "$RC_DIR/supers" \
+        >"$LOGDIR/ribault_c_supers_N${N}.build.log" 2>&1 \
+        && RC_LIBSUP="$RC_DIR/supers/libsupers.so"
+      # --- ribault_rust supers (Rust; same .fl) ---
+      "$PY3" "$REPO/scripts/nqueens/gen_nq_rust_supers.py" \
+        --out-dir "$RR_DIR/supers" --N "$N" >/dev/null
+      bash "$REPO/tools/build_supers_rust.sh" \
+        "$RR_DIR/supers/nq_rs_supers" "$RR_DIR/supers" \
+        >"$LOGDIR/ribault_rust_supers_N${N}.build.log" 2>&1 \
+        && RR_LIBSUP="$RR_DIR/supers/libsupers.so"
     else
-      echo "    [WARN] ribault_hs codegen failed for N=$N"
+      echo "    [WARN] ribault_* codegen failed for N=$N"
     fi
   fi
 
@@ -225,6 +238,44 @@ for N in $NS; do
       else
         echo "    [WARN] ribault_hs supers not built for N=$N — skipping"
       fi
+    fi
+
+    # ribault_c — same FLB/PLA as ribault_hs (already assembled above),
+    # different libsupers.so (C-built; no GHC threads, no -A flag needed).
+    if [[ -n "$RH_FL" && -f "$RH_FL" && -n "$RC_LIBSUP" && -f "$RC_LIBSUP" ]]; then
+      RC_P="$RC_DIR/P${P}"; mkdir -p "$RC_P"
+      # Reuse the .flb/.pla assembled above for ribault_hs.
+      FLB="$RH_DIR/P${P}/nq_P${P}.flb"
+      PLA="$RH_DIR/P${P}/nq_P${P}_auto.pla"; [[ -f "$PLA" ]] || PLA="$RH_DIR/P${P}/nq_P${P}.pla"
+      LIBDIR="$RC_DIR/supers"
+      for ((rep=1; rep<=REPS; rep++)); do
+        OUT="$RC_P/out_r${rep}.txt"; ERR="$RC_P/err_r${rep}.txt"
+        LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+          taskset -c "$CORES_P" "$REPO/TALM/interp/interp" "$P" "$FLB" "$PLA" "$RC_LIBSUP" >"$OUT" 2>"$ERR"
+        cs="$(awk 'NR==1 && $1 ~ /^[0-9]+$/ {print $1; exit}' "$OUT")"
+        [[ -z "$cs" ]] && cs=0
+        secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" || echo 0)"
+        echo "    ribault_c    rep=$rep ${secs}s cs=$cs"
+        echo "ribault_c,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
+      done
+    fi
+
+    # ribault_rust — same FLB/PLA, Rust-built libsupers.
+    if [[ -n "$RH_FL" && -f "$RH_FL" && -n "$RR_LIBSUP" && -f "$RR_LIBSUP" ]]; then
+      RR_P="$RR_DIR/P${P}"; mkdir -p "$RR_P"
+      FLB="$RH_DIR/P${P}/nq_P${P}.flb"
+      PLA="$RH_DIR/P${P}/nq_P${P}_auto.pla"; [[ -f "$PLA" ]] || PLA="$RH_DIR/P${P}/nq_P${P}.pla"
+      LIBDIR="$RR_DIR/supers"
+      for ((rep=1; rep<=REPS; rep++)); do
+        OUT="$RR_P/out_r${rep}.txt"; ERR="$RR_P/err_r${rep}.txt"
+        LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+          taskset -c "$CORES_P" "$REPO/TALM/interp/interp" "$P" "$FLB" "$PLA" "$RR_LIBSUP" >"$OUT" 2>"$ERR"
+        cs="$(awk 'NR==1 && $1 ~ /^[0-9]+$/ {print $1; exit}' "$OUT")"
+        [[ -z "$cs" ]] && cs=0
+        secs="$(grep -oP 'EXEC_TIME_S \K[0-9.]+' "$ERR" || echo 0)"
+        echo "    ribault_rust rep=$rep ${secs}s cs=$cs"
+        echo "ribault_rust,$N,$CUTOFF,$P,$rep,$secs,$cs,$EXPECTED" >> "$CSV"
+      done
     fi
   done
 done
