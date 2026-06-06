@@ -192,7 +192,13 @@ normalize_hs_module() {
   local tmp
   tmp="$(mktemp)"
 
-  awk '
+  # SUPERS_EXTRA_IMPORTS (env var, optional): newline-separated list of
+  # additional `import ...` lines to inject right after `module Supers where`.
+  # Used by per-benchmark builders that need packages beyond the boilerplate
+  # (e.g. SUPERS_EXTRA_IMPORTS="import qualified Data.Vector.Unboxed as V")
+  local extra_imports="${SUPERS_EXTRA_IMPORTS:-}"
+
+  awk -v extra="$extra_imports" '
   function strip_bom(s) {
     if (NR == 1) sub(/^\xef\xbb\xbf/, "", s)
     return s
@@ -200,6 +206,14 @@ normalize_hs_module() {
   function is_pragma(line) { return (line ~ /^[[:space:]]*{-#/) }
   function is_module_start(line) { return (line ~ /^[[:space:]]*module[[:space:]]+/) }
   function is_module_end(line) { return (line ~ /(^|[[:space:]])where([[:space:]]|$)/) }
+
+  function emit_module_and_extras() {
+    print "module Supers where"
+    if (extra != "") {
+      n = split(extra, lines, "\n")
+      for (i = 1; i <= n; i++) if (lines[i] != "") print lines[i]
+    }
+  }
 
   BEGIN {
     inserted = 0
@@ -226,7 +240,7 @@ normalize_hs_module() {
     }
 
     if (!inserted) {
-      print "module Supers where"
+      emit_module_and_extras()
       inserted = 1
     }
 
@@ -234,7 +248,7 @@ normalize_hs_module() {
   }
 
   END {
-    if (!inserted) print "module Supers where"
+    if (!inserted) emit_module_and_extras()
   }
   ' "$hs" >"$tmp"
 
