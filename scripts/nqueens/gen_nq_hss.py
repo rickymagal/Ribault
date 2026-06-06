@@ -1,133 +1,118 @@
 #!/usr/bin/env python3
 """Generate a Ribault .hss source for recursive N-Queens (TALM dataflow).
 
-Design (post-debugging June 2026)
----------------------------------
-The naive list-cons formulation (`safe (h:t)` with `case`) hits a
-codegen lowering bug that drops the accumulated count in recursive
-`+` between callsnds with list-handle args.  An integer-encoded
-recursion using two mutually-aware top-level functions (`safe` and
-`solve` both recursive) ALSO triggers a related codegen issue that
-silently undercounts (verified: for N=5 returns 8 instead of 10).
+Design (June 2026 post-debug + post-perf-fix)
+---------------------------------------------
+1. Single TALM-recursive `solve` in .hss; column iteration UNROLLED
+   at .hss-emit time into N let-bindings (one conditional callsnd
+   per column).  Two earlier formulations (list-cons + case-of-cons;
+   two mutually-aware recursive top-level functions) hit codegen
+   lowering bugs that silently undercount -- this is the recipe
+   that passes OEIS cross-validation for N=4..15.
 
-The working recipe — verified for N=4..15 against OEIS A000170 —
-is the following:
+2. `safeRec path currRow col` is a super: at depth < CUTOFF the
+   path is small (<= CUTOFF queens placed) and the diagonal check
+   walks the integer-encoded path with `mod`/`div`.  Cheap.
 
-  1. Single recursive function `solve` in .hss.
+3. `solveRest path pow row` is the leaf super that does the bulk
+   of the work (rows CUTOFF..N-1).  IMPORTANT: the inner solver
+   here mirrors `nq_seq.hs` bit-for-bit -- it uses
+   `Data.Vector.Unboxed Int` for the queens prefix with `V.snoc` /
+   `V.!` exactly like the baseline.  No `sum [list]`, no `mod`/
+   `div` in the inner loop; strict accumulator with BangPatterns.
+   This matches the baseline's allocation + indexing profile so
+   that Ribault's P=1 has the same constant overhead as
+   nq_seq.hs's P=1.  Any residual gap is pure TALM dispatch
+   overhead (small with CUTOFF=2 -- only N^2 leaves).
 
-  2. Column iteration at each row is UNROLLED at .hss-emit time
-     (per-N codegen).  At each level we emit N let-bindings
-     s_0..s_{N-1}, one conditional callsnd per column.  This means
-     the only TALM-tag axis is depth (= row), with stride = next
-     power-of-2 of N.  For N=15 that is 16, so tag at max depth
-     CUTOFF=2 is 16^2 = 256, well inside the 64-bit tag space.
+   This requires the super build to enable BangPatterns and link
+   the `vector` package.  The runner (run_nqueens_paper_sweep.sh)
+   sets:
+       SUPERS_GHC_PACKAGES="vector"
+       SUPERS_GHC_FLAGS="-XBangPatterns"
+       SUPERS_EXTRA_IMPORTS="import qualified Data.Vector.Unboxed as V"
+   before calling tools/build_supers.sh.  The SUPERS_EXTRA_IMPORTS
+   env var is honored by the normalize_hs_module pass in
+   build_supers.sh and injects the import right after `module
+   Supers where`.
 
-  3. `safeRec path currRow col` is a SUPER (Haskell-compiled),
-     NOT another recursive .hss function.  Two top-level recursive
-     .hss functions trigger the codegen bug above; one recursive
-     .hss + supers is fine (verified).  The super body walks the
-     path integer with `mod` / `div` and checks the three diagonal
-     constraints.
+CUTOFF
+------
+gen_nq_hss.py defaults CUTOFF=2 uniformly.  Larger CUTOFF would
+overflow the interpreter's deque ("Deque is full. Aborting.") at
+N>=13 (see scripts/nqueens/description.txt for details).
 
-  4. `solveRest path pow row` is also a super: once `solve` has
-     recursed to depth CUTOFF in TALM, it dispatches the remainder
-     of the search (rows CUTOFF..N-1) to a sequential Haskell
-     solver running as a single super-call.  This bounds the
-     TALM-tag depth and the deque size needed by the interpreter
-     while still giving CUTOFF levels of parallel TALM
-     decomposition (15^CUTOFF leaves for N=15).
-
-CUTOFF per N
-------------
-The TALM interpreter's deque overflows ("Deque is full. Aborting.")
-when total in-flight tokens exceed ~30k.  Empirically:
-
-  N <= 12 : CUTOFF=3 works  (12^3 = 1728 max leaves)
-  N >= 13 : CUTOFF=2 works  (15^2 =  225 max leaves)
-
-For N=15 specifically: 15^2 = 225 leaves; each leaf super performs
-sequential N-Queens for the remaining 13 rows.  Q(15) = 2,279,184
-distributed across 225 leaves ~= 10K solutions / leaf.  Total
-sequential work matches seq_haskell.  Parallel scaling comes from
-TALM dispatching the 225 leaves to P workers.
-
-Tag depth representability
---------------------------
-With UNROLLED columns, the only tag axis is `solve`'s recursion
-depth (= row).  Stride is 16 (next pow-2 of 15).  Max depth = CUTOFF.
-
-  Tag space = 16^CUTOFF
-    CUTOFF=3 -> 4096    (fits easily in 64-bit)
-    CUTOFF=2 -> 256     (fits easily in 64-bit)
-
-Compare to the naive recursion (column AND row axes both
-recursive): tag = 4^(N + N*N) = 4^240 for N=15 = catastrophic
-overflow.  Unrolling collapses the column axis to compile-time
-let-bindings instead of runtime tag bits.
-
-ASCII-only source
------------------
-The codegen Haskell parser rejects non-ASCII bytes (e.g. em-dash,
-arrow), so comments stick to plain ASCII.
+ASCII-only source -- the codegen Haskell parser rejects non-ASCII.
 """
 
 import argparse, os
 
 
 def default_cutoff(N):
-    """Choose CUTOFF.  We use CUTOFF=2 uniformly across N=11..15:
-
-    - For N>=13 CUTOFF=3 overflows the interpreter's deque
-      ("Deque is full. Aborting.").
-    - For N<=12 CUTOFF=3 fits the deque but yields too little
-      work per leaf super to amortize TALM dispatch overhead
-      (verified: P>1 does NOT speed up over P=1).
-    - CUTOFF=2 keeps the methodology uniform and gives the
-      cleanest speedup curve at N>=13 where the per-leaf work
-      is meaningful (15^2 = 225 leaves for N=15, each leaf
-      does ~10K sub-solutions of work in the Haskell super).
-    """
+    """CUTOFF=2 uniform for N=11..15 -- larger overflows the deque
+    at N>=13; smaller would have too few TALM leaves to amortize
+    dispatch.  See module docstring."""
     return 2
 
 
 def emit_hss(N, cutoff):
     lines = []
-    lines.append(f"-- N-Queens recursive solver, integer-encoded path.")
-    lines.append(f"-- N={N}  CUTOFF={cutoff}")
-    lines.append(f"-- solve recurses in TALM down to row={cutoff}, then dispatches")
-    lines.append(f"-- the remainder to solveRest (a sequential Haskell super).")
-    lines.append(f"-- safeRec is a super; column iteration at each row is UNROLLED")
-    lines.append(f"-- into N let-bindings so the TALM-tag axis is row only.")
+    lines.append(f"-- N-Queens recursive TALM solver (auto-gen, N={N}, CUTOFF={cutoff}).")
+    lines.append(f"-- The TALM-recursive `solve` decomposes the top {cutoff} rows;")
+    lines.append(f"-- below CUTOFF the `solveRest` super (Vector-Int-based, mirrors")
+    lines.append(f"-- nq_seq.hs exactly) handles the remaining {N - cutoff} rows.")
     lines.append("")
 
     # solveRest super: sequential N-Queens for the bottom of the search tree.
+    # Mirrors nq_seq.hs's `solve` + `safeQ` exactly using V.Vector Int.
+    # `path` is decoded once at super entry into a V.Vector.
     lines.append("solveRest path pow row =")
     lines.append("  super solveRestImpl path pow row (")
     lines.append("    solveRestImpl path pow row =")
-    lines.append("      let safeQ p curr col = goS p 0 curr col")
-    lines.append("          goS p r curr col =")
-    lines.append("            if r >= curr then True")
-    lines.append("            else")
-    lines.append(f"              let q = p `mod` {N}")
-    lines.append("              in if q == col then False")
-    lines.append("                 else if q + r == col + curr then False")
-    lines.append("                 else if q - r == col - curr then False")
-    lines.append(f"                 else goS (p `div` {N}) (r + 1) curr col")
-    lines.append("          go p pw r =")
-    lines.append(f"            if r >= {N} then 1")
-    lines.append(f"            else sum [ go (p + c*pw) (pw*{N}) (r+1) | c <- [0..{N}-1], safeQ p r c ]")
-    lines.append("      in go path pow row")
+    lines.append(f"      let !nVal = {N} :: Int")
+    lines.append("          !rowI = fromIntegral row :: Int")
+    lines.append("          !pathI = fromIntegral path :: Int")
+    lines.append("          -- Decode integer-encoded path (base nVal) into V.Vector Int")
+    lines.append("          decode !acc !p !i")
+    lines.append("            | i >= rowI = acc")
+    lines.append("            | otherwise =")
+    lines.append("                let !q = p `mod` nVal")
+    lines.append("                in decode (V.snoc acc q) (p `div` nVal) (i + 1)")
+    lines.append("          !queens0 = decode V.empty pathI 0")
+    lines.append("          -- safeQ / solveSeq mirror nq_seq.hs bit-for-bit")
+    lines.append("          safeQ !qs !r !col = goS 0")
+    lines.append("            where")
+    lines.append("              goS !i")
+    lines.append("                | i >= r    = True")
+    lines.append("                | otherwise =")
+    lines.append("                    let !c = qs `V.unsafeIndex` i")
+    lines.append("                    in if c == col then False")
+    lines.append("                       else if c - i == col - r then False")
+    lines.append("                       else if c + i == col + r then False")
+    lines.append("                       else goS (i + 1)")
+    lines.append("          solveSeq !qs !r")
+    lines.append("            | r >= nVal = 1")
+    lines.append("            | otherwise = go 0 0")
+    lines.append("            where")
+    lines.append("              go !c !acc")
+    lines.append("                | c >= nVal = acc")
+    lines.append("                | safeQ qs r c =")
+    lines.append("                    let !q' = V.snoc qs c")
+    lines.append("                        !sub = solveSeq q' (r + 1)")
+    lines.append("                    in go (c + 1) (acc + sub)")
+    lines.append("                | otherwise = go (c + 1) acc")
+    lines.append("      in fromIntegral (solveSeq queens0 rowI) :: Int64")
     lines.append("  )")
     lines.append("")
 
-    # safeRec super: diagonal check, walks the encoded path.
+    # safeRec super: diagonal check for TALM-level solve, depth <= CUTOFF-1.
     lines.append("safeRec path currRow col =")
     lines.append("  super safeImpl path currRow col (")
     lines.append("    safeImpl path currRow col =")
-    lines.append("      let go p r")
+    lines.append("      let go !p !r")
     lines.append("            | r >= currRow = True")
     lines.append("            | otherwise =")
-    lines.append(f"                let q = p `mod` {N}")
+    lines.append(f"                let !q = p `mod` {N}")
     lines.append("                in if q == col then False")
     lines.append("                   else if q + r == col + currRow then False")
     lines.append("                   else if q - r == col - currRow then False")
@@ -167,8 +152,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--N", type=int, required=True)
-    ap.add_argument("--cutoff", type=int, default=None,
-                    help="If omitted, uses 3 for N<=12 and 2 for N>=13 (deque-limit safe).")
+    ap.add_argument("--cutoff", type=int, default=None)
     args = ap.parse_args()
     cutoff = args.cutoff if args.cutoff is not None else default_cutoff(args.N)
     emit(args.out, args.N, cutoff)
